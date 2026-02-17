@@ -5,24 +5,11 @@
 server {
     listen 80;
     listen [::]:80;
-    
-    server_name DOMAIN_NAME www.DOMAIN_NAME;
-    
-    # Redirect HTTP to HTTPS (will be enabled after SSL setup)
-    # return 301 https://$server_name$request_uri;
-    
-    # Root directory for frontend static files
-    root /home/poker/satoshistacks/packages/frontend;
-    index index.html;
-    
-    # Serve static files
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-    
-    # Proxy WebSocket and API requests to Node.js backend
-    location /socket.io/ {
-        proxy_pass http://localhost:3001;
+    server_name DOMAIN_NAME www.DOMAIN_NAME _;
+
+    # Poker app lives at /playmoney
+    location /playmoney {
+        proxy_pass http://localhost:3001/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -30,23 +17,25 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # WebSocket timeout
         proxy_read_timeout 86400;
     }
-    
-    # Proxy API requests
-    location /api/ {
-        proxy_pass http://localhost:3001;
+
+    # Socket.IO needs its own location for WebSocket upgrade
+    location /socket.io/ {
+        proxy_pass http://localhost:3001/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
     }
-    
-    # Admin dashboard
-    location /admin {
-        proxy_pass http://localhost:3001/admin;
+
+    # API proxy
+    location /api/ {
+        proxy_pass http://localhost:3001/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -57,34 +46,23 @@ server {
     location /health {
         proxy_pass http://localhost:3001/health;
     }
-    
+
+    # Everything else — serve the Coming Soon page
+    location / {
+        root /opt;
+        try_files /coming-soon.html =404;
+    }
+
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    
+
     # Gzip compression
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
-    
-    # Cache static assets
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
-        expires 30d;
-        add_header Cache-Control "public, immutable";
-    }
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json;
 }
 
-# HTTPS configuration (will be auto-configured by Certbot)
-# server {
-#     listen 443 ssl http2;
-#     listen [::]:443 ssl http2;
-#     server_name DOMAIN_NAME www.DOMAIN_NAME;
-#     
-#     # SSL certificates (managed by Certbot)
-#     # ssl_certificate /etc/letsencrypt/live/DOMAIN_NAME/fullchain.pem;
-#     # ssl_certificate_key /etc/letsencrypt/live/DOMAIN_NAME/privkey.pem;
-#     
-#     # All other config same as above...
-# }
+# HTTPS block will be auto-configured by Certbot:
+#   certbot --nginx -d DOMAIN_NAME -d www.DOMAIN_NAME

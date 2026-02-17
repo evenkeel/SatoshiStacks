@@ -1,409 +1,218 @@
 # SatoshiStacks Deployment Guide
 
-**Complete deployment package for getting poker site live**
+**How the production site is deployed and maintained.**
 
 ---
 
-## 📦 What's Included
+## Current Setup
 
-1. **DEPLOYMENT-DAY-1-CHECKLIST.md** - Complete step-by-step guide
-2. **server-setup.sh** - Initial VPS configuration
-3. **deploy-app.sh** - Application deployment
-4. **setup-ssl.sh** - SSL certificate setup
-5. **nginx-config.template** - Nginx configuration
+| Component       | Detail                                      |
+|-----------------|---------------------------------------------|
+| **VPS**         | Hetzner Cloud CPX11 (~$5/month)             |
+| **IP**          | (see Hetzner dashboard)                     |
+| **OS**          | Ubuntu 24.04                                |
+| **Domain**      | satoshistacks.com (Cloudflare DNS)          |
+| **SSL**         | Let's Encrypt (auto-renews)                 |
+| **App path**    | `/opt/SatoshiStacks/`                       |
+| **Process mgr** | PM2 (process name: `satoshistacks`)         |
+| **Web server**  | Nginx reverse proxy                         |
+| **Auth**        | SSH key (ed25519)                           |
 
----
+### URL Routing
 
-## 🚀 Quick Start
-
-### Allen's Steps (30 minutes)
-
-1. **Sign up for Hetzner VPS:**
-   - Go to https://www.hetzner.com/cloud
-   - Create account
-   - Create new server:
-     - **Image:** Ubuntu 24.04
-     - **Type:** CX22 (€3.79/month)
-     - **Location:** US or Europe
-   - **SAVE:** IP address + root password
-
-2. **Configure DNS:**
-   - Log into domain registrar
-   - Add A records:
-     ```
-     @    →  [VPS_IP_ADDRESS]
-     www  →  [VPS_IP_ADDRESS]
-     ```
-
-3. **Send Noah:**
-   - VPS IP address
-   - Root password
-   - Domain name
+| URL                                | Serves                          |
+|------------------------------------|---------------------------------|
+| `satoshistacks.com/`               | Coming Soon landing page        |
+| `satoshistacks.com/playmoney`      | Poker game (play-money beta)    |
+| `satoshistacks.com/api/*`          | Backend API                     |
+| `satoshistacks.com/socket.io/*`    | WebSocket connections           |
+| `satoshistacks.com/health`         | Health check endpoint           |
 
 ---
 
-### Noah's Steps (2 hours)
+## Fresh Deployment (from scratch)
 
-#### 1. Connect to Server
-```bash
-ssh root@[VPS_IP_ADDRESS]
-# Enter password when prompted
-```
+### 1. Provision VPS
 
-#### 2. Upload Deployment Scripts
-```bash
-# On local machine
-scp -r deployment root@[VPS_IP_ADDRESS]:/root/
-```
+- Hetzner Cloud > Create Server
+- **Image:** Ubuntu 24.04
+- **Type:** CPX11 (Shared vCPU, Ashburn VA)
+- **Auth:** SSH key (ed25519)
 
-#### 3. Run Server Setup
+### 2. Run Server Setup
+
 ```bash
-# On VPS
-cd /root/deployment
-chmod +x *.sh
+ssh root@YOUR_VPS_IP
+# Upload and run:
 bash server-setup.sh
 ```
 
-#### 4. Upload Application Code
-```bash
-# On local machine
-cd /Users/noah/Noah/projects/satoshistacks
-tar -czf satoshistacks.tar.gz packages/
-scp satoshistacks.tar.gz poker@[VPS_IP_ADDRESS]:/home/poker/
+This installs Node.js 20, Nginx, PM2, Certbot, SQLite, fail2ban, and UFW firewall.
 
-# On VPS (as poker user)
-ssh poker@[VPS_IP_ADDRESS]
-cd /home/poker
-tar -xzf satoshistacks.tar.gz
-mv packages satoshistacks/
+### 3. Deploy Application
+
+```bash
+# Clone repo on VPS
+cd /opt
+git clone https://github.com/evenkeel/SatoshiStacks.git
+cd SatoshiStacks/packages/backend
+npm install --production
+
+# Create .env
+cat > .env << 'EOF'
+PORT=3001
+NODE_ENV=production
+CORS_ORIGIN=https://satoshistacks.com,https://www.satoshistacks.com
+ADMIN_TOKEN=<generate-with-openssl-rand-hex-32>
+EOF
+
+# Start with PM2
+pm2 start server.js --name satoshistacks
+pm2 save
+pm2 startup
 ```
 
-#### 5. Deploy Application
-```bash
-# On VPS (as poker user)
-cd /root/deployment
-bash deploy-app.sh
-```
+### 4. Configure Nginx
 
-#### 6. Configure Nginx
 ```bash
-# On VPS (as root)
-cd /root/deployment
+# Copy template and edit domain
+cp nginx-config.template /etc/nginx/sites-available/satoshistacks
+# Edit: replace DOMAIN_NAME with satoshistacks.com
 
-# Replace DOMAIN_NAME in template
-sed "s/DOMAIN_NAME/[yourdomain.com]/g" nginx-config.template > /etc/nginx/sites-available/satoshistacks
+# Upload Coming Soon page
+cp /path/to/coming-soon.html /opt/coming-soon.html
 
 # Enable site
-ln -s /etc/nginx/sites-available/satoshistacks /etc/nginx/sites-enabled/
-rm /etc/nginx/sites-enabled/default  # Remove default site
-
-# Test configuration
-nginx -t
-
-# Restart Nginx
-systemctl restart nginx
+ln -sf /etc/nginx/sites-available/satoshistacks /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
 ```
 
-#### 7. Set Up SSL
-```bash
-# On VPS (as root)
-cd /root/deployment
-bash setup-ssl.sh [yourdomain.com]
+### 5. Configure DNS (Cloudflare)
+
+Add A records (DNS only / grey cloud):
+```
+@    A    YOUR_VPS_IP
+www  A    YOUR_VPS_IP
 ```
 
-#### 8. Verify Deployment
+### 6. Set Up SSL
+
 ```bash
-# Check backend is running
-pm2 status
-
-# Check Nginx is running
-systemctl status nginx
-
-# View logs
-pm2 logs satoshistacks-backend
+bash setup-ssl.sh satoshistacks.com
 ```
 
 ---
 
-## ✅ Verification Checklist
+## Common Operations
 
-After deployment, verify:
+### Deploy Code Updates
 
-- [ ] https://yourdomain.com loads
-- [ ] Poker table appears
-- [ ] Can join game in 2+ tabs
-- [ ] Cards deal, game progresses
-- [ ] Hand completes successfully
-- [ ] https://yourdomain.com/admin loads
-- [ ] Admin dashboard shows stats
-- [ ] No console errors
+```bash
+ssh root@YOUR_VPS_IP
+cd /opt/SatoshiStacks
+git pull origin main
+cd packages/backend && npm install --production
+pm2 restart satoshistacks
+```
+
+### View Logs
+
+```bash
+pm2 logs satoshistacks          # Application logs
+pm2 logs satoshistacks --lines 100  # Last 100 lines
+tail -f /var/log/nginx/error.log    # Nginx errors
+```
+
+### Restart Services
+
+```bash
+pm2 restart satoshistacks       # Restart app
+systemctl restart nginx          # Restart Nginx
+```
+
+### Check Status
+
+```bash
+pm2 status                       # App status
+systemctl status nginx           # Nginx status
+curl http://localhost:3001/health # Health check
+```
+
+### Update Coming Soon Page
+
+```bash
+# Edit /opt/coming-soon.html on VPS
+# No restart needed — Nginx serves it directly
+```
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Site Won't Load
 
-**Check DNS:**
 ```bash
-dig yourdomain.com
-# Should show your VPS IP
-```
+# Check DNS
+dig satoshistacks.com
 
-**Check Nginx:**
-```bash
-sudo systemctl status nginx
-sudo nginx -t  # Test configuration
-sudo journalctl -u nginx -n 50  # View logs
-```
+# Check Nginx
+nginx -t
+systemctl status nginx
+journalctl -u nginx -n 50
 
-**Check Backend:**
-```bash
+# Check app
 pm2 status
-pm2 logs satoshistacks-backend
+pm2 logs satoshistacks --lines 50
+```
+
+### WebSocket Issues
+
+```bash
+# Verify socket.io proxy in Nginx config has:
+#   proxy_http_version 1.1;
+#   proxy_set_header Upgrade $http_upgrade;
+#   proxy_set_header Connection "upgrade";
 ```
 
 ### SSL Certificate Issues
 
-**Re-run Certbot:**
 ```bash
-sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
-```
-
-**Check Certificate:**
-```bash
-sudo certbot certificates
-```
-
-### Game Won't Start
-
-**Check Backend Logs:**
-```bash
-pm2 logs satoshistacks-backend --lines 100
-```
-
-**Check Database:**
-```bash
-ls -lh /home/poker/satoshistacks/packages/backend/db/
-```
-
-**Restart Backend:**
-```bash
-pm2 restart satoshistacks-backend
-```
-
-### Performance Issues
-
-**Check Server Resources:**
-```bash
-htop  # Install with: apt install htop
-df -h  # Disk space
-free -h  # Memory
-```
-
-**Optimize PM2:**
-```bash
-pm2 restart satoshistacks-backend --max-memory-restart 200M
-```
-
----
-
-## 📊 Monitoring
-
-### Server Health
-```bash
-# PM2 monitoring
-pm2 monit
-
-# System resources
-htop
-
-# Disk usage
-df -h
-
-# Memory usage
-free -h
-```
-
-### Application Logs
-```bash
-# Backend logs
-pm2 logs satoshistacks-backend
-
-# Nginx access logs
-sudo tail -f /var/log/nginx/access.log
-
-# Nginx error logs
-sudo tail -f /var/log/nginx/error.log
+certbot certificates              # Check cert status
+certbot renew --dry-run           # Test renewal
+certbot --nginx -d satoshistacks.com -d www.satoshistacks.com  # Re-issue
 ```
 
 ### Database
-```bash
-# Database size
-ls -lh /home/poker/satoshistacks/packages/backend/db/
 
-# Query database
-sqlite3 /home/poker/satoshistacks/packages/backend/db/satoshistacks.db
+```bash
+# Location
+ls -lh /opt/SatoshiStacks/packages/backend/db/
+
+# Query
+sqlite3 /opt/SatoshiStacks/packages/backend/db/satoshistacks.db
+
+# Backup
+cp /opt/SatoshiStacks/packages/backend/db/satoshistacks.db \
+   /opt/backups/satoshistacks-$(date +%Y%m%d).db
 ```
 
 ---
 
-## 🔐 Security
+## Security
 
-### Disable Root Login
-```bash
-# Edit SSH config
-sudo nano /etc/ssh/sshd_config
-
-# Change:
-PermitRootLogin no
-
-# Restart SSH
-sudo systemctl restart sshd
-```
-
-### Set Up SSH Keys
-```bash
-# On local machine, generate key
-ssh-keygen -t ed25519
-
-# Copy to server
-ssh-copy-id poker@[VPS_IP_ADDRESS]
-
-# Disable password authentication
-sudo nano /etc/ssh/sshd_config
-# Change:
-PasswordAuthentication no
-```
-
-### Configure Fail2Ban
-```bash
-# Check status
-sudo systemctl status fail2ban
-
-# View banned IPs
-sudo fail2ban-client status sshd
-```
+- SSH key auth only (no password login)
+- UFW firewall (SSH + Nginx only)
+- fail2ban for brute force protection
+- Let's Encrypt auto-renewal
+- Rate limiting on auth endpoints (10 req/min/IP)
+- `trust proxy` enabled for correct IP behind Nginx
 
 ---
 
-## 🔄 Updates & Maintenance
+## Cost
 
-### Update Application Code
-```bash
-# On local machine
-cd /Users/noah/Noah/projects/satoshistacks
-tar -czf satoshistacks-update.tar.gz packages/
-scp satoshistacks-update.tar.gz poker@[VPS_IP_ADDRESS]:/home/poker/
-
-# On VPS (as poker user)
-cd /home/poker/satoshistacks
-pm2 stop satoshistacks-backend
-tar -xzf ../satoshistacks-update.tar.gz
-cd packages/backend && npm install
-pm2 restart satoshistacks-backend
-```
-
-### Update System Packages
-```bash
-sudo apt update && sudo apt upgrade -y
-```
-
-### Backup Database
-```bash
-# Manual backup
-cd /home/poker/satoshistacks/packages/backend/db
-cp satoshistacks.db satoshistacks-backup-$(date +%Y%m%d).db
-
-# Automated daily backups (add to cron)
-0 2 * * * cp /home/poker/satoshistacks/packages/backend/db/satoshistacks.db /home/poker/backups/satoshistacks-$(date +\%Y\%m\%d).db
-```
-
----
-
-## 📈 Performance Optimization
-
-### Nginx Caching
-Already configured in nginx-config.template:
-- Static assets cached for 30 days
-- Gzip compression enabled
-
-### PM2 Clustering (If Needed)
-```bash
-pm2 delete satoshistacks-backend
-pm2 start packages/backend/server.js --name satoshistacks-backend -i 2  # 2 instances
-```
-
-### Database Optimization
-```bash
-# Vacuum database periodically
-sqlite3 /home/poker/satoshistacks/packages/backend/db/satoshistacks.db "VACUUM;"
-```
-
----
-
-## 💰 Cost Breakdown
-
-- **VPS:** €3.79/month (~$4 USD) - Hetzner CX22
+- **VPS:** ~$5/month (Hetzner CPX11)
 - **Domain:** Already owned
-- **SSL:** FREE (Let's Encrypt)
-- **Total:** $4/month
-
----
-
-## 🆘 Support
-
-**Noah available via Telegram for:**
-- Deployment assistance
-- Bug fixes
-- Server issues
-- Feature additions
-
-**Common Commands Reference:**
-```bash
-# Restart backend
-pm2 restart satoshistacks-backend
-
-# View logs
-pm2 logs satoshistacks-backend
-
-# Restart Nginx
-sudo systemctl restart nginx
-
-# Check server status
-pm2 status && sudo systemctl status nginx
-
-# View database
-sqlite3 /home/poker/satoshistacks/packages/backend/db/satoshistacks.db
-```
-
----
-
-## ✅ Post-Deployment
-
-After successful deployment:
-
-1. **Test thoroughly**
-   - Play multiple hands
-   - Test with friends
-   - Check admin dashboard
-
-2. **Beta test**
-   - Invite 5-10 people
-   - Collect feedback
-   - Note bugs
-
-3. **Monitor**
-   - Check PM2 status daily
-   - Review logs for errors
-   - Monitor server resources
-
-4. **Marketing** (when stable)
-   - Discord announcement
-   - Reddit posts
-   - Social media
-   - Friends/family
-
----
-
-Ready to deploy! 🚀
+- **SSL:** Free (Let's Encrypt)
+- **Total:** ~$5/month
