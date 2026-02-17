@@ -229,6 +229,27 @@ cp /opt/SatoshiStacks/packages/backend/db/satoshistacks.db \
 - [ ] Test with 6 simultaneous players
 - [ ] Stress test reconnect/disconnect scenarios
 
+**Graphics & UI:**
+- [ ] Card animations (deal, flip, slide to winner)
+- [ ] Chip movement animations (bet → pot, pot → winner)
+- [ ] Sound effects (deal, check, bet, fold, win, all-in, timer warning)
+- [ ] Winning hand highlight / glow effect
+- [ ] Community card reveal animations per street
+- [ ] Table felt and card back themes / skins
+- [ ] Confetti or particle effects on big wins
+
+**Player experience:**
+- [ ] Chat / emoji reactions at the table
+- [ ] Hand replayer (step through past hands)
+- [ ] Player stats (hands played, win rate, biggest pot)
+- [ ] Sit-out / be right back button
+- [ ] Auto-post blinds toggle
+- [ ] Preferred seat selection
+- [ ] Bet sizing shortcuts (1/2 pot, 3/4 pot, pot, all-in)
+- [ ] Pre-action buttons (fold to any bet, check/fold, call any)
+- [ ] Keyboard shortcuts for actions
+- [ ] Table lobby showing open seats and stakes
+
 **Lightning integration (next phase):**
 - [ ] Buy-in via Lightning invoice (sit down → pay → play)
 - [ ] Auto-cashout on leave (sats → NOSTR Lightning wallet)
