@@ -18,7 +18,7 @@ The goal is the simplest possible path from "I want to play poker" to cards in t
 - NOSTR login via NIP-07 browser extensions (nos2x, Alby, etc.)
 - Server-authoritative game engine — can't cheat from the browser
 - Real-time multiplayer via WebSocket
-- Hand history in PokerStars format
+- Full hand histories
 - Pot chip accumulation with visual denominations
 - Side pots for multi-way all-ins
 - 20-second action timer with auto-fold
