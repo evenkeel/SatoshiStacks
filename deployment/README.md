@@ -192,78 +192,28 @@ ls -lh /opt/SatoshiStacks/packages/backend/db/
 # Query
 sqlite3 /opt/SatoshiStacks/packages/backend/db/satoshistacks.db
 
-# Backup
-cp /opt/SatoshiStacks/packages/backend/db/satoshistacks.db \
-   /opt/backups/satoshistacks-$(date +%Y%m%d).db
+# Backups (automated daily at 3 AM)
+ls -lh /opt/SatoshiStacks/packages/backend/backups/
+
+# Manual backup
+/usr/local/bin/backup-satoshistacks.sh
 ```
 
 ---
 
 ## Security
 
-**Currently active:**
-- SSH key auth for root (password login disabled for root by default)
-- Let's Encrypt SSL with auto-renewal
-- Rate limiting on auth endpoints (10 req/min/IP)
-- `trust proxy` enabled for correct IP behind Nginx
-- HTTP automatically redirects to HTTPS (Certbot configured)
+**Active (Phase 5.7 hardening applied):**
+- SSH key-only auth (password login disabled, strong ciphers, ed25519/curve25519)
+- UFW firewall (port 22 rate-limited, 80 and 443 open, all else denied)
+- fail2ban with incremental banning (1d → 2d → 4d → 1wk max)
+- Kernel network hardening (IP spoofing, SYN flood, ICMP redirect protection)
+- Nginx security headers (CSP, X-Frame-Options, X-Content-Type-Options, Permissions-Policy)
+- Nginx rate limiting (API: 10r/s, auth: 5r/m, general: 30r/s)
+- Let's Encrypt SSL with HSTS and auto-renewal
+- Automated SQLite backups (daily at 3 AM, integrity-checked, 30-day retention)
+- Automatic security updates with auto-reboot at 4 AM if needed
+- Core dumps disabled, filesystem permissions hardened
+- HTTP automatically redirects to HTTPS
+- Common exploit paths blocked (.git, .env, wp-admin, phpmyadmin, etc.)
 
-**Recommended hardening (not yet enabled):**
-- UFW firewall: `ufw allow OpenSSH && ufw allow 'Nginx Full' && ufw --force enable`
-- fail2ban: `apt install -y fail2ban && systemctl enable --now fail2ban`
-- Disable password auth entirely: set `PasswordAuthentication no` in `/etc/ssh/sshd_config`
-
----
-
-## TODO
-
-**Server hardening:**
-- [ ] Enable UFW firewall
-- [ ] Enable fail2ban
-- [ ] Disable password auth in sshd_config
-- [ ] Set up automated database backups (cron)
-
-**Game / beta testing:**
-- [ ] Multi-client soak testing (play 50+ hands, look for edge cases)
-- [ ] Mobile layout polish
-- [ ] Test with 6 simultaneous players
-- [ ] Stress test reconnect/disconnect scenarios
-
-**Graphics & UI:**
-- [ ] Card animations (deal, flip, slide to winner)
-- [ ] Chip movement animations (bet → pot, pot → winner)
-- [ ] Sound effects (deal, check, bet, fold, win, all-in, timer warning)
-- [ ] Winning hand highlight / glow effect
-- [ ] Community card reveal animations per street
-- [ ] Table felt and card back themes / skins
-- [ ] Confetti or particle effects on big wins
-
-**Player experience:**
-- [ ] Chat / emoji reactions at the table
-- [ ] Hand replayer (step through past hands)
-- [ ] Player stats (hands played, win rate, biggest pot)
-- [ ] Sit-out / be right back button
-- [ ] Auto-post blinds toggle
-- [ ] Preferred seat selection
-- [ ] Keyboard shortcuts for actions
-- [ ] Open seats / table info displayed around the table rim (single-page, no separate lobby)
-
-**Lightning integration (next phase):**
-- [ ] Buy-in via Lightning invoice (sit down → pay → play)
-- [ ] Auto-cashout on leave (sats → NOSTR Lightning wallet)
-- [ ] NIP-57 / LNURL-pay integration for payouts
-- [ ] Error-only balance holding (no custodial accounts)
-
-**Future:**
-- [ ] Multi-table support
-- [ ] Tournament mode (SNGs, MTTs)
-- [ ] Mobile-native client
-
----
-
-## Cost
-
-- **VPS:** ~$5/month (Hetzner CPX11)
-- **Domain:** Already owned
-- **SSL:** Free (Let's Encrypt)
-- **Total:** ~$5/month

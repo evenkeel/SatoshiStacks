@@ -59,17 +59,24 @@ See `deployment/README.md` for full VPS setup:
 - Nginx reverse proxy config
 - SSL via Let's Encrypt
 
-Runs on a $4/month VPS.
+Runs on a $5/month VPS.
 
 ## Roadmap
 
-**Beta (now)**
-- [x] Core poker engine
-- [x] NOSTR authentication
-- [x] Play-money chips
-- [x] Hand history
-- [ ] Multi-client soak testing
-- [ ] Mobile polish
+**Done**
+- [x] Core poker engine (6-max NL Hold'em)
+- [x] NOSTR authentication (NIP-07)
+- [x] Play-money chips with auto-rebuy
+- [x] Hand history and pot tracking
+- [x] Production deployment (Hetzner VPS, Nginx, SSL, PM2)
+- [x] Server hardening (UFW, fail2ban, SSH lockdown, kernel hardening)
+- [x] Automated SQLite backups
+
+**Next**
+- [ ] Multi-client soak testing (50+ hands, edge cases)
+- [ ] Mobile layout polish
+- [ ] Card and chip animations
+- [ ] Sound effects
 
 **Lightning Integration**
 - [ ] Buy-in via Lightning invoice (sit down → pay → play)
