@@ -245,10 +245,8 @@ cp /opt/SatoshiStacks/packages/backend/db/satoshistacks.db \
 - [ ] Sit-out / be right back button
 - [ ] Auto-post blinds toggle
 - [ ] Preferred seat selection
-- [ ] Bet sizing shortcuts (1/2 pot, 3/4 pot, pot, all-in)
-- [ ] Pre-action buttons (fold to any bet, check/fold, call any)
 - [ ] Keyboard shortcuts for actions
-- [ ] Table lobby showing open seats and stakes
+- [ ] Open seats / table info displayed around the table rim (single-page, no separate lobby)
 
 **Lightning integration (next phase):**
 - [ ] Buy-in via Lightning invoice (sit down → pay → play)
