@@ -215,6 +215,33 @@ cp /opt/SatoshiStacks/packages/backend/db/satoshistacks.db \
 
 ---
 
+## TODO
+
+**Server hardening:**
+- [ ] Enable UFW firewall
+- [ ] Enable fail2ban
+- [ ] Disable password auth in sshd_config
+- [ ] Set up automated database backups (cron)
+
+**Game / beta testing:**
+- [ ] Multi-client soak testing (play 50+ hands, look for edge cases)
+- [ ] Mobile layout polish
+- [ ] Test with 6 simultaneous players
+- [ ] Stress test reconnect/disconnect scenarios
+
+**Lightning integration (next phase):**
+- [ ] Buy-in via Lightning invoice (sit down → pay → play)
+- [ ] Auto-cashout on leave (sats → NOSTR Lightning wallet)
+- [ ] NIP-57 / LNURL-pay integration for payouts
+- [ ] Error-only balance holding (no custodial accounts)
+
+**Future:**
+- [ ] Multi-table support
+- [ ] Tournament mode (SNGs, MTTs)
+- [ ] Mobile-native client
+
+---
+
 ## Cost
 
 - **VPS:** ~$5/month (Hetzner CPX11)
