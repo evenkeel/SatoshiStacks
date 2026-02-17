@@ -1,6 +1,6 @@
 # SatoshiStacks
 
-Play-money 6-max Texas Hold'em poker with NOSTR authentication. Built for Bitcoiners.
+6-max Texas Hold'em poker with NOSTR authentication. Built for Bitcoiners.
 
 ## Vision
 
