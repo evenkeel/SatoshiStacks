@@ -979,6 +979,33 @@ io.on('connection', (socket) => {
   });
 
   /**
+   * Rebuy — reset chips to starting stack
+   */
+  socket.on('rebuy', ({ tableId }) => {
+    const user = socketUsers.get(socket.id);
+    if (!user) {
+      socket.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+
+    const game = games.get(tableId);
+    if (!game) {
+      socket.emit('error', { message: 'Table not found' });
+      return;
+    }
+
+    const result = game.rebuy(user.userId);
+    if (result.success) {
+      // Persist to database
+      db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(result.chips, user.userId);
+      console.log(`[Server] Rebuy persisted: ${user.userId.slice(0, 8)}... → ${result.chips} chips`);
+      broadcastGameState(tableId);
+    } else {
+      socket.emit('error', { message: result.error });
+    }
+  });
+
+  /**
    * Disconnect
    */
   socket.on('disconnect', () => {

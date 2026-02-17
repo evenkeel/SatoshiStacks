@@ -2011,7 +2011,7 @@ function renderSeats() {
     const fallbackAvatar = `<div class="avatar-initial" style="background:${avatarColor};">${initial}</div>`;
     seatEl.innerHTML = `
       <div class="player-avatar-wrap ${isActive ? 'active-turn' : ''}">
-        <div class="player-avatar" data-seat="${actualSeat}">
+        <div class="player-avatar" data-seat="${actualSeat}" data-userid="${esc(player.userId)}" data-is-me="${isMe}" style="cursor:pointer;">
           ${safePicture ? `<img src="${safePicture}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">${fallbackAvatar.replace('style="','style="display:none;')}` : fallbackAvatar}
         </div>
       </div>
@@ -2062,6 +2062,9 @@ function updateNameplates() {
     const sitOutBadge = player.sittingOut ? '<div style="position:absolute;top:-8px;right:-8px;background:var(--rust);color:var(--warm-white);font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px;border:1.5px solid var(--outline);z-index:10;">SITTING OUT</div>' : '';
 
     el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}`;
+    el.setAttribute('data-userid', player.userId);
+    el.setAttribute('data-is-me', isMe);
+    el.style.cursor = 'pointer';
     el.innerHTML = `
       ${cardsHTML}
       ${dealerHTML}
@@ -2860,6 +2863,119 @@ function updateSitBackInButton() {
   if (!btn || !gameState) return;
   const myPlayer = gameState.players?.find(p => p && p.userId === myUserId);
   btn.style.display = (myPlayer && myPlayer.sittingOut) ? 'block' : 'none';
+}
+
+// ============================================================
+//  AVATAR / NAMEPLATE CLICK HANDLERS
+// ============================================================
+
+// Delegated click handler for avatars and nameplates
+document.addEventListener('click', (e) => {
+  // Find the clicked avatar or nameplate
+  const avatar = e.target.closest('.player-avatar[data-userid]');
+  const nameplate = e.target.closest('.player-nameplate[data-userid]');
+  const target = avatar || nameplate;
+  if (!target) return;
+
+  const userId = target.dataset.userid;
+  const isMe = target.dataset.isMe === 'true';
+
+  if (isMe) {
+    // Clicking your own avatar/nameplate → rebuy option
+    showRebuyDialog();
+  } else {
+    // Clicking another player → show profile popup
+    showPlayerProfile(userId);
+  }
+});
+
+function showRebuyDialog() {
+  if (!gameState || !socket) return;
+  const myPlayer = gameState.players?.find(p => p && p.userId === myUserId);
+  if (!myPlayer) return;
+
+  if (myPlayer.stack >= 10000) {
+    showToast('Stack is already at 10,000');
+    return;
+  }
+
+  // Confirm rebuy
+  const current = myPlayer.stack.toLocaleString();
+  if (confirm(`Rebuy to 10,000 chips?\n\nCurrent stack: ${current}`)) {
+    socket.emit('rebuy', { tableId: myTableId });
+  }
+}
+
+function showPlayerProfile(userId) {
+  if (!gameState) return;
+  const player = gameState.players?.find(p => p && p.userId === userId);
+  if (!player) return;
+
+  const displayName = player.nostrName || player.username || 'Unknown';
+  const npubShort = player.userId ? 'npub1' + player.userId.slice(0, 8) + '...' : '';
+
+  // Remove existing popup if any
+  const existing = document.getElementById('playerProfilePopup');
+  if (existing) existing.remove();
+
+  const popup = document.createElement('div');
+  popup.id = 'playerProfilePopup';
+  popup.style.cssText = `
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:var(--felt-dark);border:2px solid var(--outline);border-radius:16px;
+    padding:24px 32px;z-index:2000;box-shadow:0 12px 40px rgba(0,0,0,0.6);
+    text-align:center;min-width:240px;font-family:inherit;
+  `;
+
+  const avatarColor = AVATAR_COLORS[0];
+  const initial = displayName[0]?.toUpperCase() || '?';
+  const picture = player.nostrPicture;
+  const safePic = picture && /^https?:\/\//i.test(picture) ? picture : null;
+  const avatarHTML = safePic
+    ? `<img src="${safePic}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--outline);">`
+    : `<div style="width:64px;height:64px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:var(--text-dark);border:3px solid var(--outline);margin:0 auto;">${initial}</div>`;
+
+  popup.innerHTML = `
+    <div style="margin-bottom:12px;">${avatarHTML}</div>
+    <div style="font-size:18px;font-weight:800;color:var(--warm-white);margin-bottom:4px;">${displayName}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:monospace;">${npubShort}</div>
+    <div style="font-size:14px;color:var(--warm-white);margin-bottom:16px;">Stack: ${player.stack.toLocaleString()}</div>
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button onclick="window.open('https://njump.me/${player.userId}','_blank');document.getElementById('playerProfilePopup').remove();"
+        style="padding:8px 16px;border-radius:8px;border:2px solid var(--outline);background:var(--navy);color:var(--warm-white);font-weight:700;font-size:13px;cursor:pointer;">
+        View on NOSTR
+      </button>
+      <button onclick="document.getElementById('playerProfilePopup').remove();"
+        style="padding:8px 16px;border-radius:8px;border:2px solid var(--outline);background:var(--rust);color:var(--warm-white);font-weight:700;font-size:13px;cursor:pointer;">
+        Close
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(popup);
+
+  // Close on click outside
+  setTimeout(() => {
+    document.addEventListener('click', function closer(ev) {
+      if (!popup.contains(ev.target)) {
+        popup.remove();
+        document.removeEventListener('click', closer);
+      }
+    });
+  }, 100);
+}
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position:fixed;bottom:140px;left:50%;transform:translateX(-50%);
+    background:var(--felt-dark);border:2px solid var(--outline);border-radius:10px;
+    padding:10px 20px;color:var(--warm-white);font-size:14px;font-weight:700;
+    z-index:2000;box-shadow:0 4px 12px rgba(0,0,0,0.4);
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2000);
 }
 
 // ============================================================

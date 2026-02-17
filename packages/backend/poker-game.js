@@ -1095,6 +1095,29 @@ class PokerGame {
 
     return { success: true };
   }
+
+  /**
+   * Rebuy — reset player stack to STARTING_STACK.
+   * Only allowed when not in an active hand (folded or between hands).
+   */
+  rebuy(userId) {
+    const player = this.players.find(p => p && p.userId === userId);
+    if (!player) return { success: false, error: 'Player not found' };
+
+    // Can't rebuy mid-hand if you're still active
+    if (this.handInProgress && player.participatedThisHand && !player.folded) {
+      return { success: false, error: 'Cannot rebuy during an active hand' };
+    }
+
+    if (player.stack >= STARTING_STACK) {
+      return { success: false, error: 'Stack is already at or above starting amount' };
+    }
+
+    player.stack = STARTING_STACK;
+    console.log(`[PokerGame ${this.tableId}] ${player.username} rebought → ${STARTING_STACK} chips`);
+
+    return { success: true, chips: STARTING_STACK };
+  }
 }
 
 module.exports = PokerGame;
