@@ -1,15 +1,34 @@
 # SatoshiStacks Nginx Configuration
 # Replace DOMAIN_NAME with your actual domain
 # Location: /etc/nginx/sites-available/satoshistacks
+#
+# Rate limit zones are defined in /etc/nginx/conf.d/security-headers.conf (via harden.sh)
+
+# Upstream — single backend, but this makes it easy to add more later
+upstream satoshistacks_backend {
+    server 127.0.0.1:3001;
+    keepalive 16;
+}
 
 server {
     listen 80;
     listen [::]:80;
-    server_name DOMAIN_NAME www.DOMAIN_NAME _;
+    server_name DOMAIN_NAME www.DOMAIN_NAME;
 
-    # Poker app lives at /playmoney
+    # ─── Rate limiting & connection limits ────────────────────────────────
+    # Applied per-location below. Zones defined in security-headers.conf.
+
+    # ─── Request size limits ──────────────────────────────────────────────
+    client_max_body_size 1m;          # No large uploads expected for a poker app
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+
+    # ─── Poker app at /playmoney ──────────────────────────────────────────
     location /playmoney {
-        proxy_pass http://localhost:3001/;
+        limit_req zone=general burst=50 nodelay;
+        limit_conn addr 20;
+
+        proxy_pass http://satoshistacks_backend/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -18,11 +37,17 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 86400;
+
+        # Prevent proxy buffering for WebSocket
+        proxy_buffering off;
     }
 
-    # Socket.IO needs its own location for WebSocket upgrade
+    # ─── Socket.IO (WebSocket upgrade) ────────────────────────────────────
     location /socket.io/ {
-        proxy_pass http://localhost:3001/socket.io/;
+        limit_req zone=general burst=50 nodelay;
+        limit_conn addr 20;
+
+        proxy_pass http://satoshistacks_backend/socket.io/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -31,37 +56,88 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 86400;
+
+        proxy_buffering off;
+        proxy_cache off;
     }
 
-    # API proxy
+    # ─── API proxy (rate-limited) ─────────────────────────────────────────
     location /api/ {
-        proxy_pass http://localhost:3001/api/;
+        limit_req zone=api burst=20 nodelay;
+        limit_conn addr 10;
+
+        proxy_pass http://satoshistacks_backend/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts for API calls
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 30s;
     }
 
-    # Health check
+    # ─── Health check (no rate limit — used by monitoring) ────────────────
     location /health {
-        proxy_pass http://localhost:3001/health;
+        access_log off;
+        proxy_pass http://satoshistacks_backend/health;
     }
 
-    # Everything else — serve the Coming Soon page
+    # ─── Block common exploit paths ───────────────────────────────────────
+    location ~ /\.(git|env|htaccess|htpasswd) {
+        deny all;
+        return 404;
+    }
+
+    location ~* ^/(wp-admin|wp-login|wp-content|xmlrpc|phpmyadmin|administrator) {
+        deny all;
+        return 404;
+    }
+
+    # ─── Static assets — cache aggressively ───────────────────────────────
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        proxy_pass http://satoshistacks_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # ─── Landing page (everything else) ───────────────────────────────────
     location / {
         root /opt;
         try_files /coming-soon.html =404;
     }
 
-    # Security headers
+    # ─── Security headers (server-block level) ────────────────────────────
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
 
-    # Gzip compression
+    # ─── Gzip compression ────────────────────────────────────────────────
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_types text/plain text/css text/xml text/javascript
+               application/javascript application/json application/xml
+               application/rss+xml image/svg+xml;
+
+    # ─── Logging ──────────────────────────────────────────────────────────
+    access_log /var/log/nginx/satoshistacks-access.log;
+    error_log  /var/log/nginx/satoshistacks-error.log warn;
+}
+
+# Reject requests with no Host header or unknown domains
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
 }
 
 # HTTPS block will be auto-configured by Certbot:
