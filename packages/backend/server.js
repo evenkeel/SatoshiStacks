@@ -550,7 +550,7 @@ app.post('/api/auth/verify', (req, res) => {
       // Content isn't JSON profile data — that's fine
     }
 
-    // Upsert player in DB
+    // Upsert player in DB (with whatever we have so far)
     db.upsertNostrPlayer(pubkeyHex, npub, nostrName, nostrPicture);
 
     // Generate session token (24h expiry)
@@ -559,10 +559,11 @@ app.post('/api/auth/verify', (req, res) => {
     db.setSessionToken(pubkeyHex, sessionToken, sessionExpires);
 
     // Load player data for response
-    const player = db.getPlayerByPubkey(pubkeyHex);
+    let player = db.getPlayerByPubkey(pubkeyHex);
 
     console.log(`[Auth] NOSTR login: ${nostrName || npub.slice(0, 12) + '...'} (${pubkeyHex.slice(0, 8)}...)`);
 
+    // Respond immediately, then fetch relay profile in background
     res.json({
       success: true,
       sessionToken,
@@ -573,6 +574,11 @@ app.post('/api/auth/verify', (req, res) => {
         picture: player.nostr_picture,
         chips: player.current_chips
       }
+    });
+
+    // Background: fetch kind 0 profile from relays (non-blocking)
+    fetchNostrProfile(pubkeyHex).catch(err => {
+      console.log(`[Auth] Relay profile fetch failed for ${pubkeyHex.slice(0, 8)}...: ${err.message}`);
     });
   } catch (error) {
     console.error('[Auth] Verify error:', error);
@@ -612,6 +618,104 @@ app.get('/api/auth/session', (req, res) => {
     res.status(500).json({ success: false, error: 'Session check failed' });
   }
 });
+
+// ==================== RELAY PROFILE FETCH ====================
+
+const RELAYS = [
+  'wss://relay.damus.io',
+  'wss://relay.nostr.band',
+  'wss://nos.lol',
+  'wss://relay.primal.net'
+];
+
+/**
+ * Fetch kind 0 (profile metadata) from NOSTR relays.
+ * Updates DB with display name and picture if found.
+ * Non-blocking — called after auth response is sent.
+ */
+async function fetchNostrProfile(pubkeyHex) {
+  const WebSocket = (await import('ws')).default;
+
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('Relay timeout'));
+      }
+    }, 5000);
+
+    // Try relays in parallel, use first valid response
+    let attempts = 0;
+
+    for (const relayUrl of RELAYS) {
+      try {
+        const ws = new WebSocket(relayUrl);
+        const subId = crypto.randomBytes(8).toString('hex');
+
+        ws.on('open', () => {
+          // Request kind 0 for this pubkey
+          ws.send(JSON.stringify(['REQ', subId, { kinds: [0], authors: [pubkeyHex], limit: 1 }]));
+        });
+
+        ws.on('message', (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg[0] === 'EVENT' && msg[2] && msg[2].kind === 0) {
+              const profile = JSON.parse(msg[2].content);
+              const name = profile.display_name || profile.name || null;
+              const picture = profile.picture || null;
+
+              if (name && !resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+
+                // Update DB with relay profile
+                db.upsertNostrPlayer(pubkeyHex, npubEncode(pubkeyHex), name, picture);
+                console.log(`[Auth] Relay profile fetched: ${name} (${pubkeyHex.slice(0, 8)}...)`);
+
+                // Update in-memory game state if player is seated, and broadcast
+                for (const [tableId, game] of games) {
+                  const player = game.players.find(p => p && p.userId === pubkeyHex);
+                  if (player) {
+                    player.username = name;
+                    player.nostrName = name;
+                    player.nostrPicture = picture;
+                    broadcastGameState(tableId);
+                  }
+                }
+
+                // Also notify the player's socket directly with updated profile
+                const socketId = userSockets.get(pubkeyHex);
+                if (socketId) {
+                  io.to(socketId).emit('profile-updated', { name, picture });
+                }
+
+                resolve({ name, picture });
+              }
+            }
+          } catch (e) { /* ignore parse errors */ }
+        });
+
+        ws.on('error', () => { /* ignore relay errors */ });
+
+        // Close socket after 4 seconds regardless
+        setTimeout(() => {
+          try { ws.close(); } catch (e) {}
+          attempts++;
+          if (attempts >= RELAYS.length && !resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            reject(new Error('No profile found on any relay'));
+          }
+        }, 4000);
+
+      } catch (e) {
+        attempts++;
+      }
+    }
+  });
+}
 
 // ==================== WEBSOCKET ====================
 

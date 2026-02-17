@@ -1740,6 +1740,20 @@ function connectToServer() {
     nostrLogout();
   });
 
+  // Server fetched our NOSTR profile from relays — update local state
+  socket.on('profile-updated', ({ name, picture }) => {
+    if (name) {
+      myUsername = name;
+      myNostrName = name;
+      localStorage.setItem('ss_nostrName', name);
+      showToast(`Welcome, ${name}!`, 'info');
+    }
+    if (picture) {
+      myNostrPicture = picture;
+      localStorage.setItem('ss_nostrPicture', picture);
+    }
+  });
+
   socket.on('game-state', (state) => {
     prevGameState = gameState;
     gameState = state;
