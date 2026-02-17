@@ -3,64 +3,109 @@
 # Run as root after server-setup.sh
 # Usage: bash deploy-app.sh
 
-set -e  # Exit on error
+set -euo pipefail
 
-echo "Deploying SatoshiStacks..."
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║  SatoshiStacks Deploy                    ║"
+echo "╚══════════════════════════════════════════╝"
 echo ""
 
 APP_DIR="/opt/SatoshiStacks"
+BACKEND_DIR="$APP_DIR/packages/backend"
 
-# Clone repo if not already present
-if [ ! -d "$APP_DIR/.git" ]; then
-    echo "Cloning repository..."
-    cd /opt
-    git clone https://github.com/evenkeel/SatoshiStacks.git
+# ─── Pre-flight checks ───────────────────────────────────────────────────────
+if [ "$(id -u)" -ne 0 ]; then
+    echo "  ✗ This script must be run as root"
+    exit 1
 fi
 
-# Install backend dependencies
-echo "Installing backend dependencies..."
-cd $APP_DIR/packages/backend
+command -v node >/dev/null 2>&1 || { echo "  ✗ Node.js not found. Run server-setup.sh first."; exit 1; }
+command -v pm2  >/dev/null 2>&1 || { echo "  ✗ PM2 not found. Run server-setup.sh first."; exit 1; }
+
+# ─── 1. Clone Repository ─────────────────────────────────────────────────────
+if [ ! -d "$APP_DIR/.git" ]; then
+    echo "[1/5] Cloning repository..."
+    cd /opt
+    git clone https://github.com/evenkeel/SatoshiStacks.git
+else
+    echo "[1/5] Repository already present, pulling latest..."
+    cd "$APP_DIR"
+    git pull --ff-only || echo "  ⚠ Pull failed — check for local changes"
+fi
+
+# ─── 2. Install Dependencies ─────────────────────────────────────────────────
+echo "[2/5] Installing backend dependencies..."
+cd "$BACKEND_DIR"
 npm install --production
 
-# Create .env if it doesn't exist
-if [ ! -f ".env" ]; then
-    echo "Creating .env file..."
+# ─── 3. Environment Configuration ────────────────────────────────────────────
+echo "[3/5] Configuring environment..."
+if [ ! -f "$BACKEND_DIR/.env" ]; then
     ADMIN_TOKEN=$(openssl rand -hex 32)
-    cat > .env << EOF
+    cat > "$BACKEND_DIR/.env" << EOF
 PORT=3001
 NODE_ENV=production
 CORS_ORIGIN=https://satoshistacks.com,https://www.satoshistacks.com
 ADMIN_TOKEN=$ADMIN_TOKEN
 EOF
-    echo "Generated ADMIN_TOKEN: $ADMIN_TOKEN"
-    echo "Save this token — you'll need it for admin access."
+    chmod 600 "$BACKEND_DIR/.env"
+    echo "  ✓ .env created"
+    echo ""
+    echo "  ╔═══════════════════════════════════════════════════════════════════════╗"
+    echo "  ║  ADMIN_TOKEN: $ADMIN_TOKEN"
+    echo "  ║  Save this token — you'll need it for admin access.                  ║"
+    echo "  ╚═══════════════════════════════════════════════════════════════════════╝"
+    echo ""
+else
+    chmod 600 "$BACKEND_DIR/.env"
+    echo "  ✓ .env already exists (permissions secured)"
 fi
 
-# Stop existing PM2 process if running
-echo "Stopping existing PM2 processes..."
+# ─── 4. Start Application ────────────────────────────────────────────────────
+echo "[4/5] Starting application with PM2..."
 pm2 delete satoshistacks 2>/dev/null || true
 
-# Start with PM2
-echo "Starting application..."
-pm2 start server.js --name satoshistacks
+cd "$BACKEND_DIR"
+pm2 start server.js \
+    --name satoshistacks \
+    --max-memory-restart 512M \
+    --exp-backoff-restart-delay=100
+
 pm2 save
 
-# Set up PM2 startup (auto-restart on reboot)
-echo "Configuring PM2 startup..."
+# ─── 5. PM2 Startup ──────────────────────────────────────────────────────────
+echo "[5/5] Configuring auto-restart on reboot..."
 pm2 startup systemd -u root --hp /root 2>/dev/null || true
 pm2 save
 
-# Show status
+# ─── Health Check ─────────────────────────────────────────────────────────────
 echo ""
-echo "PM2 Status:"
-pm2 status
+echo "Waiting for app to start..."
+sleep 3
 
+if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+    echo "  ✓ Health check passed (http://localhost:3001/health)"
+else
+    echo "  ⚠ Health check failed — check: pm2 logs satoshistacks"
+fi
+
+# ─── Summary ──────────────────────────────────────────────────────────────────
 echo ""
-echo "Application deployed!"
+pm2 status
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║  Deployment Complete                     ║"
+echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "Next steps:"
 echo "  1. Configure Nginx (see nginx-config.template)"
 echo "  2. Upload coming-soon.html to /opt/coming-soon.html"
 echo "  3. Set up DNS A records"
-echo "  4. Run setup-ssl.sh for HTTPS"
+echo "  4. bash setup-ssl.sh yourdomain.com"
+echo ""
+echo "Useful commands:"
+echo "  pm2 logs satoshistacks     # View app logs"
+echo "  pm2 monit                  # Live monitoring"
+echo "  pm2 restart satoshistacks  # Restart app"
 echo ""
