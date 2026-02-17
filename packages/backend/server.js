@@ -846,6 +846,16 @@ io.on('connection', (socket) => {
           io.to(`table-${tableId}`).emit('hand-complete', { history: historyText });
         };
 
+        // Set up auto-rebuy callback — persist chip reset to database
+        game.onRebuy = (userId, chips) => {
+          try {
+            db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
+            console.log(`[Server] Auto-rebuy persisted: ${userId.slice(0, 8)}... → ${chips} chips`);
+          } catch (err) {
+            console.error(`[Server] Failed to persist rebuy for ${userId}:`, err.message);
+          }
+        };
+
         games.set(tableId, game);
       }
 

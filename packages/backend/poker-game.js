@@ -216,7 +216,7 @@ class PokerGame {
     // Create and shuffle deck (crypto-secure)
     this.deck = shuffleSecure(createDeck());
 
-    // Reset player states — sitting-out players don't participate
+    // Reset player states — sitting-out and busted players don't participate
     this.players.forEach(p => {
       if (p) {
         p.holeCards = [];
@@ -228,7 +228,7 @@ class PokerGame {
         p._foldPhase = null;
         p._hasBet = false;
         p._histShare = 0;
-        if (p.sittingOut) {
+        if (p.sittingOut || p.stack <= 0) {
           p.folded = true;
           p.participatedThisHand = false;
         } else {
@@ -637,7 +637,26 @@ class PokerGame {
     // Clean up players who left mid-hand
     this.cleanupPendingRemovals();
 
-    // Schedule next hand
+    // Auto-rebuy busted players (play-money: everyone gets back in)
+    let hadRebuy = false;
+    this.players.forEach(p => {
+      if (p && p.stack <= 0 && !p.sittingOut) {
+        p.stack = STARTING_STACK;
+        hadRebuy = true;
+        console.log(`[PokerGame ${this.tableId}] Auto-rebuy: ${p.username} → ${STARTING_STACK} chips`);
+        if (this.onRebuy) {
+          this.onRebuy(p.userId, STARTING_STACK);
+        }
+      }
+    });
+
+    // Broadcast rebuy state immediately so players see the chip reset
+    if (hadRebuy && this.onStateChange) {
+      this.onStateChange();
+    }
+
+    // Schedule next hand — extra pause after rebuys so players can see it
+    const nextHandDelay = hadRebuy ? 5000 : 3000;
     setTimeout(() => {
       const stillActive = this.players.filter(p => p !== null && p.stack > 0 && !p.sittingOut);
       if (stillActive.length >= 2) {
@@ -646,7 +665,7 @@ class PokerGame {
           this.onStateChange();
         }
       }
-    }, 3000);
+    }, nextHandDelay);
   }
 
   /**
