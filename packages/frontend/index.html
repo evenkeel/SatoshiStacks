@@ -1431,6 +1431,173 @@ Connect with NOSTR
 const NUM_SEATS = 6;
 const myTableId = 'table-1';
 
+// ============================================================
+//  SOUND EFFECTS (Web Audio API — no files needed)
+// ============================================================
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function isSoundEnabled() {
+  return typeof chatSettings !== 'undefined' && chatSettings.sound;
+}
+
+const SFX = {
+  deal() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Short white noise burst — card snap
+    const dur = 0.06;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 2000;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.3;
+    src.connect(hp).connect(gain).connect(ctx.destination);
+    src.start();
+  },
+
+  check() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Double tap — two short knocks
+    [0, 0.08].forEach(delay => {
+      const dur = 0.04;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        const t = i / ctx.sampleRate;
+        data[i] = Math.sin(2 * Math.PI * 180 * t) * Math.exp(-t * 80) * 0.5;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.35;
+      src.connect(gain).connect(ctx.destination);
+      src.start(ctx.currentTime + delay);
+    });
+  },
+
+  chip() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Metallic clink — bet/call/raise
+    const dur = 0.15;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const t = i / ctx.sampleRate;
+      data[i] = (Math.sin(2 * Math.PI * 3200 * t) * 0.3 +
+                 Math.sin(2 * Math.PI * 4800 * t) * 0.2 +
+                 (Math.random() * 2 - 1) * 0.15) * Math.exp(-t * 25);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.25;
+    src.connect(gain).connect(ctx.destination);
+    src.start();
+  },
+
+  fold() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Soft whoosh — cards sliding away
+    const dur = 0.18;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const t = i / ctx.sampleRate;
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 15) * 0.3;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 1500;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.3;
+    src.connect(lp).connect(gain).connect(ctx.destination);
+    src.start();
+  },
+
+  allIn() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Dramatic rising tone + chip cascade
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(200, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.3);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.4);
+    // Chip cascade on top
+    setTimeout(() => { SFX.chip(); }, 100);
+    setTimeout(() => { SFX.chip(); }, 200);
+  },
+
+  win() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Happy ascending notes
+    [440, 554, 659].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.25);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.12);
+      osc.stop(ctx.currentTime + i * 0.12 + 0.25);
+    });
+  },
+
+  timerWarning() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Short urgent beep
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = 880;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.08);
+  },
+
+  yourTurn() {
+    if (!isSoundEnabled()) return;
+    const ctx = getAudioCtx();
+    // Two-note attention chime
+    [660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.18, ctx.currentTime + i * 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.15);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.1);
+      osc.stop(ctx.currentTime + i * 0.1 + 0.15);
+    });
+  },
+};
+
 // NOSTR auth state — persisted in localStorage
 let mySessionToken = localStorage.getItem('ss_sessionToken') || null;
 let myPubkeyHex = localStorage.getItem('ss_pubkeyHex') || null;
@@ -1897,6 +2064,7 @@ function connectToServer() {
     if (type === 'header' && line.startsWith('Satoshi Stacks Hand')) {
       chipFlyTriggered = false;
       savedPotForAnimation = 0;
+      SFX.deal();
     }
     // Add to real-time chat play-by-play
     addPlayByPlay(line);
@@ -1914,11 +2082,11 @@ function connectToServer() {
           const p = gameState.players[i];
           if (p && p.username === name) {
             const vp = calculateVisualPosition(i + 1);
-            if (lower.includes('folds')) showBadge(vp, 'Fold');
-            else if (lower.includes('checks')) showBadge(vp, 'Check');
-            else if (lower.includes('calls')) showBadge(vp, 'Call');
-            else if (lower.includes('raises') || lower.includes('bets')) showBadge(vp, 'Raise');
-            else if (lower.includes('all-in')) showBadge(vp, 'All In');
+            if (lower.includes('all-in')) { showBadge(vp, 'All In'); SFX.allIn(); }
+            else if (lower.includes('folds')) { showBadge(vp, 'Fold'); SFX.fold(); }
+            else if (lower.includes('checks')) { showBadge(vp, 'Check'); SFX.check(); }
+            else if (lower.includes('calls')) { showBadge(vp, 'Call'); SFX.chip(); }
+            else if (lower.includes('raises') || lower.includes('bets')) { showBadge(vp, 'Raise'); SFX.chip(); }
             break;
           }
         }
@@ -1933,6 +2101,7 @@ function connectToServer() {
         if (!chipFlyTriggered) {
           chipFlyTriggered = true;
           animateChipsToWinner(name);
+          SFX.win();
         }
         for (let i = 0; i < NUM_SEATS; i++) {
           const p = gameState.players[i];
@@ -2094,6 +2263,7 @@ function renderCommunityCards() {
   const existing = el.children.length;
 
   // Only append NEW cards — never re-render existing ones (stagger effect)
+  if (cards.length > existing) SFX.deal();
   for (let i = existing; i < cards.length; i++) {
     const div = document.createElement('div');
     div.className = 'community-card';
@@ -2503,6 +2673,12 @@ function handleTimerStart(playerIndex, timeoutMs) {
     bar.style.background = lifeBarColor(100);
   }
 
+  // Play "your turn" chime if it's the local player's timer
+  const isMyTimer = gameState && gameState.currentPlayerIndex >= 0 &&
+    gameState.players[gameState.currentPlayerIndex]?.userId === myUserId;
+  if (isMyTimer) SFX.yourTurn();
+
+  let lastWarnSec = -1;
   const tick = () => {
     timeRemaining -= 100;
     const pct = (timeRemaining / TURN_TIME) * 100;
@@ -2511,6 +2687,14 @@ function handleTimerStart(playerIndex, timeoutMs) {
       bar.style.width = Math.max(0, pct) + '%';
       bar.classList.add('active');
       bar.style.background = lifeBarColor(pct);
+    }
+    // Timer warning beeps in last 5 seconds (one per second)
+    if (isMyTimer && timeRemaining <= 5000 && timeRemaining > 0) {
+      const sec = Math.ceil(timeRemaining / 1000);
+      if (sec !== lastWarnSec) {
+        lastWarnSec = sec;
+        SFX.timerWarning();
+      }
     }
     if (timeRemaining <= 0) {
       clearTimer();
