@@ -39,36 +39,46 @@ fi
 echo "[3/8] Configuring UFW firewall..."
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow ssh        # port 22 — MUST be before ufw enable
+ufw limit ssh        # port 22 — rate-limited (blocks brute force at firewall level)
 ufw allow 80/tcp     # HTTP
 ufw allow 443/tcp    # HTTPS
 ufw --force enable
-echo "  ✓ Firewall enabled (22, 80, 443 open)"
+echo "  ✓ Firewall enabled (22 rate-limited, 80, 443 open)"
 
 # ─── 4. fail2ban ────────────────────────────────────────────────────────────
 echo "[4/8] Configuring fail2ban..."
 tee /etc/fail2ban/jail.local << 'EOF'
 [DEFAULT]
-bantime = 86400
-findtime = 600
+bantime  = 86400
+bantime.increment = true
+bantime.factor = 2
+bantime.maxtime = 604800   ; 1 week max ban
+findtime  = 600
 maxretry = 3
 ignoreip = 127.0.0.1/8
 
 [sshd]
-enabled = true
-port = ssh
-filter = sshd
-logpath = /var/log/auth.log
+enabled  = true
+mode     = aggressive
+port     = ssh
+filter   = sshd
+logpath  = /var/log/auth.log
 maxretry = 3
-bantime = 86400
+bantime  = 86400
 
 [nginx-http-auth]
 enabled = true
+
+[nginx-limit-req]
+enabled  = true
+filter   = nginx-limit-req
+logpath  = /var/log/nginx/error.log
+maxretry = 10
 EOF
 
 systemctl enable fail2ban
 systemctl restart fail2ban
-echo "  ✓ fail2ban configured (ban after 3 tries, 24h ban)"
+echo "  ✓ fail2ban configured (incremental banning: 1d→2d→4d→...→1wk max)"
 
 # ─── 5. Automatic Security Updates ──────────────────────────────────────────
 echo "[5/8] Enabling automatic security updates..."
@@ -113,6 +123,7 @@ echo "[7/8] Setting up automated SQLite backups..."
 # Find the database
 DB_PATH=""
 for possible in \
+    "/opt/SatoshiStacks/packages/backend/db/satoshistacks.db" \
     "/home/poker/satoshistacks/packages/backend/db/satoshistacks.db" \
     "/root/satoshistacks/packages/backend/db/satoshistacks.db" \
     "/var/www/satoshistacks/packages/backend/db/satoshistacks.db"; do
@@ -170,7 +181,11 @@ echo "  PasswordAuthentication no"
 echo "  PermitRootLogin no"
 echo "  PermitEmptyPasswords no"
 echo "  MaxAuthTries 3"
+echo "  LoginGraceTime 30"
 echo "  X11Forwarding no"
+echo "  PubkeyAuthentication yes"
+echo "  AuthorizedKeysFile .ssh/authorized_keys"
+echo "  HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256"
 echo "  EOF"
 echo "  sudo sshd -t && sudo systemctl reload sshd"
 echo ""
