@@ -161,9 +161,16 @@ class PokerGame {
       player._pendingRemoval = true;
       console.log(`[PokerGame ${this.tableId}] ${player.username} marked for removal after hand`);
 
-      // If it was their turn, advance action
+      // If it was their turn, advance to next player or next phase
       if (this.currentPlayerIndex === idx) {
-        this.advanceAction();
+        this.clearActionTimer();
+        this.currentPlayerIndex = this.nextActing(idx);
+        if (this.currentPlayerIndex === -1 || this.isRoundDone()) {
+          this.advancePhase();
+        } else {
+          this.startActionTimer();
+        }
+        if (this.onStateChange) this.onStateChange();
       }
     } else {
       this.players[idx] = null;
@@ -291,6 +298,12 @@ class PokerGame {
    */
   processAction(userId, action, amount = 0) {
     if (!this.handInProgress) return { valid: false, error: 'No hand in progress' };
+
+    // Sanitize amount — must be a finite non-negative number
+    amount = Number(amount);
+    if (!Number.isFinite(amount) || amount < 0) amount = 0;
+    amount = Math.floor(amount);
+
     const player = this.players.find(p => p && p.userId === userId);
     if (!player) return { valid: false, error: 'Player not found' };
     const currentPlayer = this.players[this.currentPlayerIndex];
@@ -372,6 +385,7 @@ class PokerGame {
       }
 
       default:
+        this.startActionTimer();
         return { valid: false, error: 'Invalid action' };
     }
 
