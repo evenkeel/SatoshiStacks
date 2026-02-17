@@ -201,12 +201,17 @@ cp /opt/SatoshiStacks/packages/backend/db/satoshistacks.db \
 
 ## Security
 
-- SSH key auth only (no password login)
-- UFW firewall (SSH + Nginx only)
-- fail2ban for brute force protection
-- Let's Encrypt auto-renewal
+**Currently active:**
+- SSH key auth for root (password login disabled for root by default)
+- Let's Encrypt SSL with auto-renewal
 - Rate limiting on auth endpoints (10 req/min/IP)
 - `trust proxy` enabled for correct IP behind Nginx
+- HTTP automatically redirects to HTTPS (Certbot configured)
+
+**Recommended hardening (not yet enabled):**
+- UFW firewall: `ufw allow OpenSSH && ufw allow 'Nginx Full' && ufw --force enable`
+- fail2ban: `apt install -y fail2ban && systemctl enable --now fail2ban`
+- Disable password auth entirely: set `PasswordAuthentication no` in `/etc/ssh/sshd_config`
 
 ---
 
