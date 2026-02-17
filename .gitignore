@@ -9,9 +9,10 @@ packages/backend/dist/
 # Hand histories (generated at runtime)
 packages/backend/hands/
 
-# Environment
+# Environment (contains secrets)
 .env
 .env.local
+packages/backend/.env
 
 # Logs
 *.log
@@ -32,3 +33,41 @@ Thumbs.db
 *.tmp
 *.bak
 *.old
+tmp/
+output/
+
+# Database files (generated at runtime)
+packages/backend/db/*.db
+packages/backend/db/*.db-shm
+packages/backend/db/*.db-wal
+
+# Test artifacts
+screenshots/
+tests/
+packages/frontend/test*.html
+packages/frontend/client-seat2.html
+packages/frontend/player2.html
+packages/frontend/index-old.html
+packages/backend/test-*.js
+
+# Old planning docs (not needed in repo)
+PHASE-*.md
+PLAY-MONEY-ROADMAP.md
+TESTING-SOLUTIONS.md
+GUI-COMPARISON.md
+ANTI-CHEAT-*.md
+ADMIN-DASHBOARD-GUIDE.md
+ALLEN-DEPLOYMENT-TODO.md
+DEPLOYMENT-DAY-1-CHECKLIST.md
+IP-BANS-IMPLEMENTATION.md
+NO-ACCOUNTS-TRACKING.md
+SINGLE-TABLE-VISION.md
+UI-RESTORATION-COMPLETE.md
+deck-prompts/
+
+# Legacy single-file version
+poker.html
+
+# Future Lightning docs/integration (not needed for beta)
+docs/
+integration/

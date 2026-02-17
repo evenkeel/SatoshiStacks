@@ -1,0 +1,90 @@
+# SatoshiStacks Nginx Configuration
+# Replace DOMAIN_NAME with your actual domain
+# Location: /etc/nginx/sites-available/satoshistacks
+
+server {
+    listen 80;
+    listen [::]:80;
+    
+    server_name DOMAIN_NAME www.DOMAIN_NAME;
+    
+    # Redirect HTTP to HTTPS (will be enabled after SSL setup)
+    # return 301 https://$server_name$request_uri;
+    
+    # Root directory for frontend static files
+    root /home/poker/satoshistacks/packages/frontend;
+    index index.html;
+    
+    # Serve static files
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    
+    # Proxy WebSocket and API requests to Node.js backend
+    location /socket.io/ {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket timeout
+        proxy_read_timeout 86400;
+    }
+    
+    # Proxy API requests
+    location /api/ {
+        proxy_pass http://localhost:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # Admin dashboard
+    location /admin {
+        proxy_pass http://localhost:3001/admin;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Health check
+    location /health {
+        proxy_pass http://localhost:3001/health;
+    }
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
+    
+    # Cache static assets
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+}
+
+# HTTPS configuration (will be auto-configured by Certbot)
+# server {
+#     listen 443 ssl http2;
+#     listen [::]:443 ssl http2;
+#     server_name DOMAIN_NAME www.DOMAIN_NAME;
+#     
+#     # SSL certificates (managed by Certbot)
+#     # ssl_certificate /etc/letsencrypt/live/DOMAIN_NAME/fullchain.pem;
+#     # ssl_certificate_key /etc/letsencrypt/live/DOMAIN_NAME/privkey.pem;
+#     
+#     # All other config same as above...
+# }

@@ -1,0 +1,2758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Satoshi Stacks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+--felt: #5b8a72;
+--felt-dark: #4a7560;
+--felt-light: #6b9b82;
+--table-rim: #3d5a4a;
+--cream: #f5edd6;
+--cream-dark: #e8dfc8;
+--warm-white: #faf6ee;
+--teal: #5b9ea6;
+--teal-muted: #7ab3b9;
+--sage: #8cb49a;
+--mustard: #e8a838;
+--mustard-dark: #d49530;
+--rust: #d4714e;
+--rust-dark: #c06040;
+--warm-navy: #3a4a5c;
+--warm-navy-light: #4d6078;
+--outline: #3d3228;
+--outline-light: #5a4e42;
+--text-dark: #3d3228;
+--text-medium: #6b5e52;
+--red-suit: #d4514e;
+--black-suit: #3d3228;
+--stroke: 3px;
+--stroke-thin: 2px;
+--radius-sm: 8px;
+--radius-md: 14px;
+--radius-lg: 22px;
+--radius-xl: 32px;
+--radius-pill: 100px;
+--radius-round: 50%;
+--ease: cubic-bezier(0.34, 1.2, 0.64, 1);
+--transition: 0.35s var(--ease);
+--transition-slow: 0.5s var(--ease);
+--sat: env(safe-area-inset-top, 0px);
+--sab: env(safe-area-inset-bottom, 0px);
+}
+html, body {
+width: 100%;
+height: 100%;
+overflow: hidden;
+font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+font-weight: 700;
+color: var(--text-dark);
+background: #1e2730;
+-webkit-font-smoothing: antialiased;
+-webkit-tap-highlight-color: transparent;
+touch-action: manipulation;
+user-select: none;
+}
+/* === LAYOUT === */
+.game-container {
+width: 100%;
+height: 100%;
+display: flex;
+flex-direction: column;
+}
+/* === MIDDLE ROW: table fills most of screen === */
+.middle-row {
+flex: 1;
+display: flex;
+min-height: 0;
+position: relative;
+overflow: visible;
+}
+.table-area {
+flex: 1;
+position: relative;
+min-height: 0;
+overflow: visible;
+}
+/* ===================================================
+   POKER TABLE — 3D layered construction
+=================================================== */
+.poker-table {
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -62%);
+width: min(86vw, 1050px);
+height: min(56vh, 460px);
+border-radius: 42% / 50%;
+background: radial-gradient(ellipse 80% 70% at 50% 40%, rgba(107, 155, 130, 0.15) 0%, transparent 60%),
+            radial-gradient(ellipse 100% 100% at 50% 50%, #4d7d64 0%, #3e6b54 40%, #355c48 100%);
+display: flex;
+align-items: center;
+justify-content: center;
+overflow: visible;
+border: none;
+box-shadow:
+  inset 0 4px 12px rgba(0, 0, 0, 0.25),
+  inset 0 -2px 8px rgba(0, 0, 0, 0.1),
+  0 0 0 14px #6b5040,
+  0 -2px 0 14px #8a6b55,
+  0 0 0 18px #4a3628,
+  0 6px 0 18px #3a2a1e,
+  0 14px 40px rgba(0, 0, 0, 0.5),
+  0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.poker-table::before {
+content: '';
+position: absolute;
+inset: 0;
+border-radius: inherit;
+background: repeating-conic-gradient(rgba(255,255,255,0.008) 0% 25%, transparent 25% 50%) 0 0 / 4px 4px;
+pointer-events: none;
+z-index: 0;
+}
+.community-cards {
+display: flex;
+align-items: center;
+justify-content: flex-start;
+gap: clamp(4px, 0.8vw, 10px);
+z-index: 2;
+position: absolute;
+left: 50%;
+top: 46%;
+transform: translate(-50%, -50%);
+min-width: calc(5 * clamp(58px, 7.5vw, 100px) + 4 * clamp(4px, 0.8vw, 10px));
+}
+.community-card {
+transition: var(--transition-slow);
+}
+@keyframes dealCard {
+from { opacity: 0; transform: scale(0.3) translateY(-30px); }
+to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+/* Deal animation — cards flying from dealer to players */
+.deal-card-fly {
+position: absolute;
+z-index: 15;
+pointer-events: none;
+transition: top 0.25s cubic-bezier(0.2, 0.6, 0.35, 1),
+            left 0.25s cubic-bezier(0.2, 0.6, 0.35, 1),
+            transform 0.25s cubic-bezier(0.2, 0.6, 0.35, 1);
+}
+/* Chip stacks — top center of felt, above community cards */
+.table-pot-chips {
+position: absolute;
+top: 14%;
+left: 50%;
+transform: translateX(-50%);
+z-index: 3;
+opacity: 0;
+transition: var(--transition);
+pointer-events: none;
+display: flex;
+align-items: flex-end;
+justify-content: center;
+gap: 4px;
+max-height: 28%;
+max-width: 60%;
+overflow: hidden;
+}
+.table-pot-chips.visible { opacity: 1; }
+/* Pot number — below community cards */
+.table-pot-label {
+position: absolute;
+top: 64%;
+left: 50%;
+transform: translateX(-50%);
+z-index: 16;
+opacity: 0;
+transition: var(--transition);
+pointer-events: none;
+display: flex;
+align-items: center;
+justify-content: center;
+}
+.table-pot-label.visible { opacity: 1; }
+.pot-label {
+background: linear-gradient(135deg, rgba(40, 30, 22, 0.75), rgba(50, 38, 28, 0.75));
+padding: clamp(3px, 0.4vw, 5px) clamp(10px, 1.3vw, 18px);
+border-radius: var(--radius-pill);
+font-size: clamp(11px, 1.3vw, 17px);
+font-weight: 900;
+color: var(--cream);
+white-space: nowrap;
+position: relative;
+z-index: 5;
+border: 1px solid rgba(120, 100, 80, 0.3);
+box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+letter-spacing: 0.3px;
+}
+/* ==========================================
+   SEATS — ON the table perimeter
+========================================== */
+.seat {
+position: absolute;
+z-index: 15;
+transition: var(--transition);
+display: flex;
+align-items: center;
+}
+.seat-1 { top: 6%; left: 76%; transform: translate(-50%,-50%); flex-direction: row; }
+.seat-2 { top: 50%; left: 101%; transform: translate(-50%,-50%); flex-direction: row; }
+.seat-3 { top: 94%; left: 79%; transform: translate(-50%,-50%); flex-direction: row; }
+.seat-4 { top: 94%; left: 24%; transform: translate(-50%,-50%); flex-direction: row-reverse; }
+.seat-5 { top: 50%; left: -1%; transform: translate(-50%,-50%); flex-direction: row-reverse; }
+.seat-6 { top: 6%; left: 22%; transform: translate(-50%,-50%); flex-direction: row-reverse; }
+/* === AVATAR === */
+.player-avatar-wrap {
+position: relative;
+width: clamp(48px, 7vw, 72px);
+height: clamp(48px, 7vw, 72px);
+flex-shrink: 0;
+z-index: 3;
+}
+.player-avatar {
+width: 100%;
+height: 100%;
+border-radius: 50%;
+overflow: hidden;
+transition: var(--transition);
+filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5));
+}
+.player-avatar img {
+width: 100%;
+height: 100%;
+object-fit: contain;
+transition: transform 0.35s var(--ease);
+}
+.player-avatar .avatar-initial {
+width: 100%;
+height: 100%;
+border-radius: 50%;
+display: flex;
+align-items: center;
+justify-content: center;
+font-size: clamp(18px, 3vw, 28px);
+font-weight: 900;
+color: var(--warm-white);
+border: 3px solid var(--outline);
+text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+.seat-6 .player-avatar img { transform: scaleX(-1); }
+/* Dealer button */
+.np-dealer {
+position: absolute;
+display: flex;
+align-items: center;
+justify-content: center;
+width: 22px;
+height: 22px;
+border-radius: var(--radius-round);
+background: linear-gradient(135deg, #f5edd6, #e8dfc8);
+border: 2px solid var(--outline);
+font-size: 9px;
+font-weight: 900;
+color: var(--text-dark);
+box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5);
+text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+z-index: 3;
+}
+.np-pos-1 .np-dealer { bottom: -14px; left: -8px; }
+.np-pos-2 .np-dealer { bottom: -14px; left: -8px; }
+.np-pos-3 .np-dealer { top: -14px; left: -8px; }
+.np-pos-4 .np-dealer { top: -14px; right: -8px; }
+.np-pos-5 .np-dealer { bottom: -14px; right: -8px; }
+.np-pos-6 .np-dealer { bottom: -14px; right: -8px; }
+/* === PLAYER NAMEPLATE === */
+.player-nameplate {
+position: absolute;
+display: flex;
+align-items: center;
+gap: 6px;
+background: linear-gradient(135deg, rgba(18, 24, 30, 0.92), rgba(30, 38, 48, 0.92));
+padding: 5px 14px 5px 8px;
+border-radius: var(--radius-pill);
+border: 1.5px solid rgba(120, 100, 80, 0.4);
+backdrop-filter: blur(8px);
+-webkit-backdrop-filter: blur(8px);
+z-index: 16;
+white-space: nowrap;
+transform: translate(-50%, -50%);
+box-shadow: 0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+transition: var(--transition);
+pointer-events: none;
+}
+.player-nameplate .np-icon {
+width: 20px;
+height: 20px;
+flex-shrink: 0;
+line-height: 0;
+}
+.player-nameplate .np-name {
+font-size: 13px;
+font-weight: 800;
+color: var(--cream);
+letter-spacing: 0.3px;
+text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+.player-nameplate .np-divider {
+width: 1px;
+height: 16px;
+background: rgba(255,255,255,0.15);
+flex-shrink: 0;
+}
+.player-nameplate .np-amount {
+font-size: 15px;
+font-weight: 900;
+color: var(--mustard);
+text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+letter-spacing: 0.3px;
+}
+.player-nameplate.hero {
+border-color: rgba(232, 168, 56, 0.5);
+box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 12px rgba(232, 168, 56, 0.15), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.player-nameplate.folded-np { opacity: 0.35; }
+/* Life bar */
+.np-life-bar {
+position: absolute;
+top: 0;
+left: 0;
+bottom: 0;
+width: 100%;
+background: linear-gradient(135deg, rgba(76,175,80,0.50), rgba(76,175,80,0.35));
+border-radius: inherit;
+transition: width 0.1s linear;
+z-index: 0;
+pointer-events: none;
+opacity: 0;
+}
+.np-life-bar.active { opacity: 1; }
+/* Active player nameplate */
+.player-nameplate.active-np {
+border-color: rgba(232, 168, 56, 0.6);
+box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 16px rgba(232,168,56,0.25), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.np-content {
+display: flex;
+align-items: center;
+gap: inherit;
+position: relative;
+z-index: 1;
+}
+/* Nameplate positions */
+.np-pos-1 { top: 2%; left: 66%; }
+.np-pos-2 { top: 50%; left: 90%; }
+.np-pos-3 { top: 98%; left: 66%; }
+.np-pos-4 { top: 98%; left: 34%; }
+.np-pos-5 { top: 50%; left: 10%; }
+.np-pos-6 { top: 2%; left: 34%; }
+/* Nameplate action announcement overlay */
+.np-action {
+position: absolute;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+display: flex;
+align-items: center;
+justify-content: center;
+font-size: 13px;
+font-weight: 900;
+text-transform: uppercase;
+letter-spacing: 1px;
+border-radius: inherit;
+z-index: 5;
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.2s ease;
+}
+.np-action.visible { opacity: 1; }
+.np-action.fold { background: var(--rust); color: var(--warm-white); }
+.np-action.check, .np-action.call, .np-action.raise, .np-action.bet, .np-action.allin, .np-action.win, .np-action.stacking {
+background: var(--sage);
+color: var(--text-dark);
+}
+/* === ACTIVE TURN: pulsing glow === */
+.player-avatar-wrap.active-turn .player-avatar {
+filter: drop-shadow(0 0 16px rgba(232, 168, 56, 0.6))
+       drop-shadow(0 0 32px rgba(232, 168, 56, 0.3))
+       drop-shadow(0 5px 14px rgba(0, 0, 0, 0.5));
+}
+.player-avatar-wrap.active-turn .player-avatar img,
+.player-avatar-wrap.active-turn .player-avatar .avatar-initial {
+animation: avatar-pulse 1.8s ease-in-out infinite;
+}
+@keyframes avatar-pulse {
+0%, 100% { transform: scale(1) translateY(0); }
+50%      { transform: scale(1.06) translateY(-3px); }
+}
+.seat-6 .player-avatar-wrap.active-turn .player-avatar img,
+.seat-6 .player-avatar-wrap.active-turn .player-avatar .avatar-initial {
+animation: avatar-pulse-mirror 1.8s ease-in-out infinite;
+}
+@keyframes avatar-pulse-mirror {
+0%, 100% { transform: scaleX(-1) scale(1) translateY(0); }
+50%      { transform: scaleX(-1) scale(1.06) translateY(-3px); }
+}
+/* Folded */
+.seat.folded .player-avatar {
+opacity: 0.3;
+filter: grayscale(0.6) drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+}
+/* === BET DISPLAY === */
+.player-bet {
+position: absolute;
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 2px;
+opacity: 0;
+transition: var(--transition);
+z-index: 4;
+transform: translate(-50%, -50%);
+}
+.player-bet.visible { opacity: 1; }
+.player-bet .chip-stack { justify-content: center; }
+.bet-pos-1 { top: 24%; left: 62%; }
+.bet-pos-2 { top: 50%; left: 72%; }
+.bet-pos-3 { top: 76%; left: 62%; }
+.bet-pos-4 { top: 76%; left: 38%; }
+.bet-pos-5 { top: 50%; left: 28%; }
+.bet-pos-6 { top: 24%; left: 38%; }
+/* Cards peeking from nameplate */
+.np-cards {
+position: absolute;
+display: flex;
+gap: 4px;
+bottom: 60%;
+left: 50%;
+transform: translateX(-50%);
+z-index: 17;
+pointer-events: none;
+}
+.np-cards .card { clip-path: inset(0 0 40% 0); }
+.np-cards .card.small {
+width: clamp(22px, 2.8vw, 36px);
+height: clamp(32px, 4vw, 52px);
+}
+.player-nameplate.hero .np-cards .card {
+width: clamp(34px, 4.5vw, 56px);
+height: clamp(49px, 6.5vw, 81px);
+clip-path: inset(0 0 35% 0);
+border-radius: clamp(4px, 0.5vw, 6px);
+box-shadow: none;
+}
+.np-cards .card .card-corner.top-left {
+top: clamp(2px, 0.3vw, 4px);
+left: clamp(3px, 0.4vw, 5px);
+}
+.np-cards .card .card-corner .card-rank { font-size: clamp(9px, 1vw, 12px); }
+.np-cards .card .card-corner .card-suit { font-size: clamp(7px, 0.8vw, 10px); }
+.np-cards .card .card-pip { font-size: clamp(16px, 2vw, 24px); }
+/* Folded hero cards — silhouette on hover */
+.player-nameplate.hero.folded-np {
+pointer-events: auto;
+cursor: pointer;
+}
+.np-cards.folded-peek {
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.2s ease;
+}
+.np-cards.folded-peek .card { filter: brightness(0.3) saturate(0); }
+.player-nameplate.hero.folded-np:hover .np-cards.folded-peek { opacity: 1; }
+.player-nameplate.hero.folded-np:hover { opacity: 0.6; }
+.np-amount-wrap {
+display: flex;
+align-items: center;
+}
+/* === CARDS === */
+.card {
+position: relative;
+width: clamp(58px, 7.5vw, 100px);
+height: clamp(84px, 10.9vw, 145px);
+border-radius: clamp(6px, 0.8vw, 10px);
+border: 2px solid var(--outline);
+background: var(--warm-white);
+display: flex;
+align-items: center;
+justify-content: center;
+font-family: inherit;
+transition: var(--transition);
+flex-shrink: 0;
+box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.card.small {
+width: 30px;
+height: 43px;
+border-radius: var(--radius-sm);
+box-shadow: none;
+flex-direction: column;
+border-width: var(--stroke-thin);
+}
+.card.face-down { background: var(--teal); }
+.card.face-down::after {
+content: '';
+position: absolute;
+inset: clamp(3px, 0.3vw, 4px);
+border-radius: clamp(4px, 0.5vw, 6px);
+border: 2px solid rgba(255,255,255,0.2);
+}
+.card.small.face-down::after {
+inset: 3px;
+border-radius: 4px;
+border-width: 1.5px;
+}
+.card-corner {
+position: absolute;
+display: flex;
+flex-direction: column;
+align-items: center;
+line-height: 1;
+}
+.card-corner.top-left {
+top: clamp(3px, 0.4vw, 6px);
+left: clamp(4px, 0.5vw, 7px);
+}
+.card-corner.bottom-right {
+bottom: clamp(3px, 0.4vw, 6px);
+right: clamp(4px, 0.5vw, 7px);
+transform: rotate(180deg);
+}
+.card-corner .card-rank {
+font-size: clamp(11px, 1.2vw, 15px);
+font-weight: 900;
+}
+.card-corner .card-suit {
+font-size: clamp(9px, 1vw, 13px);
+}
+.card-center {
+display: flex;
+align-items: center;
+justify-content: center;
+}
+.card-pip {
+font-size: clamp(22px, 3.5vw, 44px);
+line-height: 1;
+}
+.card.small .card-rank { font-size: 12px; font-weight: 900; line-height: 1; }
+.card.small .card-suit { font-size: 10px; line-height: 1; }
+.card.red .card-rank, .card.red .card-suit, .card.red .card-pip { color: var(--red-suit); }
+.card.black .card-rank, .card.black .card-suit, .card.black .card-pip { color: var(--black-suit); }
+/* === CONTROLS === */
+.controls-area {
+position: fixed;
+bottom: 0;
+right: 0;
+width: 50vw;
+display: flex;
+align-items: center;
+justify-content: center;
+padding: 8px 24px;
+padding-bottom: calc(8px + var(--sab));
+z-index: 40;
+pointer-events: none;
+transition: opacity 0.25s ease, transform 0.3s var(--ease);
+opacity: 0;
+transform: translateY(12px);
+overflow-y: auto;
+overflow-x: hidden;
+}
+.controls-area.visible {
+opacity: 1;
+transform: translateY(0);
+pointer-events: auto;
+}
+.bet-controls {
+display: flex;
+flex-direction: column;
+gap: 8px;
+width: 100%;
+}
+.bet-presets {
+display: flex;
+gap: 6px;
+justify-content: flex-end;
+flex-wrap: wrap;
+}
+.bet-preset {
+padding: 6px 14px;
+border-radius: var(--radius-pill);
+border: var(--stroke-thin) solid var(--outline-light);
+background: var(--warm-navy-light);
+color: var(--cream);
+font-family: inherit;
+font-size: 12px;
+font-weight: 700;
+cursor: pointer;
+transition: var(--transition);
+}
+.bet-preset:hover {
+background: var(--teal);
+border-color: var(--teal);
+}
+.bet-preset:active { transform: scale(0.95); }
+.slider-row {
+display: flex;
+align-items: center;
+gap: 10px;
+}
+.bet-slider {
+flex: 1;
+-webkit-appearance: none;
+appearance: none;
+height: 7px;
+border-radius: var(--radius-pill);
+background: var(--warm-navy-light);
+border: 1.5px solid var(--outline-light);
+outline: none;
+}
+.bet-slider::-webkit-slider-thumb {
+-webkit-appearance: none;
+width: 26px;
+height: 26px;
+border-radius: var(--radius-round);
+background: var(--mustard);
+border: var(--stroke-thin) solid var(--outline);
+cursor: pointer;
+}
+.bet-amount-input {
+width: 80px;
+text-align: center;
+font-size: 16px;
+font-weight: 900;
+color: var(--mustard);
+background: var(--warm-navy-light);
+border: 2px solid var(--outline-light);
+border-radius: var(--radius-sm);
+padding: 4px 6px;
+font-family: inherit;
+outline: none;
+}
+.bet-amount-input:focus { border-color: var(--mustard); }
+.action-buttons {
+display: flex;
+gap: 8px;
+justify-content: center;
+}
+.action-btn {
+flex: 1;
+padding: 14px 8px;
+border-radius: var(--radius-lg);
+border: var(--stroke-thin) solid var(--outline);
+font-family: inherit;
+font-size: 15px;
+font-weight: 800;
+cursor: pointer;
+transition: var(--transition);
+text-transform: uppercase;
+letter-spacing: 0.5px;
+text-align: center;
+}
+.action-btn:active { transform: scale(0.95); }
+.action-btn:disabled {
+opacity: 0.4;
+cursor: not-allowed;
+}
+.btn-fold {
+background: var(--warm-navy-light);
+color: var(--cream);
+}
+.btn-fold:hover:not(:disabled) { background: var(--warm-navy); }
+.btn-check-call {
+background: var(--teal);
+color: var(--warm-white);
+}
+.btn-check-call:hover:not(:disabled) { background: var(--teal-muted); }
+.btn-raise {
+background: var(--mustard);
+color: var(--text-dark);
+}
+.btn-raise:hover:not(:disabled) { background: var(--mustard-dark); }
+/* Pre-action buttons */
+.pre-action-bar {
+position: fixed;
+bottom: calc(clamp(150px, 24vh, 240px) / 2);
+left: min(34vw + 8px, 428px);
+transform: translateY(50%);
+padding: 6px;
+display: flex;
+flex-direction: column;
+gap: 5px;
+z-index: 51;
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.25s ease;
+}
+.pre-action-bar.visible {
+opacity: 1;
+pointer-events: auto;
+}
+.pre-action-btn {
+padding: 9px 20px;
+border-radius: var(--radius-pill);
+border: 1.5px solid var(--outline-light);
+background: rgba(24, 36, 52, 0.85);
+color: var(--cream);
+font-size: 11px;
+font-weight: 700;
+cursor: pointer;
+opacity: 0.55;
+transition: all 0.15s ease;
+text-transform: uppercase;
+letter-spacing: 0.8px;
+backdrop-filter: blur(8px);
+text-align: left;
+}
+.pre-action-btn:hover {
+opacity: 0.85;
+border-color: var(--cream);
+}
+.pre-action-btn.active {
+opacity: 1;
+border-color: var(--mustard);
+background: rgba(232, 195, 56, 0.12);
+color: var(--mustard);
+}
+.waiting-message { display: none; }
+/* === CHIP STACKS === */
+.chip-stack {
+display: flex;
+align-items: flex-end;
+gap: 3px;
+}
+.chip-stack-column {
+position: relative;
+display: flex;
+flex-direction: column;
+}
+.chip-stack-item {
+position: absolute;
+left: 0;
+line-height: 0;
+filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+}
+.chip-stack-count {
+position: absolute;
+left: 50%;
+transform: translateX(-50%);
+font-size: 10px;
+font-weight: 900;
+color: var(--cream);
+text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+white-space: nowrap;
+}
+.chip-pile { position: relative; }
+.chip-pile-item {
+position: absolute;
+line-height: 0;
+filter: drop-shadow(0 2px 3px rgba(0,0,0,0.45));
+}
+/* Flying chip animation */
+.chip-fly-container {
+position: absolute;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+pointer-events: none;
+z-index: 20;
+}
+.chip-fly-group {
+position: absolute;
+pointer-events: none;
+transition: top 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            left 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            opacity 0.4s ease,
+            transform 0.4s ease;
+}
+/* === BACKGROUND DECORATION — faint lightning bolts === */
+.bg-decor {
+position: absolute;
+inset: 0;
+z-index: 0;
+pointer-events: none;
+overflow: hidden;
+}
+.bg-decor svg {
+position: absolute;
+pointer-events: none;
+opacity: 0;
+transition: opacity 0.3s ease-in;
+}
+.bg-decor svg.bolt-visible {
+opacity: 1;
+transition: opacity 0.1s ease-in;
+}
+.bg-decor svg.bolt-fade {
+opacity: 0;
+transition: opacity 1.5s ease-out;
+}
+/* === CHAT BOX === */
+.chat-box {
+position: fixed;
+bottom: 0;
+left: 0;
+width: 34vw;
+max-width: 420px;
+height: clamp(150px, 24vh, 240px);
+background: #F3EBD9;
+border: 3px solid #2B2A28;
+border-radius: 18px 18px 0 0;
+display: flex;
+flex-direction: column;
+z-index: 50;
+font-family: 'Nunito', system-ui, sans-serif;
+overflow: hidden;
+transition: height 0.3s var(--ease);
+}
+.chat-box.collapsed { height: 40px; }
+.chat-box.collapsed .chat-body,
+.chat-box.collapsed .chat-history,
+.chat-box.collapsed .chat-settings,
+.chat-box.collapsed .chat-input-area { display: none; }
+.chat-tabs {
+display: flex;
+background: #E9DFC9;
+border-bottom: 2px solid #2B2A28;
+padding: 4px;
+gap: 3px;
+border-radius: 16px 16px 0 0;
+flex-shrink: 0;
+cursor: pointer;
+}
+.chat-tab {
+flex: 1;
+padding: 5px 0;
+border-radius: 12px;
+border: 2px solid transparent;
+font-family: 'Nunito', system-ui, sans-serif;
+font-size: 12px;
+font-weight: 800;
+text-align: center;
+cursor: pointer;
+background: transparent;
+color: #2B2A28;
+transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.chat-tab:hover { background: rgba(0,0,0,0.05); }
+.chat-tab.active {
+background: #3C8C84;
+border-color: #2B2A28;
+color: #F8F3EA;
+}
+.chat-body {
+flex: 1;
+overflow-y: auto;
+padding: 6px 10px;
+display: flex;
+flex-direction: column;
+gap: 2px;
+min-height: 0;
+}
+.chat-body::-webkit-scrollbar { width: 5px; }
+.chat-body::-webkit-scrollbar-thumb {
+background: #c4b9a6;
+border-radius: 3px;
+}
+.chat-msg {
+font-size: 12px;
+color: #2B2A28;
+line-height: 1.35;
+font-weight: 700;
+}
+.chat-msg .chat-author {
+font-weight: 900;
+color: #3C8C84;
+}
+.chat-msg.system-msg {
+color: #6B645A;
+font-style: italic;
+font-weight: 600;
+font-size: 11px;
+}
+.chat-msg.play-by-play {
+color: #9B9488;
+font-style: italic;
+font-weight: 600;
+font-size: 11px;
+}
+.chat-box.hide-pbp .chat-msg.play-by-play { display: none; }
+.chat-box.hide-chat .chat-msg:not(.play-by-play):not(.system-msg) { display: none; }
+.chat-history {
+flex: 1;
+overflow-y: auto;
+padding: 0;
+display: none;
+flex-direction: column;
+min-height: 0;
+}
+.chat-history::-webkit-scrollbar { width: 5px; }
+.chat-history::-webkit-scrollbar-thumb {
+background: #c4b9a6;
+border-radius: 3px;
+}
+.chat-history.visible { display: flex; }
+.history-nav {
+display: flex;
+align-items: center;
+gap: 4px;
+padding: 4px 8px;
+background: #E9DFC9;
+border-bottom: 1.5px solid rgba(43,42,40,0.2);
+flex-shrink: 0;
+}
+.history-nav-btn {
+background: #F8F3EA;
+border: 1.5px solid #2B2A28;
+border-radius: 8px;
+padding: 2px 8px;
+font-size: 11px;
+font-weight: 800;
+cursor: pointer;
+font-family: 'Nunito', system-ui, sans-serif;
+color: #2B2A28;
+transition: background 0.15s;
+}
+.history-nav-btn:hover { background: #e8dfc8; }
+.history-nav-btn:disabled {
+opacity: 0.3;
+cursor: default;
+}
+.history-copy-btn {
+margin-left: auto;
+background: #D4A017;
+}
+.history-copy-btn:hover { background: #e8b030; }
+.history-copy-btn.copied {
+background: #3C8C84;
+color: #F8F3EA;
+}
+.history-hand-label {
+font-size: 11px;
+font-weight: 800;
+color: #2B2A28;
+flex: 1;
+text-align: center;
+}
+.history-text {
+flex: 1;
+overflow-y: auto;
+padding: 6px 8px;
+margin: 0;
+font-family: 'Nunito', monospace;
+font-size: 10px;
+font-weight: 600;
+color: #2B2A28;
+line-height: 1.4;
+white-space: pre-wrap;
+word-break: break-word;
+}
+.history-text::-webkit-scrollbar { width: 5px; }
+.history-text::-webkit-scrollbar-thumb {
+background: #c4b9a6;
+border-radius: 3px;
+}
+.chat-settings {
+flex: 1;
+overflow-y: auto;
+padding: 8px 10px;
+display: none;
+flex-direction: column;
+gap: 6px;
+min-height: 0;
+}
+.chat-settings.visible { display: flex; }
+.setting-row {
+display: flex;
+align-items: center;
+justify-content: space-between;
+font-size: 12px;
+font-weight: 700;
+color: #2B2A28;
+}
+.setting-toggle {
+width: 40px;
+height: 22px;
+border-radius: 11px;
+background: #c4b9a6;
+border: 2px solid #2B2A28;
+cursor: pointer;
+position: relative;
+transition: background 0.2s;
+}
+.setting-toggle.on { background: #3C8C84; }
+.setting-toggle::after {
+content: '';
+position: absolute;
+top: 2px;
+left: 2px;
+width: 14px;
+height: 14px;
+border-radius: 50%;
+background: #F8F3EA;
+border: 1.5px solid #2B2A28;
+transition: left 0.2s;
+}
+.setting-toggle.on::after { left: 20px; }
+.chat-input-area {
+display: flex;
+gap: 5px;
+padding: 5px 6px;
+border-top: 2px solid #2B2A28;
+flex-shrink: 0;
+}
+.chat-input {
+flex: 1;
+padding: 5px 12px;
+border-radius: 14px;
+border: 2px solid #2B2A28;
+background: #F8F3EA;
+font-family: 'Nunito', system-ui, sans-serif;
+font-size: 12px;
+font-weight: 700;
+color: #2B2A28;
+outline: none;
+}
+.chat-input::placeholder {
+color: #6B645A;
+font-weight: 700;
+}
+.chat-send-btn {
+padding: 5px 14px;
+border-radius: 14px;
+border: 2px solid #2B2A28;
+background: #D4A017;
+font-family: 'Nunito', system-ui, sans-serif;
+font-size: 12px;
+font-weight: 900;
+color: #2B2A28;
+cursor: pointer;
+transition: background 0.15s;
+}
+.chat-send-btn:hover { background: #e8b030; }
+.chat-collapse-btn {
+position: absolute;
+top: 5px;
+right: 8px;
+width: 24px;
+height: 24px;
+border-radius: 50%;
+border: 2px solid #2B2A28;
+background: #E9DFC9;
+cursor: pointer;
+display: flex;
+align-items: center;
+justify-content: center;
+font-size: 14px;
+font-weight: 900;
+color: #2B2A28;
+z-index: 2;
+transition: transform 0.2s;
+}
+.chat-box.collapsed .chat-collapse-btn { transform: rotate(180deg); }
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+.poker-table { width: 92vw; }
+.player-nameplate .np-name { font-size: 11px; }
+.player-nameplate .np-amount { font-size: 13px; }
+.player-nameplate .np-icon { width: 16px; height: 16px; }
+.player-nameplate { padding: 4px 12px 4px 7px; gap: 5px; }
+.seat-1 { top: 7%; left: 75%; }
+.seat-2 { top: 50%; left: 97%; }
+.seat-3 { top: 93%; left: 75%; }
+.seat-4 { top: 93%; left: 25%; }
+.seat-5 { top: 50%; left: 3%; }
+.seat-6 { top: 7%; left: 25%; }
+}
+@media (max-width: 600px) {
+.poker-table {
+  width: 96vw;
+  box-shadow:
+    inset 0 3px 10px rgba(0,0,0,0.25), inset 0 -2px 6px rgba(0,0,0,0.1),
+    0 0 0 10px #6b5040, 0 -2px 0 10px #8a6b55, 0 0 0 13px #4a3628,
+    0 5px 0 13px #3a2a1e, 0 10px 30px rgba(0,0,0,0.5);
+}
+.player-nameplate .np-name { font-size: 10px; }
+.player-nameplate .np-amount { font-size: 12px; }
+.player-nameplate .np-icon { width: 14px; height: 14px; }
+.player-nameplate { padding: 3px 10px 3px 6px; gap: 4px; }
+.player-nameplate .np-divider { height: 12px; }
+.chip-stack { gap: 2px; }
+.chip-stack-count { font-size: 8px; }
+.controls-area { width: 60vw; padding: 8px 14px; }
+.action-btn { padding: 12px 6px; font-size: 13px; }
+.seat-1 { top: 8%; left: 75%; }
+.seat-2 { top: 50%; left: 96%; }
+.seat-3 { top: 92%; left: 75%; }
+.seat-4 { top: 92%; left: 25%; }
+.seat-5 { top: 50%; left: 4%; }
+.seat-6 { top: 8%; left: 25%; }
+.bet-preset { padding: 4px 9px; font-size: 10px; }
+.np-cards { gap: 3px; }
+.chat-box { width: 36vw; height: clamp(140px, 25vh, 260px); }
+.chat-tab { font-size: 11px; }
+.chat-msg { font-size: 11px; }
+.pre-action-bar { left: min(36vw + 6px, 428px); }
+.pre-action-btn { padding: 7px 14px; font-size: 10px; }
+}
+@media (max-width: 480px) {
+.chat-box { display: none !important; }
+.poker-table { width: 98vw; transform: translate(-50%, -56%); }
+.controls-area { width: 100vw; right: 0; padding: 6px 12px; }
+.action-btn { padding: 12px 6px; font-size: 12px; }
+.bet-preset { padding: 5px 10px; font-size: 10px; }
+.bet-slider::-webkit-slider-thumb { width: 28px; height: 28px; }
+.bet-slider { height: 8px; }
+.bet-amount-input { width: 65px; font-size: 14px; padding: 4px 6px; }
+.player-nameplate .np-name { font-size: 9px; }
+.player-nameplate .np-amount { font-size: 10px; }
+.player-nameplate .np-icon { width: 12px; height: 12px; }
+.player-nameplate { padding: 2px 8px 2px 5px; gap: 3px; }
+.player-nameplate .np-divider { height: 10px; }
+.chip-stack { gap: 1px; }
+.chip-stack-count { font-size: 7px; }
+.np-cards { gap: 2px; }
+.seat-1 { top: 8%; left: 74%; }
+.seat-2 { top: 50%; left: 95%; }
+.seat-3 { top: 92%; left: 74%; }
+.seat-4 { top: 92%; left: 26%; }
+.seat-5 { top: 50%; left: 5%; }
+.seat-6 { top: 8%; left: 26%; }
+.pre-action-bar { display: none !important; }
+}
+@media (max-height: 700px) {
+.poker-table { height: min(50vh, 380px); }
+}
+@media (max-height: 550px) {
+.poker-table { height: min(55vh, 320px); }
+.chat-box { display: none !important; }
+.controls-area { width: 100vw; right: 0; padding: 6px 12px; }
+.pre-action-bar { display: none !important; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+.poker-table { width: 80vw; height: 65vh; }
+.chat-box { display: none !important; }
+.controls-area { width: 100vw; right: 0; padding: 6px 12px; }
+.action-btn { padding: 8px 6px; font-size: 11px; }
+.seat-1 { top: 8%; left: 75%; }
+.seat-2 { top: 50%; left: 96%; }
+.seat-3 { top: 92%; left: 75%; }
+.seat-4 { top: 92%; left: 25%; }
+.seat-5 { top: 50%; left: 4%; }
+.seat-6 { top: 8%; left: 25%; }
+.pre-action-bar { display: none !important; }
+}
+/* Toast animations */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(100px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(100px); }
+}
+/* === NOSTR LOGIN OVERLAY === */
+.nostr-login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at 50% 40%, #2a3640 0%, #1a2028 60%, #0f1418 100%);
+}
+.nostr-login-overlay.hidden { display: none; }
+.login-card {
+  text-align: center;
+  padding: 48px 40px;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(145deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  max-width: 380px;
+  width: 90vw;
+}
+.login-logo { margin-bottom: 16px; }
+.login-title {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--cream);
+  margin-bottom: 4px;
+  letter-spacing: -0.5px;
+}
+.login-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-medium);
+  margin-bottom: 28px;
+  opacity: 0.7;
+}
+.login-status {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rust);
+  min-height: 20px;
+  margin-bottom: 12px;
+}
+.login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 32px;
+  border: 2.5px solid var(--outline);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(145deg, var(--mustard) 0%, var(--mustard-dark) 100%);
+  color: var(--text-dark);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+.login-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+.login-btn:active { transform: translateY(0); }
+.login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.login-help {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-medium);
+  margin-top: 16px;
+  opacity: 0.5;
+}
+.login-help a { color: var(--teal-muted); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="game-container">
+<!-- Background lightning bolts -->
+<div class="bg-decor" id="bgDecor"></div>
+<div class="middle-row">
+<div class="table-area" id="tableArea">
+<div class="poker-table" id="pokerTable">
+<div class="table-pot-chips" id="tablePotChips"></div>
+<div class="community-cards" id="communityCards"></div>
+<div class="table-pot-label" id="tablePotLabel">
+<span class="pot-label">Pot: <span id="tablePotAmount">0</span></span>
+</div>
+<!-- Player nameplates -->
+<div class="player-nameplate np-pos-1" id="nameplate-1"></div>
+<div class="player-nameplate np-pos-2" id="nameplate-2"></div>
+<div class="player-nameplate np-pos-3" id="nameplate-3"></div>
+<div class="player-nameplate np-pos-4" id="nameplate-4"></div>
+<div class="player-nameplate np-pos-5" id="nameplate-5"></div>
+<div class="player-nameplate np-pos-6" id="nameplate-6"></div>
+<!-- Bet chips -->
+<div class="player-bet bet-pos-1" id="bet-1"><div id="betChips-1"></div></div>
+<div class="player-bet bet-pos-2" id="bet-2"><div id="betChips-2"></div></div>
+<div class="player-bet bet-pos-3" id="bet-3"><div id="betChips-3"></div></div>
+<div class="player-bet bet-pos-4" id="bet-4"><div id="betChips-4"></div></div>
+<div class="player-bet bet-pos-5" id="bet-5"><div id="betChips-5"></div></div>
+<div class="player-bet bet-pos-6" id="bet-6"><div id="betChips-6"></div></div>
+<!-- Seats -->
+<div class="seat seat-1" id="seat-1"></div>
+<div class="seat seat-2" id="seat-2"></div>
+<div class="seat seat-3" id="seat-3"></div>
+<div class="seat seat-4" id="seat-4"></div>
+<div class="seat seat-5" id="seat-5"></div>
+<div class="seat seat-6" id="seat-6"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="pre-action-bar" id="preActionBar"></div>
+<div class="controls-area">
+<div class="bet-controls" id="betControls"></div>
+</div>
+<!-- Connection Status -->
+<div class="connection-status" id="connectionStatus" style="position:fixed;top:10px;right:10px;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:700;background:var(--sage);color:var(--warm-white);box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:1000;display:none;">
+  <span id="connectionText">Connected</span>
+</div>
+<!-- Sit Back In Button -->
+<div id="sitBackInBtn" style="position:fixed;bottom:120px;left:50%;transform:translateX(-50%);padding:12px 32px;border-radius:12px;font-size:16px;font-weight:800;background:var(--mustard);color:var(--text-dark);box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;display:none;cursor:pointer;border:2px solid var(--outline);" onclick="handleSitBackIn()">
+  Sit Back In
+</div>
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer" style="position:fixed;top:60px;right:10px;z-index:1001;display:flex;flex-direction:column;gap:8px;"></div>
+<!-- Chat Box -->
+<div class="chat-box" id="chatBox">
+<button class="chat-collapse-btn" id="chatCollapseBtn">&#x25BC;</button>
+<div class="chat-tabs" id="chatTabs">
+<div class="chat-tab active" data-tab="chat">Chat</div>
+<div class="chat-tab" data-tab="history">Hand History</div>
+<div class="chat-tab" data-tab="settings">Settings</div>
+</div>
+<div class="chat-body" id="chatMessages"></div>
+<div class="chat-history" id="chatHistory">
+<div class="history-nav" id="historyNav">
+<button class="history-nav-btn" id="histPrev" title="Previous hand">&#x25C0;</button>
+<span class="history-hand-label" id="histLabel">No hands yet</span>
+<button class="history-nav-btn" id="histNext" title="Next hand">&#x25B6;</button>
+<button class="history-nav-btn history-copy-btn" id="histCopy" title="Copy hand history">&#x1F4CB;</button>
+</div>
+<pre class="history-text" id="histText"></pre>
+</div>
+<div class="chat-settings" id="chatSettings">
+<div class="setting-row">
+<span>Sound Effects</span>
+<div class="setting-toggle on" data-setting="sound"></div>
+</div>
+<div class="setting-row">
+<span>Player Chat</span>
+<div class="setting-toggle on" data-setting="playerChat"></div>
+</div>
+<div class="setting-row">
+<span>Play-by-Play</span>
+<div class="setting-toggle on" data-setting="playByPlay"></div>
+</div>
+<div class="setting-row">
+<span>Auto-Muck Losers</span>
+<div class="setting-toggle on" data-setting="autoMuck"></div>
+</div>
+</div>
+<div class="chat-input-area" id="chatInputArea">
+<input class="chat-input" id="chatInput" type="text" placeholder="Type a message..." maxlength="120">
+<button class="chat-send-btn" id="chatSendBtn">Send</button>
+</div>
+</div>
+<!-- NOSTR Login Overlay -->
+<div class="nostr-login-overlay" id="loginOverlay">
+<div class="login-card">
+<div class="login-logo">
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="22" stroke="var(--mustard)" stroke-width="3" fill="none"/><text x="24" y="30" text-anchor="middle" font-size="22" font-weight="900" fill="var(--mustard)">S</text></svg>
+</div>
+<h1 class="login-title">Satoshi Stacks</h1>
+<p class="login-subtitle">Play-money 6-max Texas Hold'em</p>
+<div class="login-status" id="loginStatus"></div>
+<button class="login-btn" id="loginBtn" onclick="handleNostrLogin()">
+<svg width="20" height="20" viewBox="0 0 20 20" fill="none" style="vertical-align:middle;margin-right:8px;"><circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M6 10.5C6 8.5 8 6 10 6s4 2.5 4 4.5-2 4.5-4 4.5-4-2.5-4-4.5z" fill="currentColor" opacity="0.3"/><circle cx="10" cy="10" r="2.5" fill="currentColor"/></svg>
+Connect with NOSTR
+</button>
+<p class="login-help" id="loginHelp">Requires a NIP-07 browser extension (nos2x, Alby, etc.)</p>
+</div>
+</div>
+<!-- Socket.IO Client -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(() => {
+'use strict';
+
+// ============================================================
+//  CONFIGURATION & CONSTANTS
+// ============================================================
+const NUM_SEATS = 6;
+const myTableId = 'table-1';
+
+// NOSTR auth state — persisted in localStorage
+let mySessionToken = localStorage.getItem('ss_sessionToken') || null;
+let myPubkeyHex = localStorage.getItem('ss_pubkeyHex') || null;
+let myNpub = localStorage.getItem('ss_npub') || null;
+let myNostrName = localStorage.getItem('ss_nostrName') || null;
+let myNostrPicture = localStorage.getItem('ss_nostrPicture') || null;
+let myUserId = myPubkeyHex; // hex pubkey is the userId
+let myUsername = myNostrName || (myNpub ? myNpub.slice(0, 12) + '...' : 'Anon');
+
+let socket = null;
+let gameState = null;
+let mySeat = null;          // 1-6 (assigned by server)
+let prevGameState = null;    // Track previous state for animations
+let preAction = null;        // Pre-action selection
+let currentHandLog = [];     // Accumulates hand-log lines for current hand
+let chipFlyTriggered = false; // Prevent multiple chip fly animations per hand
+let savedPotForAnimation = 0; // Captures pot total before server zeroes it, for chip fly
+
+const SUITS = ['h','d','c','s'];
+const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+const SUIT_SYM = { h:'\u2665', d:'\u2666', c:'\u2663', s:'\u2660' };
+const RANK_DISP = { T:'10', J:'J', Q:'Q', K:'K', A:'A' };
+
+const $ = id => document.getElementById(id);
+
+// HTML-escape user-controlled strings to prevent XSS
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Chip denominations — sorted high-to-low for greedy breakdown
+const CHIP_DEFS = [
+  { value: 10000, label: '10K', fill: '#B55239', text: '#F8F3EA' },
+  { value: 5000,  label: '5K',  fill: '#2F3E5C', text: '#F8F3EA' },
+  { value: 1000,  label: '1K',  fill: '#5A3D5C', text: '#F8F3EA' },
+  { value: 500,   label: '500', fill: '#C46E3F', text: '#F8F3EA' },
+  { value: 100,   label: '100', fill: '#3C8C84', text: '#F8F3EA' },
+  { value: 50,    label: '50',  fill: '#D4A017', text: '#F8F3EA' },
+  { value: 10,    label: '10',  fill: '#9FB8A5', text: '#F8F3EA' },
+  { value: 5,     label: '5',   fill: '#8B7355', text: '#F8F3EA' },
+  { value: 1,     label: '1',   fill: '#F3EBD9', text: '#F3EBD9' },
+];
+
+// Nameplate target positions (% on poker table), keyed by visual seat (1-6)
+const NP_TARGETS = {
+  1: { top: 2,  left: 66 },
+  2: { top: 50, left: 90 },
+  3: { top: 98, left: 66 },
+  4: { top: 98, left: 34 },
+  5: { top: 50, left: 10 },
+  6: { top: 2,  left: 34 },
+};
+
+// Bet position targets (where bet chips sit on felt), keyed by visual seat (1-6)
+const BET_TARGETS = {
+  1: { top: 24, left: 62 },
+  2: { top: 50, left: 72 },
+  3: { top: 76, left: 62 },
+  4: { top: 76, left: 38 },
+  5: { top: 50, left: 28 },
+  6: { top: 24, left: 38 },
+};
+
+// Avatar colors for each visual seat
+const AVATAR_COLORS = ['#5b9ea6','#d4714e','#8cb49a','#e8a838','#9b7cb4','#5a7d9a'];
+
+// ============================================================
+//  CHIP RENDERING (from beautiful version)
+// ============================================================
+function getChipBreakdown(amount) {
+  const result = [];
+  let rem = Math.floor(amount);
+  for (const def of CHIP_DEFS) {
+    if (rem >= def.value) {
+      const count = Math.floor(rem / def.value);
+      result.push({ ...def, count });
+      rem -= count * def.value;
+    }
+    if (rem === 0) break;
+  }
+  return result;
+}
+
+function renderChipSVG(def, size) {
+  const s = size;
+  const cx = s / 2, cy = s / 2;
+  const outerR = s / 2 - 1;
+  const innerR = outerR * 0.7;
+  const fs = s < 18 ? s * 0.36 : s * 0.32;
+  const stroke = '#3d3228';
+  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="${cx}" cy="${cy}" r="${outerR}" fill="${def.fill}" stroke="${stroke}" stroke-width="${s * 0.06}"/>
+    <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="none" stroke="${stroke}" stroke-width="${s * 0.04}" opacity="0.35"/>
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+      font-family="'Nunito',sans-serif" font-weight="900" font-size="${fs}px"
+      fill="${def.text}" stroke="${stroke}" stroke-width="${s * 0.02}"
+      paint-order="stroke">${def.label}</text>
+  </svg>`;
+}
+
+function renderChipStack(amount, chipSize, maxTotal) {
+  if (!amount || amount <= 0) return '';
+  const breakdown = getChipBreakdown(amount);
+  if (breakdown.length === 0) return '';
+  const chips = [];
+  for (const denom of breakdown) {
+    const show = Math.min(denom.count, maxTotal - chips.length);
+    for (let j = 0; j < show; j++) chips.push(denom);
+    if (chips.length >= maxTotal) break;
+  }
+  const offset = chipSize * 0.22;
+  const colH = chipSize + (chips.length - 1) * offset;
+  let html = `<div class="chip-stack"><div class="chip-stack-column" style="height:${colH}px">`;
+  for (let j = 0; j < chips.length; j++) {
+    html += `<div class="chip-stack-item" style="top:${j * offset}px;z-index:${chips.length - j}">${renderChipSVG(chips[j], chipSize)}</div>`;
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function layoutChipPile(chips, chipSize, seed) {
+  if (chips.length === 0) return '';
+  function rand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
+  const shuffled = [...chips];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const spreadX = Math.min(shuffled.length * 6, 120);
+  const spreadY = Math.min(shuffled.length * 2, 25);
+  let html = `<div class="chip-pile" style="width:${spreadX * 2 + chipSize}px;height:${spreadY * 2 + chipSize + 20}px;">`;
+  const cx = spreadX + chipSize / 2;
+  const cy = spreadY + chipSize / 2;
+  for (let i = 0; i < shuffled.length; i++) {
+    const layer = i / Math.max(shuffled.length - 1, 1);
+    const tightness = 0.85 - layer * 0.55;
+    const angle = rand() * Math.PI * 2;
+    const dist = rand() * tightness;
+    const x = cx + Math.cos(angle) * dist * spreadX - chipSize / 2;
+    const y = cy + Math.sin(angle) * dist * spreadY - chipSize / 2;
+    const rot = Math.floor(rand() * 360);
+    html += `<div class="chip-pile-item" style="left:${x}px;top:${y}px;z-index:${i};transform:rotate(${rot}deg)">${renderChipSVG(shuffled[i], chipSize)}</div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderChipPillIcon(amount, size) {
+  if (!amount || amount <= 0) return renderChipSVG(CHIP_DEFS[CHIP_DEFS.length - 1], size);
+  for (const def of CHIP_DEFS) {
+    if (amount >= def.value) return renderChipSVG(def, size);
+  }
+  return renderChipSVG(CHIP_DEFS[CHIP_DEFS.length - 1], size);
+}
+
+// ============================================================
+//  CARD RENDERING (from beautiful version)
+// ============================================================
+function isRed(s) { return s === 'h' || s === 'd'; }
+
+function renderCardHTML(card, sizeClass) {
+  if (!card || card === '??') return `<div class="card face-down ${sizeClass || ''}"></div>`;
+  const r = card[0], s = card[1];
+  const d = RANK_DISP[r] || r;
+  const sym = SUIT_SYM[s];
+  const color = isRed(s) ? 'red' : 'black';
+  if (sizeClass === 'small') {
+    return `<div class="card small ${color}">
+      <span class="card-rank">${d}</span><span class="card-suit">${sym}</span>
+    </div>`;
+  }
+  return `<div class="card ${color}">
+    <div class="card-corner top-left"><span class="card-rank">${d}</span><span class="card-suit">${sym}</span></div>
+    <div class="card-center"><span class="card-pip">${sym}</span></div>
+    <div class="card-corner bottom-right"><span class="card-rank">${d}</span><span class="card-suit">${sym}</span></div>
+  </div>`;
+}
+
+function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : '0'; }
+
+// ============================================================
+//  GUI ROTATION — player always sees themselves at position 3
+// ============================================================
+function calculateVisualPosition(actualSeat) {
+  if (!mySeat) return actualSeat;
+  const actual = actualSeat - 1;
+  const my = mySeat - 1;
+  const TARGET_POS = 2; // position 3 in 1-indexed
+  const offset = TARGET_POS - my;
+  let visual = (actual + offset + 6) % 6;
+  return visual + 1;
+}
+
+function getVisualPosition(playerIndex) {
+  if (!gameState || playerIndex === -1 || playerIndex == null) return null;
+  const actualSeat = playerIndex + 1;
+  return calculateVisualPosition(actualSeat);
+}
+
+// ============================================================
+//  NOSTR AUTHENTICATION
+// ============================================================
+
+function showLoginOverlay() {
+  const overlay = document.getElementById('loginOverlay');
+  if (overlay) overlay.classList.remove('hidden');
+}
+
+function hideLoginOverlay() {
+  const overlay = document.getElementById('loginOverlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function setLoginStatus(msg, isError = true) {
+  const el = document.getElementById('loginStatus');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isError ? 'var(--rust)' : 'var(--sage)';
+  }
+}
+
+async function detectNostr(retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    if (window.nostr) return true;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return false;
+}
+
+async function handleNostrLogin() {
+  const btn = document.getElementById('loginBtn');
+  if (btn) btn.disabled = true;
+  setLoginStatus('Checking for NOSTR extension...', false);
+
+  const hasNostr = await detectNostr();
+  if (!hasNostr) {
+    setLoginStatus('No NOSTR extension found. Install nos2x, Alby, or another NIP-07 extension.');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  try {
+    // Step 1: Get challenge from server
+    setLoginStatus('Requesting challenge...', false);
+    const challengeRes = await fetch('/api/auth/challenge', { method: 'POST' });
+    const challengeData = await challengeRes.json();
+    if (!challengeData.success) throw new Error(challengeData.error || 'Failed to get challenge');
+
+    // Step 2: Get pubkey from extension
+    setLoginStatus('Requesting pubkey...', false);
+    const pubkey = await window.nostr.getPublicKey();
+
+    // Step 3: Sign the challenge event
+    setLoginStatus('Please sign the login event...', false);
+    const eventTemplate = {
+      kind: 22242,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['challenge', challengeData.nonce],
+        ['relay', window.location.origin]
+      ],
+      content: ''
+    };
+
+    const signedEvent = await window.nostr.signEvent(eventTemplate);
+
+    // Step 4: Verify with server
+    setLoginStatus('Verifying signature...', false);
+    const verifyRes = await fetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeId: challengeData.challengeId,
+        signedEvent
+      })
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyData.success) throw new Error(verifyData.error || 'Verification failed');
+
+    // Step 5: Store session and connect
+    mySessionToken = verifyData.sessionToken;
+    myPubkeyHex = verifyData.pubkeyHex;
+    myNpub = verifyData.npub;
+    myNostrName = verifyData.profile.name;
+    myNostrPicture = verifyData.profile.picture;
+    myUserId = myPubkeyHex;
+    myUsername = myNostrName || myNpub.slice(0, 12) + '...';
+
+    localStorage.setItem('ss_sessionToken', mySessionToken);
+    localStorage.setItem('ss_pubkeyHex', myPubkeyHex);
+    localStorage.setItem('ss_npub', myNpub);
+    if (myNostrName) localStorage.setItem('ss_nostrName', myNostrName);
+    if (myNostrPicture) localStorage.setItem('ss_nostrPicture', myNostrPicture);
+
+    setLoginStatus('Connected!', false);
+    hideLoginOverlay();
+    connectToServer();
+
+  } catch (err) {
+    console.error('[NOSTR] Login error:', err);
+    setLoginStatus(err.message || 'Login failed');
+    if (btn) btn.disabled = false;
+  }
+}
+window.handleNostrLogin = handleNostrLogin;
+
+function nostrLogout() {
+  localStorage.removeItem('ss_sessionToken');
+  localStorage.removeItem('ss_pubkeyHex');
+  localStorage.removeItem('ss_npub');
+  localStorage.removeItem('ss_nostrName');
+  localStorage.removeItem('ss_nostrPicture');
+  mySessionToken = null;
+  myPubkeyHex = null;
+  myNpub = null;
+  myNostrName = null;
+  myNostrPicture = null;
+  myUserId = null;
+  myUsername = 'Anon';
+  if (socket) {
+    socket.emit('leave-table');
+    socket.disconnect();
+    socket = null;
+  }
+  showLoginOverlay();
+}
+window.nostrLogout = nostrLogout;
+
+async function tryRestoreSession() {
+  if (!mySessionToken) return false;
+  try {
+    const res = await fetch('/api/auth/session', {
+      headers: { 'x-session-token': mySessionToken }
+    });
+    const data = await res.json();
+    if (!data.success) {
+      // Session expired — clear and show login
+      nostrLogout();
+      return false;
+    }
+    // Restore state from server
+    myPubkeyHex = data.pubkeyHex;
+    myNpub = data.npub;
+    myNostrName = data.profile.name;
+    myNostrPicture = data.profile.picture;
+    myUserId = myPubkeyHex;
+    myUsername = myNostrName || myNpub.slice(0, 12) + '...';
+    return true;
+  } catch (err) {
+    console.error('[NOSTR] Session restore failed:', err);
+    nostrLogout();
+    return false;
+  }
+}
+
+// ============================================================
+//  WEBSOCKET CONNECTION
+// ============================================================
+function connectToServer() {
+  socket = io(window.location.origin);
+  window.socket = socket;
+
+  socket.on('connect', () => {
+    updateConnectionStatus(true);
+    socket.emit('join-table', {
+      tableId: myTableId,
+      sessionToken: mySessionToken
+    });
+  });
+
+  socket.on('seat-assigned', ({ seatIndex, displayName }) => {
+    mySeat = seatIndex + 1;
+    if (displayName) myUsername = displayName;
+    showToast(`Playing as ${myUsername}`, 'info');
+  });
+
+  socket.on('auth-error', ({ message }) => {
+    showToast(message);
+    nostrLogout();
+  });
+
+  socket.on('game-state', (state) => {
+    prevGameState = gameState;
+    gameState = state;
+    // Save pot total for chip fly animation — capture before server zeroes it
+    const currentPot = (state.pot || 0) + (state.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
+    if (currentPot > 0) savedPotForAnimation = currentPot;
+    render();
+  });
+
+  socket.on('error', (error) => {
+    showToast(error.message);
+  });
+
+  socket.on('action-timer-start', ({ playerIndex, timeoutMs }) => {
+    handleTimerStart(playerIndex, timeoutMs);
+  });
+
+  // Real-time hand log — PokerStars-format play-by-play
+  socket.on('hand-log', ({ line, type }) => {
+    if (!line || !line.trim()) return;
+    // Reset chip fly flag on new hand
+    if (type === 'header' && line.startsWith('Satoshi Stacks Hand')) {
+      chipFlyTriggered = false;
+      savedPotForAnimation = 0;
+    }
+    // Add to real-time chat play-by-play
+    addPlayByPlay(line);
+    // Accumulate for hand history tab
+    currentHandLog.push(line);
+
+    // Show action badges based on type
+    if (type === 'action' && gameState) {
+      const lower = line.toLowerCase();
+      // Extract player name (before the colon) and match to seat
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0) {
+        const name = line.substring(0, colonIdx).trim();
+        for (let i = 0; i < NUM_SEATS; i++) {
+          const p = gameState.players[i];
+          if (p && p.username === name) {
+            const vp = calculateVisualPosition(i + 1);
+            if (lower.includes('folds')) showBadge(vp, 'Fold');
+            else if (lower.includes('checks')) showBadge(vp, 'Check');
+            else if (lower.includes('calls')) showBadge(vp, 'Call');
+            else if (lower.includes('raises') || lower.includes('bets')) showBadge(vp, 'Raise');
+            else if (lower.includes('all-in')) showBadge(vp, 'All In');
+            break;
+          }
+        }
+      }
+    }
+    if (type === 'winner' && gameState) {
+      // Extract winner name (before "collected")
+      const match = line.match(/^(.+?)\s+collected/);
+      if (match) {
+        const name = match[1].trim();
+        // Trigger chip fly animation (only once per hand)
+        if (!chipFlyTriggered) {
+          chipFlyTriggered = true;
+          animateChipsToWinner(name);
+        }
+        for (let i = 0; i < NUM_SEATS; i++) {
+          const p = gameState.players[i];
+          if (p && p.username === name) {
+            const vp = calculateVisualPosition(i + 1);
+            showBadge(vp, 'Win');
+            break;
+          }
+        }
+      }
+    }
+  });
+
+  socket.on('hand-complete', ({ history }) => {
+    if (history) {
+      handHistories.push(history);
+      histViewIdx = handHistories.length - 1;
+      currentHandLog = []; // Reset for next hand
+      renderHistoryView();
+    }
+  });
+
+  socket.on('disconnect', () => {
+    updateConnectionStatus(false);
+  });
+}
+
+// ============================================================
+//  MAIN RENDER — called on every game-state update
+// ============================================================
+function render() {
+  if (!gameState) return;
+
+  // Execute pre-action BEFORE rendering clears it
+  if (gameState.yourTurn && preAction) {
+    if (executePreAction()) return; // action sent, wait for next state
+  }
+
+  renderSeats();
+  updateNameplates();
+  renderCommunityCards();
+  updateBets();
+  updatePot();
+  renderControls();
+  renderPreActions();
+  updateSitBackInButton();
+}
+
+// ============================================================
+//  RENDER SEATS (avatars)
+// ============================================================
+function renderSeats() {
+  for (let idx = 0; idx < NUM_SEATS; idx++) {
+    const player = gameState.players[idx];
+    const actualSeat = idx + 1;
+    const visualPos = calculateVisualPosition(actualSeat);
+    const seatEl = $(`seat-${visualPos}`);
+    if (!seatEl) continue;
+
+    if (!player) {
+      seatEl.innerHTML = '';
+      seatEl.className = `seat seat-${visualPos}`;
+      continue;
+    }
+
+    const isActive = gameState.currentPlayerIndex === idx && gameState.handInProgress;
+    const isMe = player.userId === myUserId;
+    const avatarColor = isMe ? 'var(--mustard)' : AVATAR_COLORS[idx % AVATAR_COLORS.length];
+    const displayName = esc(player.nostrName || player.username || '?');
+    const picture = player.nostrPicture;
+    // Only allow http/https image URLs (block javascript: etc.)
+    const safePicture = picture && /^https?:\/\//i.test(picture) ? esc(picture) : null;
+    const initial = displayName[0] ? displayName[0].toUpperCase() : '?';
+
+    seatEl.className = `seat seat-${visualPos}${player.folded ? ' folded' : ''}`;
+    const fallbackAvatar = `<div class="avatar-initial" style="background:${avatarColor};">${initial}</div>`;
+    seatEl.innerHTML = `
+      <div class="player-avatar-wrap ${isActive ? 'active-turn' : ''}">
+        <div class="player-avatar" data-seat="${actualSeat}">
+          ${safePicture ? `<img src="${safePicture}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">${fallbackAvatar.replace('style="','style="display:none;')}` : fallbackAvatar}
+        </div>
+      </div>
+    `;
+  }
+}
+
+// ============================================================
+//  RENDER NAMEPLATES (chip icon, name, stack, cards, dealer, badges)
+// ============================================================
+function updateNameplates() {
+  for (let idx = 0; idx < NUM_SEATS; idx++) {
+    const player = gameState.players[idx];
+    const actualSeat = idx + 1;
+    const visualPos = calculateVisualPosition(actualSeat);
+    const el = $(`nameplate-${visualPos}`);
+    if (!el) continue;
+
+    if (!player) {
+      el.innerHTML = '';
+      el.className = `player-nameplate np-pos-${visualPos}`;
+      continue;
+    }
+
+    const isActive = gameState.currentPlayerIndex === idx && gameState.handInProgress;
+    const isMe = player.userId === myUserId;
+
+    // Build cards HTML
+    let cardsHTML = '';
+    if (player.holeCards && player.holeCards.length === 2 && !player.folded) {
+      const card1 = player.holeCards[0];
+      const card2 = player.holeCards[1];
+      if (card1 === '??' || card2 === '??') {
+        cardsHTML = `<div class="np-cards">${renderCardHTML(null, 'small')}${renderCardHTML(null, 'small')}</div>`;
+      } else {
+        const sc = isMe ? '' : 'small';
+        cardsHTML = `<div class="np-cards">${renderCardHTML(card1, sc)}${renderCardHTML(card2, sc)}</div>`;
+      }
+    } else if (isMe && player.folded && player.holeCards && player.holeCards.length === 2 && player.holeCards[0] !== '??') {
+      // Folded peek for hero
+      cardsHTML = `<div class="np-cards folded-peek">${renderCardHTML(player.holeCards[0])}${renderCardHTML(player.holeCards[1])}</div>`;
+    }
+
+    // Dealer button
+    const dealerHTML = gameState.dealerSeat === idx ? '<div class="np-dealer">D</div>' : '';
+
+    // Sitting out badge
+    const sitOutBadge = player.sittingOut ? '<div style="position:absolute;top:-8px;right:-8px;background:var(--rust);color:var(--warm-white);font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px;border:1.5px solid var(--outline);z-index:10;">SITTING OUT</div>' : '';
+
+    el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}`;
+    el.innerHTML = `
+      ${cardsHTML}
+      ${dealerHTML}
+      ${sitOutBadge}
+      <div class="np-life-bar" id="lifeBar-${visualPos}"></div>
+      <div class="np-action" id="npAction-${visualPos}"></div>
+      <div class="np-content">
+        <div class="np-icon">${renderChipPillIcon(player.stack, 20)}</div>
+        <span class="np-name">${esc(player.nostrName || player.username)}</span>
+        <div class="np-divider"></div>
+        <div class="np-amount-wrap"><span class="np-amount">${fmt(player.stack)}</span></div>
+      </div>
+    `;
+  }
+}
+
+// ============================================================
+//  RENDER COMMUNITY CARDS (staggered animation)
+// ============================================================
+let lastCommunityCount = 0;
+
+function renderCommunityCards() {
+  const el = $('communityCards');
+  if (!el) return;
+
+  const cards = gameState.communityCards || [];
+  const existing = el.children.length;
+
+  // Only append NEW cards — never re-render existing ones (stagger effect)
+  for (let i = existing; i < cards.length; i++) {
+    const div = document.createElement('div');
+    div.className = 'community-card';
+    const delayInBatch = i < 3 ? (i * 0.08) : 0;
+    div.style.animation = `dealCard 0.4s var(--ease) ${delayInBatch}s both`;
+    div.innerHTML = renderCardHTML(cards[i]);
+    el.appendChild(div);
+  }
+
+  // If cards cleared (new hand), clear DOM
+  if (cards.length === 0 && existing > 0) {
+    el.innerHTML = '';
+  }
+
+  lastCommunityCount = cards.length;
+}
+
+// ============================================================
+//  RENDER BETS (chip stacks per player)
+// ============================================================
+function updateBets() {
+  for (let idx = 0; idx < NUM_SEATS; idx++) {
+    const player = gameState.players[idx];
+    const visualPos = calculateVisualPosition(idx + 1);
+    const be = $(`bet-${visualPos}`);
+    const bc = $(`betChips-${visualPos}`);
+    if (!be) continue;
+
+    if (!player || !player.currentBet || player.currentBet <= 0) {
+      be.classList.remove('visible');
+      if (bc) bc.innerHTML = '';
+      continue;
+    }
+
+    be.classList.add('visible');
+    if (bc) bc.innerHTML = renderChipStack(player.currentBet, 30, 5);
+  }
+}
+
+// ============================================================
+//  RENDER POT (chip pile + label)
+//  Uses server-provided potChips array (actual accumulated chip
+//  denomination objects) so every chip is always accounted for.
+// ============================================================
+function updatePot() {
+  if (!gameState) return;
+  const pot = gameState.pot || 0;
+  const potChips = gameState.potChips || [];
+  const totalWithBets = pot + (gameState.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
+
+  $('tablePotAmount').textContent = fmt(totalWithBets);
+  const hasValue = totalWithBets > 0;
+  $('tablePotLabel').classList.toggle('visible', hasValue);
+
+  // Pot chip pile visualization — render from server's accumulated potChips array
+  const chipsEl = $('tablePotChips');
+  if (chipsEl && potChips.length > 0) {
+    chipsEl.classList.add('visible');
+    chipsEl.innerHTML = layoutChipPile(potChips, 30, pot || 1);
+  } else if (chipsEl) {
+    chipsEl.classList.remove('visible');
+    chipsEl.innerHTML = '';
+  }
+}
+
+// ============================================================
+//  ACTION BADGE SYSTEM (Fold / Check / Call / Raise / etc.)
+// ============================================================
+const badgeTimers = {};
+function showBadge(visualPos, text) {
+  const b = $(`npAction-${visualPos}`);
+  if (!b) return;
+  if (badgeTimers[visualPos]) clearTimeout(badgeTimers[visualPos]);
+  b.textContent = text;
+  b.className = `np-action visible ${text.toLowerCase().replace(/[^a-z]/g, '')}`;
+  badgeTimers[visualPos] = setTimeout(() => b.classList.remove('visible'), 1400);
+}
+
+// ============================================================
+//  CHIP FLY ANIMATION — pot chips fly to winner
+//  Full chip lifecycle: pot pile → organized stacks → fly → linger → fade
+//  Every chip is always accounted for and visible on the table.
+// ============================================================
+function animateChipsToWinner(winnerName) {
+  if (!gameState) return;
+  const table = $('pokerTable');
+  const potChipsEl = $('tablePotChips');
+  if (!table || !potChipsEl) return;
+
+  // Find winner's visual position
+  let winnerVisualPos = null;
+  for (let i = 0; i < NUM_SEATS; i++) {
+    const p = gameState.players[i];
+    if (p && p.username === winnerName) {
+      winnerVisualPos = calculateVisualPosition(i + 1);
+      break;
+    }
+  }
+  if (!winnerVisualPos) return;
+
+  // Get pot chips position (source) as percentage of table
+  const tableRect = table.getBoundingClientRect();
+  const chipsRect = potChipsEl.getBoundingClientRect();
+  // Use center of table as fallback if pot chips not visible
+  const srcTopPct = (chipsRect.width > 0 && chipsRect.height > 0)
+    ? ((chipsRect.top + chipsRect.height / 2 - tableRect.top) / tableRect.height) * 100
+    : 14; // default pot position
+  const srcLeftPct = (chipsRect.width > 0 && chipsRect.height > 0)
+    ? ((chipsRect.left + chipsRect.width / 2 - tableRect.left) / tableRect.width) * 100
+    : 50; // center
+
+  // Use saved pot amount (captured before server zeroes potChips on winner event)
+  const flyAmount = savedPotForAnimation || (gameState.pot || 0);
+  if (flyAmount <= 0) return;
+
+  const breakdown = getChipBreakdown(flyAmount);
+  const chipSize = 20;
+  const MAX_PER_STACK = 10;
+  const offset = chipSize * 0.2;
+
+  // Clear the pot display (chips are now "in flight")
+  const potLabel = $('tablePotLabel');
+  if (potLabel) potLabel.classList.remove('visible');
+  if (potChipsEl) { potChipsEl.classList.remove('visible'); potChipsEl.innerHTML = ''; }
+
+  // Create flying chip container
+  const container = document.createElement('div');
+  container.className = 'chip-fly-container';
+  table.appendChild(container);
+
+  // Build organized stacks from chip breakdown
+  const stacks = [];
+  for (const denom of breakdown) {
+    let remaining = Math.min(denom.count, 20); // cap to prevent too many
+    while (remaining > 0) {
+      const n = Math.min(remaining, MAX_PER_STACK);
+      stacks.push({ def: denom, count: n });
+      remaining -= n;
+    }
+  }
+
+  const stackGroup = document.createElement('div');
+  stackGroup.className = 'chip-fly-group';
+  stackGroup.style.cssText = `position:absolute;top:${srcTopPct}%;left:${srcLeftPct}%;transform:translate(-50%,-50%);display:flex;align-items:flex-end;gap:${chipSize * 0.3}px;`;
+
+  for (const stack of stacks) {
+    const colH = chipSize + (stack.count - 1) * offset;
+    const col = document.createElement('div');
+    col.style.cssText = `position:relative;width:${chipSize}px;height:${colH}px;`;
+    for (let j = 0; j < stack.count; j++) {
+      const chipEl = document.createElement('div');
+      chipEl.style.cssText = `position:absolute;left:0;top:${(stack.count - 1 - j) * offset}px;z-index:${j + 1};line-height:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));`;
+      chipEl.innerHTML = renderChipSVG(stack.def, chipSize);
+      col.appendChild(chipEl);
+    }
+    stackGroup.appendChild(col);
+  }
+  container.appendChild(stackGroup);
+
+  // Animate: fly from pot center to winner's bet position
+  const target = BET_TARGETS[winnerVisualPos];
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      stackGroup.style.top = target.top + '%';
+      stackGroup.style.left = target.left + '%';
+    });
+  });
+
+  // Show "stacking" badge after chips arrive
+  setTimeout(() => {
+    showBadge(winnerVisualPos, 'Stacking');
+  }, 1500);
+
+  // After flight (1400ms) + linger (2000ms), fade out and cleanup
+  setTimeout(() => {
+    stackGroup.style.opacity = '0';
+    stackGroup.style.transform = 'translate(-50%,-50%) scale(0.4)';
+  }, 3400);
+
+  setTimeout(() => {
+    container.remove();
+    savedPotForAnimation = 0;
+  }, 4000);
+}
+
+// ============================================================
+//  RENDER CONTROLS (non-linear slider, presets, action buttons)
+// ============================================================
+function renderControls() {
+  const bc = $('betControls');
+  const ca = document.querySelector('.controls-area');
+  if (!bc || !ca) return;
+
+  const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
+  if (!myPlayer || !gameState.yourTurn || !gameState.handInProgress) {
+    ca.classList.remove('visible');
+    bc.innerHTML = '';
+    return;
+  }
+
+  // Position controls
+  const tableEl = $('pokerTable');
+  if (tableEl) {
+    const tRect = tableEl.getBoundingClientRect();
+    const tableBottom = tRect.bottom + 22;
+    const availHeight = window.innerHeight - tableBottom;
+    ca.style.maxHeight = Math.max(availHeight, 60) + 'px';
+  }
+  ca.classList.add('visible');
+
+  const maxBet = Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
+  const toCall = maxBet - (myPlayer.currentBet || 0);
+  const canCheck = toCall === 0;
+
+  // Use server's bigBlind or default
+  const bigBlind = gameState.bigBlind || 100;
+  const lastRaise = gameState.lastRaise || bigBlind;
+
+  const minR = Math.min(maxBet + Math.max(bigBlind, lastRaise), myPlayer.stack + (myPlayer.currentBet || 0));
+  const maxR = myPlayer.stack + (myPlayer.currentBet || 0);
+
+  const callText = canCheck ? 'Check' : (toCall >= myPlayer.stack ? 'All In' : `Call ${fmt(toCall)}`);
+  const rLabel = maxBet === 0 ? 'Bet' : 'Raise';
+
+  // Non-linear slider mapping
+  const SLIDER_STEPS = 2000;
+  const CURVE = 2;
+  function sliderToBet(pos) {
+    const t = pos / SLIDER_STEPS;
+    return Math.round(minR + (maxR - minR) * Math.pow(t, CURVE));
+  }
+  function betToSlider(bet) {
+    const t = (bet - minR) / (maxR - minR);
+    return Math.round(SLIDER_STEPS * Math.pow(Math.max(0, t), 1 / CURVE));
+  }
+
+  // Total pot for pot-size calculations
+  const totalPot = (gameState.pot || 0) + gameState.players.filter(p => p).reduce((s, p) => s + (p.currentBet || 0), 0);
+
+  bc.innerHTML = `
+    ${maxR > minR ? `<div class="bet-presets">
+      <button class="bet-preset" data-amt="${minR}">Min</button>
+      <button class="bet-preset" data-amt="${Math.min(Math.floor(totalPot * 0.5 + maxBet), maxR)}">1/2 Pot</button>
+      <button class="bet-preset" data-amt="${Math.min(totalPot + maxBet, maxR)}">Pot</button>
+      <button class="bet-preset" data-amt="${maxR}">All In</button>
+    </div>
+    <div class="slider-row">
+      <input type="range" class="bet-slider" id="betSlider" min="0" max="${SLIDER_STEPS}" value="0" step="1">
+      <input type="number" class="bet-amount-input" id="betInput" min="${minR}" max="${maxR}" value="${minR}">
+    </div>` : ''}
+    <div class="action-buttons">
+      <button class="action-btn btn-fold" id="foldBtn">Fold</button>
+      <button class="action-btn btn-check-call" id="ccBtn">${callText}</button>
+      ${maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmt(minR)}</button>` :
+       (toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmt(myPlayer.stack)}</button>` : '')}
+    </div>
+  `;
+
+  // Wire up action buttons
+  $('foldBtn')?.addEventListener('click', () => sendAction('fold'));
+  $('ccBtn')?.addEventListener('click', () => sendAction(canCheck ? 'check' : 'call'));
+
+  const rb = $('raiseBtn'), sl = $('betSlider'), bi = $('betInput');
+  function updateBetUI(v) {
+    v = Math.max(minR, Math.min(maxR, Math.round(v)));
+    if (sl) sl.value = betToSlider(v);
+    if (bi) bi.value = v;
+    if (rb) rb.textContent = `${v >= maxR ? 'All In' : rLabel} ${fmt(v)}`;
+  }
+  rb?.addEventListener('click', () => {
+    const bet = sl ? sliderToBet(parseInt(sl.value)) : (bi ? parseInt(bi.value) : minR);
+    sendAction('raise', bet);
+  });
+  sl?.addEventListener('input', () => updateBetUI(sliderToBet(parseInt(sl.value))));
+  bi?.addEventListener('focus', () => bi.select());
+  bi?.addEventListener('input', () => {
+    const v = parseInt(bi.value);
+    if (!isNaN(v)) {
+      const clamped = Math.max(minR, Math.min(maxR, Math.round(v)));
+      if (sl) sl.value = betToSlider(clamped);
+      if (rb) rb.textContent = `${clamped >= maxR ? 'All In' : rLabel} ${fmt(clamped)}`;
+    }
+  });
+  bi?.addEventListener('blur', () => updateBetUI(parseInt(bi.value) || minR));
+  document.querySelectorAll('.bet-preset').forEach(b => {
+    b.addEventListener('click', () => {
+      const v = Math.min(parseInt(b.dataset.amt), maxR);
+      updateBetUI(v);
+    });
+  });
+}
+
+// ============================================================
+//  PRE-ACTION SYSTEM
+// ============================================================
+function renderPreActions() {
+  const bar = $('preActionBar');
+  if (!bar) return;
+
+  const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
+  const isMyTurn = gameState.yourTurn;
+
+  // Show pre-actions when it's NOT our turn and we're still in the hand
+  if (!myPlayer || isMyTurn || !gameState.handInProgress || myPlayer.folded || myPlayer.allIn) {
+    bar.classList.remove('visible');
+    // Only clear preAction when hand ends or we fold (not on our turn — executePreAction handles that)
+    if (!gameState.handInProgress || (myPlayer && myPlayer.folded)) {
+      bar.innerHTML = '';
+      preAction = null;
+    }
+    return;
+  }
+
+  bar.classList.add('visible');
+
+  // Only rebuild DOM if buttons don't exist yet
+  if (!bar.children.length) {
+    bar.innerHTML = `
+      <button class="pre-action-btn" data-pa="check">Check</button>
+      <button class="pre-action-btn" data-pa="checkfold">Check / Fold</button>
+      <button class="pre-action-btn" data-pa="fold">Fold</button>
+      <button class="pre-action-btn" data-pa="shove">Insta-Shove</button>
+    `;
+    bar.querySelectorAll('.pre-action-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pa = btn.dataset.pa;
+        preAction = (preAction === pa) ? null : pa;
+        bar.querySelectorAll('.pre-action-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.pa === preAction);
+        });
+      });
+    });
+  }
+
+  // Update active classes
+  bar.querySelectorAll('.pre-action-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.pa === preAction);
+  });
+}
+
+// Execute pre-action when it becomes our turn
+function executePreAction() {
+  if (!preAction || !gameState.yourTurn) return false;
+  const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
+  if (!myPlayer) return false;
+
+  const maxBet = Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
+  const toCall = maxBet - (myPlayer.currentBet || 0);
+  const canCheck = toCall === 0;
+
+  const pa = preAction;
+  preAction = null;
+
+  if (pa === 'check' && canCheck) { sendAction('check'); return true; }
+  if (pa === 'checkfold') { sendAction(canCheck ? 'check' : 'fold'); return true; }
+  if (pa === 'fold') { sendAction('fold'); return true; }
+  if (pa === 'shove') { sendAction('raise', myPlayer.stack + (myPlayer.currentBet || 0)); return true; }
+
+  return false;
+}
+
+// ============================================================
+//  SEND ACTION TO SERVER
+// ============================================================
+function sendAction(action, amount) {
+  if (!socket) return;
+  socket.emit('action', {
+    tableId: myTableId,
+    action: action,
+    amount: amount || 0
+  });
+}
+
+// ============================================================
+//  ACTION TIMER (LIFE BAR)
+// ============================================================
+let actionTimer = null;
+let timeRemaining = 0;
+const TURN_TIME = 20000;
+
+function lifeBarColor(pct) {
+  let r, g, b;
+  if (pct > 50) {
+    const t = (pct - 50) / 50;
+    r = Math.round(232 + (76 - 232) * t);
+    g = Math.round(195 + (175 - 195) * t);
+    b = Math.round(56 + (80 - 56) * t);
+  } else {
+    const t = pct / 50;
+    r = Math.round(220 + (232 - 220) * t);
+    g = Math.round(60 + (195 - 60) * t);
+    b = Math.round(60 + (56 - 60) * t);
+  }
+  return `linear-gradient(135deg, rgba(${r},${g},${b},0.50), rgba(${r},${g},${b},0.35))`;
+}
+
+function handleTimerStart(playerIndex, timeoutMs) {
+  clearTimer();
+  timeRemaining = timeoutMs;
+  const visualPos = getVisualPosition(playerIndex);
+  if (!visualPos) return;
+
+  const bar = $(`lifeBar-${visualPos}`);
+  if (bar) {
+    bar.style.width = '100%';
+    bar.classList.add('active');
+    bar.style.background = lifeBarColor(100);
+  }
+
+  const tick = () => {
+    timeRemaining -= 100;
+    const pct = (timeRemaining / TURN_TIME) * 100;
+    const bar = $(`lifeBar-${visualPos}`);
+    if (bar) {
+      bar.style.width = Math.max(0, pct) + '%';
+      bar.classList.add('active');
+      bar.style.background = lifeBarColor(pct);
+    }
+    if (timeRemaining <= 0) {
+      clearTimer();
+      return;
+    }
+    actionTimer = setTimeout(tick, 100);
+  };
+  actionTimer = setTimeout(tick, 100);
+}
+
+function clearTimer() {
+  if (actionTimer) {
+    clearTimeout(actionTimer);
+    actionTimer = null;
+  }
+  for (let i = 1; i <= 6; i++) {
+    const bar = $(`lifeBar-${i}`);
+    if (bar) {
+      bar.classList.remove('active');
+      bar.style.width = '0%';
+    }
+  }
+}
+
+// ============================================================
+//  DEAL ANIMATION (cards fly from dealer to players)
+// ============================================================
+function animateDeal() {
+  if (!gameState || !gameState.handInProgress) return;
+  const table = $('pokerTable');
+  if (!table) return;
+
+  // Find dealer's visual position for origin
+  const dealerVisual = getVisualPosition(gameState.dealerSeat);
+  if (!dealerVisual) return;
+  const origin = NP_TARGETS[dealerVisual];
+
+  // Build dealing order: clockwise from left of dealer
+  const dealOrder = [];
+  let seat = gameState.dealerSeat;
+  for (let t = 0; t < NUM_SEATS; t++) {
+    seat = (seat + 1) % NUM_SEATS;
+    const p = gameState.players[seat];
+    if (p && !p.folded && p.holeCards && p.holeCards.length === 2) {
+      dealOrder.push(seat);
+    }
+  }
+  if (dealOrder.length === 0) return;
+
+  // Two rounds
+  const fullOrder = [...dealOrder, ...dealOrder];
+  const STAGGER = 120;
+  const FLIGHT = 250;
+
+  fullOrder.forEach((playerIdx, i) => {
+    const targetVisual = calculateVisualPosition(playerIdx + 1);
+    const target = NP_TARGETS[targetVisual];
+
+    setTimeout(() => {
+      const flyEl = document.createElement('div');
+      flyEl.className = 'deal-card-fly';
+      flyEl.innerHTML = renderCardHTML(null, 'small');
+      flyEl.style.top = origin.top + '%';
+      flyEl.style.left = origin.left + '%';
+      flyEl.style.transform = 'translate(-50%,-50%) scale(0.7) rotate(' + (Math.random() * 20 - 10) + 'deg)';
+      table.appendChild(flyEl);
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          flyEl.style.top = target.top + '%';
+          flyEl.style.left = target.left + '%';
+          flyEl.style.transform = 'translate(-50%,-50%) scale(1) rotate(0deg)';
+        });
+      });
+
+      setTimeout(() => flyEl.remove(), FLIGHT + 50);
+    }, i * STAGGER);
+  });
+}
+
+// ============================================================
+//  CHAT SYSTEM
+// ============================================================
+const chatSettings = { sound: true, playerChat: true, playByPlay: true, autoMuck: true };
+
+function addChatMessage(author, text, isSystem) {
+  const el = $('chatMessages');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (isSystem ? ' system-msg' : '');
+  if (isSystem) {
+    div.textContent = text;
+  } else {
+    div.innerHTML = `<span class="chat-author">${esc(author)}:</span> ${esc(text)}`;
+  }
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  while (el.children.length > 80) el.removeChild(el.firstChild);
+}
+
+function addPlayByPlay(text) {
+  if (!chatSettings.playByPlay) return;
+  const el = $('chatMessages');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = 'chat-msg play-by-play';
+  div.textContent = text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  while (el.children.length > 80) el.removeChild(el.firstChild);
+}
+
+// ============================================================
+//  HAND HISTORY SYSTEM
+// ============================================================
+const handHistories = [];
+let histViewIdx = -1;
+
+function renderHistoryView() {
+  const label = $('histLabel');
+  const text = $('histText');
+  const prev = $('histPrev');
+  const next = $('histNext');
+  if (!label || !text) return;
+
+  if (handHistories.length === 0) {
+    label.textContent = 'No hands yet';
+    text.textContent = '';
+    if (prev) prev.disabled = true;
+    if (next) next.disabled = true;
+    return;
+  }
+
+  const idx = Math.max(0, Math.min(histViewIdx, handHistories.length - 1));
+  histViewIdx = idx;
+  label.textContent = `Hand ${idx + 1} / ${handHistories.length}`;
+  text.textContent = handHistories[idx];
+  if (prev) prev.disabled = idx <= 0;
+  if (next) next.disabled = idx >= handHistories.length - 1;
+}
+
+// ============================================================
+//  INIT CHAT (tabs, send, settings, history navigation)
+// ============================================================
+function initChat() {
+  const tabs = document.querySelectorAll('.chat-tab');
+  const bodies = {
+    chat: $('chatMessages'),
+    history: $('chatHistory'),
+    settings: $('chatSettings'),
+  };
+  const inputArea = $('chatInputArea');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const t = tab.dataset.tab;
+      tabs.forEach(tt => tt.classList.toggle('active', tt === tab));
+      Object.entries(bodies).forEach(([key, el]) => {
+        if (!el) return;
+        if (key === 'chat') {
+          el.style.display = t === 'chat' ? 'flex' : 'none';
+        } else {
+          el.classList.toggle('visible', t === key);
+          el.style.display = t === key ? 'flex' : 'none';
+        }
+      });
+      if (inputArea) inputArea.style.display = t === 'chat' ? 'flex' : 'none';
+      if (t === 'history') renderHistoryView();
+    });
+  });
+
+  // History navigation
+  $('histPrev')?.addEventListener('click', () => {
+    if (histViewIdx > 0) { histViewIdx--; renderHistoryView(); }
+  });
+  $('histNext')?.addEventListener('click', () => {
+    if (histViewIdx < handHistories.length - 1) { histViewIdx++; renderHistoryView(); }
+  });
+  $('histCopy')?.addEventListener('click', () => {
+    if (handHistories.length === 0) return;
+    const idx = Math.max(0, Math.min(histViewIdx, handHistories.length - 1));
+    navigator.clipboard.writeText(handHistories[idx]).then(() => {
+      const btn = $('histCopy');
+      btn.classList.add('copied');
+      btn.textContent = '\u2713';
+      setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '\uD83D\uDCCB'; }, 1500);
+    }).catch(() => {});
+  });
+
+  // Send message
+  const input = $('chatInput');
+  const sendMsg = () => {
+    const text = input.value.trim();
+    if (!text) return;
+    addChatMessage(myUsername, text);
+    // TODO: emit chat message to server when chat is implemented server-side
+    input.value = '';
+  };
+  $('chatSendBtn')?.addEventListener('click', sendMsg);
+  input?.addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
+
+  // Collapse toggle
+  $('chatCollapseBtn')?.addEventListener('click', () => {
+    $('chatBox')?.classList.toggle('collapsed');
+  });
+
+  // Settings toggles
+  document.querySelectorAll('.setting-toggle').forEach(tog => {
+    tog.addEventListener('click', () => {
+      tog.classList.toggle('on');
+      const key = tog.dataset.setting;
+      if (key) chatSettings[key] = tog.classList.contains('on');
+      const box = $('chatBox');
+      if (key === 'playerChat') box?.classList.toggle('hide-chat', !chatSettings.playerChat);
+      if (key === 'playByPlay') box?.classList.toggle('hide-pbp', !chatSettings.playByPlay);
+    });
+  });
+}
+
+// ============================================================
+//  LIGHTNING BOLTS BACKGROUND
+// ============================================================
+const BOLT_PATHS = [
+  { w: 60, h: 110, vb: '0 0 60 110', d: 'M35 2 L18 42 L32 42 L12 108' },
+  { w: 80, h: 120, vb: '0 0 80 120', d: 'M45 2 L28 45 L42 45 L22 90 M42 45 L58 88' },
+  { w: 50, h: 90,  vb: '0 0 50 90',  d: 'M30 4 L14 36 L28 32 L8 86' },
+  { w: 35, h: 70,  vb: '0 0 35 70',  d: 'M20 2 L10 28 L22 28 L8 68' },
+  { w: 55, h: 100, vb: '0 0 55 100', d: 'M32 3 L15 40 L30 38 L10 97' },
+  { w: 40, h: 75,  vb: '0 0 40 75',  d: 'M25 2 L12 30 L24 28 L8 73' },
+  { w: 70, h: 110, vb: '0 0 70 110', d: 'M40 3 L25 42 L38 40 L18 80 M38 40 L55 78' },
+];
+
+function spawnBolt() {
+  const container = $('bgDecor');
+  if (!container) return;
+  const bp = BOLT_PATHS[Math.floor(Math.random() * BOLT_PATHS.length)];
+  const scale = 0.7 + Math.random() * 0.6;
+  const rot = -40 + Math.random() * 80;
+  const x = 3 + Math.random() * 94;
+  const y = 3 + Math.random() * 94;
+  const sw = (1.5 + Math.random() * 1.5).toFixed(1);
+  const alpha = (0.12 + Math.random() * 0.10).toFixed(2);
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', Math.round(bp.w * scale));
+  svg.setAttribute('height', Math.round(bp.h * scale));
+  svg.setAttribute('viewBox', bp.vb);
+  svg.setAttribute('fill', 'none');
+  svg.style.cssText = `top:${y}%;left:${x}%;transform:rotate(${rot}deg);`;
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', bp.d);
+  path.setAttribute('stroke', `rgba(232,168,56,${alpha})`);
+  path.setAttribute('stroke-width', sw);
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(path);
+  container.appendChild(svg);
+
+  requestAnimationFrame(() => {
+    svg.classList.add('bolt-visible');
+    const holdTime = 800 + Math.random() * 1500;
+    setTimeout(() => {
+      svg.classList.remove('bolt-visible');
+      svg.classList.add('bolt-fade');
+      setTimeout(() => svg.remove(), 1600);
+    }, holdTime);
+  });
+}
+
+function scheduleBolt() {
+  const delay = 3000 + Math.random() * 6000;
+  setTimeout(() => {
+    spawnBolt();
+    scheduleBolt();
+  }, delay);
+}
+
+// ============================================================
+//  RESIZE / ORIENTATION HANDLERS
+// ============================================================
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (gameState) render();
+  }, 100);
+});
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    if (gameState) render();
+  }, 300);
+});
+
+// ============================================================
+//  CONNECTION STATUS
+// ============================================================
+function updateConnectionStatus(connected) {
+  const statusEl = $('connectionStatus');
+  const textEl = $('connectionText');
+  if (connected) {
+    statusEl.style.background = 'var(--sage)';
+    textEl.textContent = '\u25CF  Connected';
+    statusEl.style.display = 'block';
+    setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+  } else {
+    statusEl.style.background = 'var(--rust)';
+    textEl.textContent = '\u25CF  Disconnected';
+    statusEl.style.display = 'block';
+  }
+}
+
+// ============================================================
+//  TOAST NOTIFICATIONS
+// ============================================================
+function showToast(message, type) {
+  const container = $('toastContainer');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--warm-white);
+    background: ${type === 'info' ? 'var(--sage)' : 'var(--rust)'};
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: slideIn 0.3s ease;
+    max-width: 300px;
+  `;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+// ============================================================
+//  SIT BACK IN
+// ============================================================
+window.handleSitBackIn = function() {
+  if (!socket) return;
+  socket.emit('sit-back-in', { tableId: myTableId });
+  $('sitBackInBtn').style.display = 'none';
+};
+
+function updateSitBackInButton() {
+  const btn = $('sitBackInBtn');
+  if (!btn || !gameState) return;
+  const myPlayer = gameState.players?.find(p => p && p.userId === myUserId);
+  btn.style.display = (myPlayer && myPlayer.sittingOut) ? 'block' : 'none';
+}
+
+// ============================================================
+//  INIT
+// ============================================================
+async function init() {
+  initChat();
+  scheduleBolt();
+
+  // Try to restore existing NOSTR session
+  const hasSession = await tryRestoreSession();
+  if (hasSession) {
+    hideLoginOverlay();
+    connectToServer();
+  } else {
+    showLoginOverlay();
+  }
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+})();
+</script>
+</body>
+</html>

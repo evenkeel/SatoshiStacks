@@ -1,0 +1,24 @@
+{
+  "name": "satoshistacks",
+  "version": "1.0.0",
+  "description": "Play-money poker platform with Lightning integration path",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm install --workspace=packages/backend",
+    "dev": "npm run dev --workspace=packages/backend",
+    "start": "npm start --workspace=packages/backend"
+  },
+  "keywords": [
+    "poker",
+    "bitcoin",
+    "lightning"
+  ],
+  "author": "Noah Rexrode",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "puppeteer": "^24.37.3"
+  }
+}

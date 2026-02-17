@@ -1,0 +1,13 @@
+{
+  "name": "@satoshistacks/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for SatoshiStacks poker game",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": ["poker", "shared"],
+  "author": "Noah Rexrode",
+  "license": "UNLICENSED"
+}

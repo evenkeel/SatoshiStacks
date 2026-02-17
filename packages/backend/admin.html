@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SatoshiStacks Admin Dashboard</title>
+  <style>
+    :root {
+      --bg-dark: #1a1f2e;
+      --bg-card: #242938;
+      --accent: #e8a838;
+      --accent-dim: rgba(232, 168, 56, 0.1);
+      --text: #e8dcc8;
+      --text-dim: #a39582;
+      --border: rgba(120, 100, 80, 0.3);
+      --sage: #4a6b52;
+      --rust: #c45c3a;
+      --success: #4caf50;
+      --warning: #ff9800;
+      --danger: #f44336;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      padding: 20px;
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    
+    header {
+      background: var(--bg-card);
+      padding: 20px 30px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0;
+    }
+    
+    .tab {
+      padding: 12px 24px;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+      position: relative;
+      top: 2px;
+    }
+    
+    .tab:hover {
+      color: var(--accent);
+    }
+    
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.3s;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    
+    .card h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-dark);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    th {
+      background: rgba(232, 168, 56, 0.1);
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--accent);
+    }
+    
+    td {
+      padding: 14px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 14px;
+    }
+    
+    tr:hover {
+      background: rgba(232, 168, 56, 0.05);
+    }
+    
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-ban {
+      background: var(--danger);
+      color: white;
+    }
+    
+    .btn-ban:hover {
+      background: #d32f2f;
+      transform: translateY(-1px);
+    }
+    
+    .btn-unban {
+      background: var(--success);
+      color: white;
+    }
+    
+    .btn-unban:hover {
+      background: #45a049;
+      transform: translateY(-1px);
+    }
+    
+    .btn-view {
+      background: var(--sage);
+      color: white;
+    }
+    
+    .btn-view:hover {
+      background: #3d5740;
+      transform: translateY(-1px);
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .badge-banned {
+      background: var(--danger);
+      color: white;
+    }
+    
+    .badge-active {
+      background: var(--success);
+      color: white;
+    }
+    
+    .badge-warning {
+      background: var(--warning);
+      color: white;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    
+    .stat-card {
+      background: var(--accent-dim);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--accent);
+      display: block;
+      margin-bottom: 4px;
+    }
+    
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+    
+    .search-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    input[type="text"], input[type="password"] {
+      flex: 1;
+      padding: 12px 16px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+    }
+    
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    
+    .btn-search {
+      background: var(--accent);
+      color: var(--bg-dark);
+      padding: 12px 24px;
+      font-weight: 700;
+    }
+    
+    .btn-search:hover {
+      background: #d99a30;
+    }
+    
+    .log-entry {
+      padding: 12px 16px;
+      background: var(--bg-dark);
+      border-left: 4px solid var(--warning);
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    
+    .log-entry.rate-limit {
+      border-left-color: var(--warning);
+    }
+    
+    .log-entry.ban {
+      border-left-color: var(--danger);
+    }
+    
+    .log-time {
+      color: var(--text-dim);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    
+    .refresh-btn {
+      background: var(--sage);
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    
+    .refresh-btn:hover {
+      background: #3d5740;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-dim);
+    }
+    
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+    
+    .auth-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    
+    .auth-box {
+      background: var(--bg-card);
+      padding: 40px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      text-align: center;
+      max-width: 400px;
+      width: 100%;
+    }
+    
+    .auth-box h2 {
+      margin-bottom: 20px;
+      color: var(--accent);
+    }
+    
+    .auth-box input {
+      width: 100%;
+      margin-bottom: 16px;
+    }
+    
+    .auth-box button {
+      width: 100%;
+    }
+    
+    .hand-history {
+      background: var(--bg-dark);
+      padding: 20px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <!-- Auth Overlay -->
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-box">
+      <h2>🔐 Admin Login</h2>
+      <input type="password" id="adminPassword" placeholder="Enter admin password" />
+      <button class="btn btn-search" onclick="authenticate()">Login</button>
+      <div id="authError" style="color: var(--danger); margin-top: 12px; font-size: 13px;"></div>
+    </div>
+  </div>
+
+  <div class="container" id="dashboard" style="display: none;">
+    <header>
+      <h1>
+        <span>🎰</span>
+        SatoshiStacks Admin Dashboard
+      </h1>
+      <button class="refresh-btn" onclick="refreshAll()">🔄 Refresh All</button>
+    </header>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('overview')">Overview</button>
+      <button class="tab" onclick="switchTab('players')">Players</button>
+      <button class="tab" onclick="switchTab('ipbans')">IP Bans</button>
+      <button class="tab" onclick="switchTab('abuse')">Abuse Log</button>
+      <button class="tab" onclick="switchTab('tables')">Active Tables</button>
+      <button class="tab" onclick="switchTab('hands')">Hand History</button>
+    </div>
+
+    <!-- Overview Tab -->
+    <div id="overview" class="tab-content active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-value" id="totalPlayers">0</span>
+          <span class="stat-label">Total Players</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="activePlayers">0</span>
+          <span class="stat-label">Active Now</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="bannedPlayers">0</span>
+          <span class="stat-label">Banned</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="totalHands">0</span>
+          <span class="stat-label">Hands Played</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Activity</h2>
+        <div id="recentActivity">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Players Tab -->
+    <div id="players" class="tab-content">
+      <div class="card">
+        <h2>All Players</h2>
+        <div class="search-bar">
+          <input type="text" id="playerSearch" placeholder="Search by username or userId..." />
+          <button class="btn btn-search" onclick="searchPlayers()">Search</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>User ID</th>
+              <th>Username</th>
+              <th>IP Address</th>
+              <th>Hands Played</th>
+              <th>Hands Won</th>
+              <th>Win Rate</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="playersTable">
+            <tr><td colspan="8" style="text-align: center; padding: 40px;">Loading players...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- IP Bans Tab -->
+    <div id="ipbans" class="tab-content">
+      <div class="card">
+        <h2>IP Address Bans</h2>
+        <p style="color: var(--text-dim); margin-bottom: 20px; font-size: 14px;">
+          ⚠️ IP-based enforcement: Players get new userIds every session, but IP addresses persist across refreshes. Banning an IP is more effective than banning a userId.
+        </p>
+        
+        <div class="search-bar">
+          <input type="text" id="ipBanInput" placeholder="Enter IP address to ban (e.g. 192.168.1.100)..." />
+          <input type="text" id="ipBanReason" placeholder="Reason for ban..." />
+          <button class="btn btn-search" onclick="banIpManual()">Ban IP</button>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>IP Address</th>
+              <th>Banned At</th>
+              <th>Reason</th>
+              <th>Banned By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ipBansTable">
+            <tr><td colspan="5" style="text-align: center; padding: 40px;">Loading IP bans...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Abuse Log Tab -->
+    <div id="abuse" class="tab-content">
+      <div class="card">
+        <h2>Abuse Log</h2>
+        <div id="abuseLog">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Active Tables Tab -->
+    <div id="tables" class="tab-content">
+      <div class="card">
+        <h2>Active Tables</h2>
+        <div id="activeTables">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Hand History Tab -->
+    <div id="hands" class="tab-content">
+      <div class="card">
+        <h2>Hand History Viewer</h2>
+        <div class="search-bar">
+          <input type="text" id="handSearch" placeholder="Enter userId to view their hand history..." />
+          <button class="btn btn-search" onclick="searchHands()">Search</button>
+        </div>
+        <div id="handHistory"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let authToken = null;
+
+    // Authentication
+    async function authenticate() {
+      const password = document.getElementById('adminPassword').value;
+      // Verify token against server
+      try {
+        const res = await fetch('/api/admin/players', {
+          headers: { 'X-Admin-Token': password }
+        });
+        if (res.ok) {
+          authToken = password;
+          document.getElementById('authOverlay').style.display = 'none';
+          document.getElementById('dashboard').style.display = 'block';
+          loadDashboard();
+        } else {
+          document.getElementById('authError').textContent = 'Incorrect password';
+        }
+      } catch (e) {
+        document.getElementById('authError').textContent = 'Server connection error';
+      }
+    }
+
+    // Authenticated fetch helper — adds admin token to all requests
+    function adminFetch(url, options = {}) {
+      options.headers = { ...options.headers, 'X-Admin-Token': authToken };
+      return fetch(url, options);
+    }
+
+    // Tab switching
+    function switchTab(tabName) {
+      // Remove active class from all tabs and content
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      
+      // Add active class to clicked tab and corresponding content
+      event.target.classList.add('active');
+      document.getElementById(tabName).classList.add('active');
+      
+      // Load data for the tab
+      if (tabName === 'players') loadPlayers();
+      if (tabName === 'ipbans') loadIpBans();
+      if (tabName === 'abuse') loadAbuseLog();
+      if (tabName === 'tables') loadActiveTables();
+    }
+
+    // Load dashboard
+    async function loadDashboard() {
+      loadOverview();
+      loadPlayers();
+    }
+
+    // Load overview stats
+    async function loadOverview() {
+      try {
+        const stats = await fetch('/api/stats').then(r => r.json());
+        document.getElementById('totalPlayers').textContent = stats.totalPlayers || 0;
+        document.getElementById('totalHands').textContent = stats.totalHands || 0;
+        
+        // Load players to count active/banned
+        const players = await adminFetch('/api/admin/players').then(r => r.json());
+        const activePlayers = players.filter(p => !p.banned).length;
+        const bannedPlayers = players.filter(p => p.banned).length;
+        
+        document.getElementById('activePlayers').textContent = activePlayers;
+        document.getElementById('bannedPlayers').textContent = bannedPlayers;
+        
+        // Recent activity
+        const abuseLog = await adminFetch('/api/admin/abuse-log?limit=5').then(r => r.json());
+        const activityEl = document.getElementById('recentActivity');
+        
+        if (abuseLog.length === 0) {
+          activityEl.innerHTML = '<div class="empty-state">No recent activity</div>';
+        } else {
+          activityEl.innerHTML = abuseLog.map(entry => `
+            <div class="log-entry ${entry.event_type}">
+              <div class="log-time">${new Date(entry.timestamp).toLocaleString()}</div>
+              <div><strong>${entry.event_type}</strong>: ${entry.user_id || 'N/A'} - ${entry.details || ''}</div>
+            </div>
+          `).join('');
+        }
+      } catch (error) {
+        console.error('Error loading overview:', error);
+      }
+    }
+
+    // Load players
+    async function loadPlayers() {
+      try {
+        const players = await adminFetch('/api/admin/players').then(r => r.json());
+        const tbody = document.getElementById('playersTable');
+        
+        if (players.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No players yet</td></tr>';
+          return;
+        }
+        
+        // Also fetch player IPs (they're in the abuse_log)
+        const playerIps = {};
+        for (const p of players) {
+          try {
+            const logs = await fetch(`/api/admin/abuse-log?limit=1000`).then(r => r.json());
+            const playerLog = logs.find(log => log.user_id === p.user_id);
+            playerIps[p.user_id] = playerLog ? playerLog.ip_address : 'Unknown';
+          } catch (e) {
+            playerIps[p.user_id] = 'Unknown';
+          }
+        }
+        
+        tbody.innerHTML = players.map(p => {
+          const winRate = p.hands_played > 0 ? ((p.hands_won / p.hands_played) * 100).toFixed(1) : '0.0';
+          const status = p.banned ? '<span class="badge badge-banned">Banned</span>' : '<span class="badge badge-active">Active</span>';
+          const actionBtn = p.banned 
+            ? `<button class="btn btn-unban" onclick="unbanPlayer('${p.user_id}')">Unban</button>`
+            : `<button class="btn btn-ban" onclick="banPlayer('${p.user_id}')">Ban (+IP)</button>`;
+          
+          const playerIp = playerIps[p.user_id] || 'Unknown';
+          
+          return `
+            <tr>
+              <td><code>${p.user_id.substring(0, 8)}...</code></td>
+              <td><strong>${p.username}</strong></td>
+              <td><code style="font-size: 11px;">${playerIp}</code></td>
+              <td>${p.hands_played}</td>
+              <td>${p.hands_won}</td>
+              <td>${winRate}%</td>
+              <td>${status}</td>
+              <td>
+                ${actionBtn}
+                <button class="btn btn-view" onclick="viewPlayerHands('${p.user_id}')">View Hands</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (error) {
+        console.error('Error loading players:', error);
+      }
+    }
+
+    // Ban player
+    async function banPlayer(userId) {
+      if (!confirm('Are you sure you want to ban this player?')) return;
+      
+      try {
+        await adminFetch('/api/admin/ban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, reason: 'Admin action' })
+        });
+        
+        alert('Player banned successfully');
+        loadPlayers();
+        loadOverview();
+      } catch (error) {
+        alert('Error banning player: ' + error.message);
+      }
+    }
+
+    // Unban player
+    async function unbanPlayer(userId) {
+      if (!confirm('Are you sure you want to unban this player?')) return;
+      
+      try {
+        await adminFetch('/api/admin/unban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        });
+        
+        alert('Player unbanned successfully');
+        loadPlayers();
+        loadOverview();
+      } catch (error) {
+        alert('Error unbanning player: ' + error.message);
+      }
+    }
+
+    // Load IP bans
+    async function loadIpBans() {
+      try {
+        const bans = await adminFetch('/api/admin/ip-bans').then(r => r.json());
+        const tbody = document.getElementById('ipBansTable');
+        
+        if (bans.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No IP addresses banned</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = bans.map(ban => {
+          const bannedDate = new Date(ban.banned_at * 1000).toLocaleString();
+          
+          return `
+            <tr>
+              <td><code>${ban.ip_address}</code></td>
+              <td>${bannedDate}</td>
+              <td>${ban.reason || 'No reason provided'}</td>
+              <td>${ban.banned_by || 'System'}</td>
+              <td>
+                <button class="btn btn-unban" onclick="unbanIpFunction('${ban.ip_address}')">Unban</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (error) {
+        console.error('Error loading IP bans:', error);
+      }
+    }
+
+    // Ban IP manually
+    async function banIpManual() {
+      const ipAddress = document.getElementById('ipBanInput').value.trim();
+      const reason = document.getElementById('ipBanReason').value.trim();
+      
+      if (!ipAddress) {
+        alert('Please enter an IP address');
+        return;
+      }
+      
+      if (!reason) {
+        alert('Please enter a reason for the ban');
+        return;
+      }
+      
+      try {
+        await adminFetch('/api/admin/ban-ip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ipAddress, reason })
+        });
+        
+        alert(`IP ${ipAddress} banned successfully`);
+        document.getElementById('ipBanInput').value = '';
+        document.getElementById('ipBanReason').value = '';
+        loadIpBans();
+        loadOverview();
+      } catch (error) {
+        alert('Error banning IP: ' + error.message);
+      }
+    }
+
+    // Unban IP
+    async function unbanIpFunction(ipAddress) {
+      if (!confirm(`Are you sure you want to unban IP ${ipAddress}?`)) return;
+      
+      try {
+        await adminFetch('/api/admin/unban-ip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ipAddress })
+        });
+        
+        alert(`IP ${ipAddress} unbanned successfully`);
+        loadIpBans();
+        loadOverview();
+      } catch (error) {
+        alert('Error unbanning IP: ' + error.message);
+      }
+    }
+
+    // Load abuse log
+    async function loadAbuseLog() {
+      try {
+        const logs = await adminFetch('/api/admin/abuse-log?limit=50').then(r => r.json());
+        const logEl = document.getElementById('abuseLog');
+        
+        if (logs.length === 0) {
+          logEl.innerHTML = '<div class="empty-state">No abuse events logged</div>';
+          return;
+        }
+        
+        logEl.innerHTML = logs.map(entry => `
+          <div class="log-entry ${entry.event_type}">
+            <div class="log-time">${new Date(entry.timestamp).toLocaleString()}</div>
+            <div>
+              <strong>${entry.event_type}</strong>: 
+              User ${entry.user_id ? entry.user_id.substring(0, 8) + '...' : 'N/A'} 
+              ${entry.details ? '- ' + entry.details : ''}
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Error loading abuse log:', error);
+      }
+    }
+
+    // Load active tables
+    async function loadActiveTables() {
+      try {
+        const tables = await adminFetch('/api/admin/tables').then(r => r.json());
+        const tablesEl = document.getElementById('activeTables');
+        
+        if (!tables || tables.length === 0) {
+          tablesEl.innerHTML = '<div class="empty-state">No active tables</div>';
+          return;
+        }
+        
+        tablesEl.innerHTML = tables.map(table => `
+          <div class="card">
+            <h3>Table ${table.id}</h3>
+            <p><strong>Players:</strong> ${table.players.length}/6</p>
+            <p><strong>Hand in progress:</strong> ${table.handInProgress ? 'Yes' : 'No'}</p>
+            <p><strong>Players:</strong> ${table.players.map(p => p.username).join(', ')}</p>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Error loading tables:', error);
+        document.getElementById('activeTables').innerHTML = '<div class="empty-state">Error loading tables</div>';
+      }
+    }
+
+    // Search hands
+    async function searchHands() {
+      const userId = document.getElementById('handSearch').value.trim();
+      if (!userId) {
+        alert('Please enter a userId');
+        return;
+      }
+      
+      try {
+        const hands = await fetch(`/api/hands/${userId}`).then(r => r.json());
+        const historyEl = document.getElementById('handHistory');
+        
+        if (!hands || hands.length === 0) {
+          historyEl.innerHTML = '<div class="empty-state">No hand history found for this user</div>';
+          return;
+        }
+        
+        historyEl.innerHTML = hands.map(hand => `
+          <div class="card">
+            <h3>Hand #${hand.hand_id}</h3>
+            <div class="hand-history">${hand.hand_history}</div>
+          </div>
+        `).join('');
+      } catch (error) {
+        alert('Error loading hands: ' + error.message);
+      }
+    }
+
+    // View player hands
+    function viewPlayerHands(userId) {
+      switchTab('hands');
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab')[4].classList.add('active'); // Hands tab
+      
+      document.getElementById('handSearch').value = userId;
+      searchHands();
+    }
+
+    // Search players
+    function searchPlayers() {
+      const query = document.getElementById('playerSearch').value.toLowerCase();
+      const rows = document.querySelectorAll('#playersTable tr');
+      
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(query) ? '' : 'none';
+      });
+    }
+
+    // Refresh all
+    function refreshAll() {
+      loadOverview();
+      loadPlayers();
+      loadAbuseLog();
+      loadActiveTables();
+    }
+
+    // Auto-refresh every 30 seconds
+    setInterval(() => {
+      if (authToken) {
+        loadOverview();
+      }
+    }, 30000);
+  </script>
+</body>
+</html>

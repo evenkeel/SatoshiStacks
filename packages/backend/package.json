@@ -1,0 +1,29 @@
+{
+  "name": "@satoshistacks/backend",
+  "version": "1.0.0",
+  "description": "Server-authoritative poker game engine and WebSocket server",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "poker",
+    "websocket",
+    "game-server"
+  ],
+  "author": "Noah Rexrode",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.3.1",
+    "express": "^4.18.2",
+    "nostr-tools": "^2.23.1",
+    "socket.io": "^4.6.1",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
