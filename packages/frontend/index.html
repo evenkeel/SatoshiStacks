@@ -1660,6 +1660,7 @@ let preAction = null;        // Pre-action selection
 let currentHandLog = [];     // Accumulates hand-log lines for current hand
 let chipFlyTriggered = false; // Prevent multiple chip fly animations per hand
 let savedPotForAnimation = 0; // Captures pot total before server zeroes it, for chip fly
+let cachedHoleCards = null;    // Cache our hole cards so they survive state glitches
 
 const SUITS = ['h','d','c','s'];
 const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
@@ -2088,6 +2089,24 @@ function connectToServer() {
   socket.on('game-state', (state) => {
     prevGameState = gameState;
     gameState = state;
+
+    // Cache our hole cards so they survive transient state glitches
+    const me = (state.players || []).find(p => p && p.userId === myUserId);
+    if (me) {
+      const cards = me.holeCards;
+      if (cards && cards.length === 2 && cards[0] !== '??' && cards[0]) {
+        // Server sent us real cards — cache them
+        cachedHoleCards = [...cards];
+      } else if (!cards || cards.length === 0) {
+        // Cards explicitly empty (new hand or not dealt yet) — clear cache
+        cachedHoleCards = null;
+      }
+      // If cards are ['??','??'] or missing but cache exists, restore from cache
+      if (cachedHoleCards && (!cards || cards.length === 0 || (cards.length === 2 && !cards[0]))) {
+        me.holeCards = [...cachedHoleCards];
+      }
+    }
+
     // Save pot total for chip fly animation — capture before server zeroes it
     const currentPot = (state.pot || 0) + (state.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
     if (currentPot > 0) savedPotForAnimation = currentPot;
