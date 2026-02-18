@@ -133,6 +133,7 @@ Node.js, Express, Socket.IO, better-sqlite3, nostr-tools, vanilla JS frontend. N
 - [x] Automated SQLite backups
 
 **Next**
+- [ ] Improve GUI (big time)
 - [ ] Multi-client soak testing (50+ hands, edge cases)
 - [ ] Mobile layout polish
 - [ ] Player chat (currently play-by-play only)
