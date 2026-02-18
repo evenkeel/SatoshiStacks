@@ -2553,6 +2553,11 @@ function renderControls() {
   const minR = Math.min(maxBet + Math.max(bigBlind, lastRaise), myPlayer.stack + (myPlayer.currentBet || 0));
   const maxR = myPlayer.stack + (myPlayer.currentBet || 0);
 
+  // Check if all opponents are all-in or folded — if so, player can only call/fold (no raise option)
+  const opponents = gameState.players.filter((p, i) => p && p.userId !== myUserId && !p.folded);
+  const allOpponentsAllIn = opponents.length > 0 && opponents.every(p => p.allIn);
+  const canRaise = !allOpponentsAllIn && myPlayer.stack > toCall;
+
   const callText = canCheck ? 'Check' : (toCall >= myPlayer.stack ? 'All In' : `Call ${fmt(toCall)}`);
   const rLabel = maxBet === 0 ? 'Bet' : 'Raise';
 
@@ -2572,7 +2577,7 @@ function renderControls() {
   const totalPot = (gameState.pot || 0) + gameState.players.filter(p => p).reduce((s, p) => s + (p.currentBet || 0), 0);
 
   bc.innerHTML = `
-    ${maxR > minR ? `<div class="bet-presets">
+    ${canRaise && maxR > minR ? `<div class="bet-presets">
       <button class="bet-preset" data-amt="${minR}">Min</button>
       <button class="bet-preset" data-amt="${Math.min(Math.floor(totalPot * 0.5 + maxBet), maxR)}">1/2 Pot</button>
       <button class="bet-preset" data-amt="${Math.min(totalPot + maxBet, maxR)}">Pot</button>
@@ -2585,8 +2590,8 @@ function renderControls() {
     <div class="action-buttons">
       <button class="action-btn btn-fold" id="foldBtn">Fold</button>
       <button class="action-btn btn-check-call" id="ccBtn">${callText}</button>
-      ${maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmt(minR)}</button>` :
-       (toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmt(myPlayer.stack)}</button>` : '')}
+      ${canRaise && maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmt(minR)}</button>` :
+       (canRaise && toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmt(myPlayer.stack)}</button>` : '')}
     </div>
   `;
 
