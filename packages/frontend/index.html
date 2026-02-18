@@ -2737,8 +2737,8 @@ function handleTimerStart(playerIndex, timeoutMs) {
   }
 
   // Play "your turn" chime if it's the local player's timer
-  const isMyTimer = gameState && gameState.currentPlayerIndex >= 0 &&
-    gameState.players[gameState.currentPlayerIndex]?.userId === myUserId;
+  const timerPlayer = gameState && gameState.players[playerIndex];
+  const isMyTimer = timerPlayer && timerPlayer.userId === myUserId;
   if (isMyTimer) SFX.yourTurn();
 
   let lastWarnSec = -1;
