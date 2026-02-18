@@ -2715,7 +2715,7 @@ function sendAction(action, amount) {
 // ============================================================
 let actionTimer = null;
 let timeRemaining = 0;
-const TURN_TIME = 20000;
+let currentTurnTime = 20000; // Updated from server timeoutMs each timer start
 
 function lifeBarColor(pct) {
   let r, g, b;
@@ -2736,6 +2736,7 @@ function lifeBarColor(pct) {
 function handleTimerStart(playerIndex, timeoutMs) {
   clearTimer();
   timeRemaining = timeoutMs;
+  currentTurnTime = timeoutMs; // Capture actual timeout for life bar calculation
   const visualPos = getVisualPosition(playerIndex);
   if (!visualPos) return;
 
@@ -2754,7 +2755,7 @@ function handleTimerStart(playerIndex, timeoutMs) {
   let lastWarnSec = -1;
   const tick = () => {
     timeRemaining -= 100;
-    const pct = (timeRemaining / TURN_TIME) * 100;
+    const pct = (timeRemaining / currentTurnTime) * 100;
     const bar = $(`lifeBar-${visualPos}`);
     if (bar) {
       bar.style.width = Math.max(0, pct) + '%';
@@ -3197,21 +3198,27 @@ function showPlayerProfile(userId) {
     text-align:center;min-width:240px;font-family:inherit;
   `;
 
-  const avatarColor = AVATAR_COLORS[0];
+  // Use player's actual seat-based avatar color instead of hardcoded [0]
+  const playerIdx = gameState.players.findIndex(p => p && p.userId === userId);
+  const avatarColor = playerIdx >= 0 ? AVATAR_COLORS[playerIdx % AVATAR_COLORS.length] : AVATAR_COLORS[0];
+  const safeDisplayName = esc(displayName);
   const initial = displayName[0]?.toUpperCase() || '?';
   const picture = player.nostrPicture;
   const safePic = picture && /^https?:\/\//i.test(picture) ? picture : null;
   const avatarHTML = safePic
-    ? `<img src="${safePic}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--outline);">`
-    : `<div style="width:64px;height:64px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:var(--text-dark);border:3px solid var(--outline);margin:0 auto;">${initial}</div>`;
+    ? `<img src="${esc(safePic)}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--outline);">`
+    : `<div style="width:64px;height:64px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:var(--text-dark);border:3px solid var(--outline);margin:0 auto;">${esc(initial)}</div>`;
+
+  // Sanitize userId for safe use in onclick (hex pubkey should only contain [0-9a-f])
+  const safeUserId = player.userId.replace(/[^0-9a-f]/gi, '');
 
   popup.innerHTML = `
     <div style="margin-bottom:12px;">${avatarHTML}</div>
-    <div style="font-size:18px;font-weight:800;color:var(--warm-white);margin-bottom:4px;">${displayName}</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:monospace;">${npubShort}</div>
+    <div style="font-size:18px;font-weight:800;color:var(--warm-white);margin-bottom:4px;">${safeDisplayName}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:monospace;">${esc(npubShort)}</div>
     <div style="font-size:14px;color:var(--warm-white);margin-bottom:16px;">Stack: ${player.stack.toLocaleString()}</div>
     <div style="display:flex;gap:8px;justify-content:center;">
-      <button onclick="window.open('https://njump.me/${player.userId}','_blank');document.getElementById('playerProfilePopup').remove();"
+      <button onclick="window.open('https://njump.me/${safeUserId}','_blank');document.getElementById('playerProfilePopup').remove();"
         style="padding:8px 16px;border-radius:8px;border:2px solid var(--outline);background:var(--navy);color:var(--warm-white);font-weight:700;font-size:13px;cursor:pointer;">
         View on NOSTR
       </button>
@@ -3235,18 +3242,7 @@ function showPlayerProfile(userId) {
   }, 100);
 }
 
-function showToast(message) {
-  const toast = document.createElement('div');
-  toast.style.cssText = `
-    position:fixed;bottom:140px;left:50%;transform:translateX(-50%);
-    background:var(--felt-dark);border:2px solid var(--outline);border-radius:10px;
-    padding:10px 20px;color:var(--warm-white);font-size:14px;font-weight:700;
-    z-index:2000;box-shadow:0 4px 12px rgba(0,0,0,0.4);
-  `;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 2000);
-}
+// showToast is defined above (line 3099) — removed duplicate
 
 // ============================================================
 //  INIT

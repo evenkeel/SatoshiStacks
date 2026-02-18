@@ -255,9 +255,20 @@ class PokerGame {
       });
     }
 
-    // Post blinds — skip sitting-out players
-    const sbSeat = this.nextActiveSeat(this.dealerSeat);
-    const bbSeat = this.nextActiveSeat(sbSeat);
+    // Post blinds — handle heads-up vs multi-way
+    const activePlayers = this.players.filter(p => p && !p.sittingOut && p.stack > 0);
+    const isHeadsUp = activePlayers.length === 2;
+
+    let sbSeat, bbSeat;
+    if (isHeadsUp) {
+      // Heads-up: dealer posts SB, other player posts BB
+      sbSeat = this.dealerSeat;
+      bbSeat = this.nextActiveSeat(this.dealerSeat);
+    } else {
+      // Multi-way: SB is left of dealer, BB is left of SB
+      sbSeat = this.nextActiveSeat(this.dealerSeat);
+      bbSeat = this.nextActiveSeat(sbSeat);
+    }
     this.histSbIdx = sbSeat;
     this.histBbIdx = bbSeat;
     this.placeBet(sbSeat, SMALL_BLIND);
@@ -290,8 +301,14 @@ class PokerGame {
       });
     }
 
-    // Start action after big blind
-    this.currentPlayerIndex = this.nextActing(bbSeat);
+    // Start preflop action
+    // Heads-up: dealer/SB acts first preflop
+    // Multi-way: player after BB acts first preflop
+    if (isHeadsUp) {
+      this.currentPlayerIndex = sbSeat; // dealer/SB acts first in HU
+    } else {
+      this.currentPlayerIndex = this.nextActing(bbSeat);
+    }
 
     // Start action timer for first player
     this.startActionTimer();
@@ -458,6 +475,7 @@ class PokerGame {
     this.collectBetsToPot();
     this.actedThisRound = [];
     this.lastRaise = BIG_BLIND;
+    this.lastAggressor = -1;
 
     const active = this.getActivePlayers();
     const acting = this.getActingPlayers();
@@ -1118,6 +1136,7 @@ class PokerGame {
 
     player.sittingOut = false;
     player.sitOutTime = null;
+    player.consecutiveTimeouts = 0; // Fresh start after sitting back in
 
     // Cancel kick timer
     if (this.sitOutKickTimers.has(userId)) {

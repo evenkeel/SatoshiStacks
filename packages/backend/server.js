@@ -871,6 +871,15 @@ io.on('connection', (socket) => {
         nostrPicture
       });
 
+      // Fix: Reset disconnected flag on reconnection via addPlayer path
+      // (handles case where old socket was already cleaned from maps,
+      //  so the reconnection-swap block above was skipped)
+      const reconnectedPlayer = game.players[assignedSeat];
+      if (reconnectedPlayer && reconnectedPlayer.disconnected) {
+        reconnectedPlayer.disconnected = false;
+        console.log(`${displayName} reconnected via addPlayer path — cleared disconnected flag`);
+      }
+
       // Join socket room for this table
       socket.join(`table-${tableId}`);
 
