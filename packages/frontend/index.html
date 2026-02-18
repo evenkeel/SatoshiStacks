@@ -2128,7 +2128,6 @@ function connectToServer() {
     if (type === 'header' && line.startsWith('Satoshi Stacks Hand')) {
       chipFlyTriggered = false;
       savedPotForAnimation = 0;
-      SFX.deal();
     }
     // Add to real-time chat play-by-play
     addPlayByPlay(line);
@@ -2146,11 +2145,12 @@ function connectToServer() {
           const p = gameState.players[i];
           if (p && p.username === name) {
             const vp = calculateVisualPosition(i + 1);
-            if (lower.includes('all-in')) { showBadge(vp, 'All In'); SFX.allIn(); }
-            else if (lower.includes('folds')) { showBadge(vp, 'Fold'); SFX.fold(); }
-            else if (lower.includes('checks')) { showBadge(vp, 'Check'); SFX.check(); }
-            else if (lower.includes('calls')) { showBadge(vp, 'Call'); SFX.chip(); }
-            else if (lower.includes('raises') || lower.includes('bets')) { showBadge(vp, 'Raise'); SFX.chip(); }
+            const isMe = p.userId === myUserId;
+            if (lower.includes('all-in')) { showBadge(vp, 'All In'); if (isMe) SFX.allIn(); }
+            else if (lower.includes('folds')) { showBadge(vp, 'Fold'); if (isMe) SFX.fold(); }
+            else if (lower.includes('checks')) { showBadge(vp, 'Check'); if (isMe) SFX.check(); }
+            else if (lower.includes('calls')) { showBadge(vp, 'Call'); if (isMe) SFX.chip(); }
+            else if (lower.includes('raises') || lower.includes('bets')) { showBadge(vp, 'Raise'); if (isMe) SFX.chip(); }
             break;
           }
         }
@@ -2165,13 +2165,13 @@ function connectToServer() {
         if (!chipFlyTriggered) {
           chipFlyTriggered = true;
           animateChipsToWinner(name);
-          SFX.win();
         }
         for (let i = 0; i < NUM_SEATS; i++) {
           const p = gameState.players[i];
           if (p && p.username === name) {
             const vp = calculateVisualPosition(i + 1);
             showBadge(vp, 'Win');
+            if (p.userId === myUserId) SFX.win();
             break;
           }
         }
@@ -2327,7 +2327,6 @@ function renderCommunityCards() {
   const existing = el.children.length;
 
   // Only append NEW cards — never re-render existing ones (stagger effect)
-  if (cards.length > existing) SFX.deal();
   for (let i = existing; i < cards.length; i++) {
     const div = document.createElement('div');
     div.className = 'community-card';
