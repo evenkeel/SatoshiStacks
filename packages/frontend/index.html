@@ -2455,8 +2455,9 @@ function updateNameplates() {
         cardsHTML = `<div class="np-cards">${renderCardHTML(null, 'small')}${renderCardHTML(null, 'small')}</div>`;
       } else {
         const sc = isMe ? '' : 'small';
-        // During showdown with evaluated hands, dim cards not in the best hand
-        const bestCards = player.hand && player.hand.bestCards ? player.hand.bestCards : null;
+        // During showdown, dim cards not in the best hand — but ONLY after all 5 community cards are dealt
+        const allDealt = gameState.communityCards && gameState.communityCards.length >= 5;
+        const bestCards = allDealt && player.hand && player.hand.bestCards ? player.hand.bestCards : null;
         const dim1 = bestCards && !bestCards.includes(card1) ? ' dimmed' : '';
         const dim2 = bestCards && !bestCards.includes(card2) ? ' dimmed' : '';
         cardsHTML = `<div class="np-cards">${renderCardHTML(card1, sc + dim1)}${renderCardHTML(card2, sc + dim2)}</div>`;
@@ -2533,6 +2534,9 @@ function renderCommunityCards() {
 function highlightWinningCards() {
   if (!gameState || gameState.phase !== 'showdown') return;
 
+  // Only dim cards after all 5 community cards are dealt (not during dramatic runout)
+  if (!gameState.communityCards || gameState.communityCards.length < 5) return;
+
   // Collect all bestCards from players who have evaluated hands (winners)
   const winningCards = new Set();
   gameState.players.forEach(p => {
@@ -2541,7 +2545,7 @@ function highlightWinningCards() {
     }
   });
 
-  // If no evaluated hands yet (still dealing), skip
+  // If no evaluated hands yet, skip
   if (winningCards.size === 0) return;
 
   const el = $('communityCards');
