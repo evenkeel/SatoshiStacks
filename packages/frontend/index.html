@@ -303,6 +303,9 @@ font-weight: 800;
 color: var(--cream);
 letter-spacing: 0.3px;
 text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+max-width: clamp(80px, 12vw, 140px);
+overflow: hidden;
+text-overflow: ellipsis;
 }
 .player-nameplate .np-divider {
 width: 1px;
@@ -423,12 +426,12 @@ transform: translate(-50%, -50%);
 }
 .player-bet.visible { opacity: 1; }
 .player-bet .chip-stack { justify-content: center; }
-.bet-pos-1 { top: 24%; left: 62%; }
-.bet-pos-2 { top: 50%; left: 72%; }
-.bet-pos-3 { top: 76%; left: 62%; }
-.bet-pos-4 { top: 76%; left: 38%; }
-.bet-pos-5 { top: 50%; left: 28%; }
-.bet-pos-6 { top: 24%; left: 38%; }
+.bet-pos-1 { top: 18%; left: 66%; }
+.bet-pos-2 { top: 50%; left: 76%; }
+.bet-pos-3 { top: 82%; left: 66%; }
+.bet-pos-4 { top: 82%; left: 34%; }
+.bet-pos-5 { top: 50%; left: 24%; }
+.bet-pos-6 { top: 18%; left: 34%; }
 /* Cards peeking from nameplate */
 .np-cards {
 position: absolute;
@@ -1078,6 +1081,24 @@ border: 1.5px solid #2B2A28;
 transition: left 0.2s;
 }
 .setting-toggle.on::after { left: 20px; }
+.setting-cycle {
+padding: 2px 10px;
+border-radius: 10px;
+background: #3C8C84;
+border: 2px solid #2B2A28;
+cursor: pointer;
+font-size: 11px;
+font-weight: 700;
+color: #F8F3EA;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+user-select: none;
+min-width: 56px;
+text-align: center;
+transition: background 0.2s;
+}
+.setting-cycle[data-value="alerts"] { background: #c9a227; }
+.setting-cycle[data-value="off"] { background: #c4b9a6; color: #666; }
 .chat-input-area {
 display: flex;
 gap: 5px;
@@ -1382,8 +1403,8 @@ transition: transform 0.2s;
 </div>
 <div class="chat-settings" id="chatSettings">
 <div class="setting-row">
-<span>Sound Effects</span>
-<div class="setting-toggle on" data-setting="sound"></div>
+<span>Sounds</span>
+<div class="setting-cycle" data-setting="sound" data-value="all">All</div>
 </div>
 <div class="setting-row">
 <span>Player Chat</span>
@@ -1443,8 +1464,10 @@ function getAudioCtx() {
   return audioCtx;
 }
 
-function isSoundEnabled() {
-  return typeof chatSettings !== 'undefined' && chatSettings.sound;
+function isSoundEnabled(alertOnly) {
+  if (typeof chatSettings === 'undefined' || chatSettings.sound === 'off') return false;
+  if (alertOnly) return true; // alerts play on both 'alerts' and 'all'
+  return chatSettings.sound === 'all';
 }
 
 const SFX = {
@@ -1567,7 +1590,7 @@ const SFX = {
   },
 
   timerWarning() {
-    if (!isSoundEnabled()) return;
+    if (!isSoundEnabled(true)) return;
     const ctx = getAudioCtx();
     // Short urgent beep
     const osc = ctx.createOscillator();
@@ -1581,7 +1604,7 @@ const SFX = {
   },
 
   yourTurn() {
-    if (!isSoundEnabled()) return;
+    if (!isSoundEnabled(true)) return;
     const ctx = getAudioCtx();
     // Two-note attention chime
     [660, 880].forEach((freq, i) => {
@@ -1654,12 +1677,12 @@ const NP_TARGETS = {
 
 // Bet position targets (where bet chips sit on felt), keyed by visual seat (1-6)
 const BET_TARGETS = {
-  1: { top: 24, left: 62 },
-  2: { top: 50, left: 72 },
-  3: { top: 76, left: 62 },
-  4: { top: 76, left: 38 },
-  5: { top: 50, left: 28 },
-  6: { top: 24, left: 38 },
+  1: { top: 18, left: 66 },
+  2: { top: 50, left: 76 },
+  3: { top: 82, left: 66 },
+  4: { top: 82, left: 34 },
+  5: { top: 50, left: 24 },
+  6: { top: 18, left: 34 },
 };
 
 // Avatar colors for each visual seat
@@ -2778,7 +2801,7 @@ function animateDeal() {
 // ============================================================
 //  CHAT SYSTEM
 // ============================================================
-const chatSettings = { sound: true, playerChat: true, playByPlay: true, autoMuck: true };
+const chatSettings = { sound: 'all', playerChat: true, playByPlay: true, autoMuck: true };
 
 function addChatMessage(author, text, isSystem) {
   const el = $('chatMessages');
@@ -2910,6 +2933,19 @@ function initChat() {
       const box = $('chatBox');
       if (key === 'playerChat') box?.classList.toggle('hide-chat', !chatSettings.playerChat);
       if (key === 'playByPlay') box?.classList.toggle('hide-pbp', !chatSettings.playByPlay);
+    });
+  });
+
+  // Sound cycle button (Off → Alerts → All → Off ...)
+  document.querySelectorAll('.setting-cycle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cycle = { off: 'alerts', alerts: 'all', all: 'off' };
+      const labels = { off: 'Off', alerts: 'Alerts', all: 'All' };
+      const cur = btn.dataset.value;
+      const next = cycle[cur] || 'all';
+      btn.dataset.value = next;
+      btn.textContent = labels[next];
+      chatSettings.sound = next;
     });
   });
 }
