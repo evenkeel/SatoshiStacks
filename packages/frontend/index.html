@@ -437,13 +437,14 @@ transform: translate(-50%, -50%);
 position: absolute;
 display: flex;
 gap: 2px;
-bottom: 45%;
+bottom: 100%;
+margin-bottom: -2px;
 left: 50%;
 transform: translateX(-50%);
 z-index: 17;
 pointer-events: none;
 }
-.np-cards .card { clip-path: inset(0 0 50% 0); }
+.np-cards .card { clip-path: inset(0 0 35% 0); }
 .np-cards .card.small {
 width: clamp(44px, 5.6vw, 72px);
 height: clamp(64px, 8vw, 104px);
@@ -451,7 +452,7 @@ height: clamp(64px, 8vw, 104px);
 .player-nameplate.hero .np-cards .card {
 width: clamp(68px, 9vw, 112px);
 height: clamp(98px, 13vw, 162px);
-clip-path: inset(0 0 45% 0);
+clip-path: inset(0 0 30% 0);
 border-radius: clamp(8px, 1vw, 12px);
 box-shadow: none;
 }
