@@ -661,9 +661,9 @@
         tbody.innerHTML = players.map(p => {
           const winRate = p.hands_played > 0 ? ((p.hands_won / p.hands_played) * 100).toFixed(1) : '0.0';
           const status = p.banned ? '<span class="badge badge-banned">Banned</span>' : '<span class="badge badge-active">Active</span>';
-          const actionBtn = p.banned 
-            ? `<button class="btn btn-unban" onclick="unbanPlayer('${p.user_id}')">Unban</button>`
-            : `<button class="btn btn-ban" onclick="banPlayer('${p.user_id}')">Ban (+IP)</button>`;
+          const actionBtn = p.banned
+            ? `<button class="btn btn-unban" data-action="unban" data-userid="${esc(p.user_id)}">Unban</button>`
+            : `<button class="btn btn-ban" data-action="ban" data-userid="${esc(p.user_id)}">Ban (+IP)</button>`;
           
           const playerIp = playerIps[p.user_id] || 'Unknown';
           
@@ -678,7 +678,7 @@
               <td>${status}</td>
               <td>
                 ${actionBtn}
-                <button class="btn btn-view" onclick="viewPlayerHands('${esc(p.user_id)}')">View Hands</button>
+                <button class="btn btn-view" data-action="view-hands" data-userid="${esc(p.user_id)}">View Hands</button>
               </td>
             </tr>
           `;
@@ -747,7 +747,7 @@
               <td>${esc(ban.reason || 'No reason provided')}</td>
               <td>${esc(ban.banned_by || 'System')}</td>
               <td>
-                <button class="btn btn-unban" onclick="unbanIpFunction('${esc(ban.ip_address)}')">Unban</button>
+                <button class="btn btn-unban" data-action="unban-ip" data-ip="${esc(ban.ip_address)}">Unban</button>
               </td>
             </tr>
           `;
@@ -913,6 +913,17 @@
       loadAbuseLog();
       loadActiveTables();
     }
+
+    // Delegated click handler for dynamic admin buttons (avoids inline onclick XSS risk)
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === 'ban') banPlayer(btn.dataset.userid);
+      else if (action === 'unban') unbanPlayer(btn.dataset.userid);
+      else if (action === 'view-hands') viewPlayerHands(btn.dataset.userid);
+      else if (action === 'unban-ip') unbanIpFunction(btn.dataset.ip);
+    });
 
     // Auto-refresh every 30 seconds
     setInterval(() => {

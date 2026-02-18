@@ -205,6 +205,18 @@ class PokerGame {
    * Start new hand
    */
   startNewHand() {
+    // Apply deferred sit-outs FIRST (before setting handInProgress)
+    // so the active-count check is accurate and we never deadlock
+    this.players.forEach(p => {
+      if (p && p.sittingOutNextHand) {
+        p.sittingOut = true;
+        p.sittingOutNextHand = false;
+        p.sitOutTime = Date.now();
+        console.log(`[PokerGame ${this.tableId}] ${p.username} sat out (timed out last hand)`);
+        this.startSitOutKickTimer(p.userId);
+      }
+    });
+
     const active = this.players.filter(p => p !== null && p.stack > 0 && !p.sittingOut);
     console.log(`[PokerGame ${this.tableId}] startNewHand() called - active players: ${active.length}`);
     if (active.length < 2) {
@@ -212,6 +224,7 @@ class PokerGame {
       return;
     }
 
+    // Safe to commit to starting the hand now
     console.log(`[PokerGame ${this.tableId}] Starting hand #${this.handCount + 1}`);
     this.handInProgress = true;
     this.handCount++;
@@ -227,24 +240,6 @@ class PokerGame {
 
     // Create and shuffle deck (crypto-secure)
     this.deck = shuffleSecure(createDeck());
-
-    // Apply deferred sit-outs from previous hand timeouts
-    this.players.forEach(p => {
-      if (p && p.sittingOutNextHand) {
-        p.sittingOut = true;
-        p.sittingOutNextHand = false;
-        p.sitOutTime = Date.now();
-        console.log(`[PokerGame ${this.tableId}] ${p.username} sat out (timed out last hand)`);
-        this.startSitOutKickTimer(p.userId);
-      }
-    });
-
-    // Re-check active count after deferred sit-outs
-    const activeCheck = this.players.filter(p => p !== null && p.stack > 0 && !p.sittingOut);
-    if (activeCheck.length < 2) {
-      console.log(`[PokerGame ${this.tableId}] Not enough players after sit-outs (${activeCheck.length}), aborting`);
-      return;
-    }
 
     // Reset player states — sitting-out and busted players don't participate
     this.players.forEach(p => {
@@ -367,16 +362,49 @@ class PokerGame {
     if (player.folded || player.allIn) return { valid: false, error: 'Cannot act' };
     if (player.sittingOut) return { valid: false, error: 'Cannot act while sitting out' };
 
-    // Deduct time bank if player acted during time bank phase
-    this.deductTimeBank(player);
-
-    // Clear action timer (player acted in time)
-    this.clearActionTimer();
-
     const idx = player.seatIndex;
     const maxBet = this.getMaxBet();
     const prevMaxBet = maxBet; // capture before action for history logging
 
+    // Validate action BEFORE touching timers — invalid actions must not
+    // reset the timer (prevents stall exploit via repeated bad actions)
+    switch (action) {
+      case 'fold':
+        break; // always valid
+      case 'check':
+        if (player.currentBet < maxBet) {
+          return { valid: false, error: 'Cannot check - must call or fold' };
+        }
+        break;
+      case 'call':
+        break; // always valid if it's your turn
+      case 'raise': {
+        let raiseTotal = amount;
+        if (raiseTotal <= maxBet) {
+          return { valid: false, error: 'Raise must be higher than current bet' };
+        }
+        const highestOpponentTotal = Math.max(
+          ...this.players.filter((p, i) => p && i !== idx && !p.folded)
+            .map(p => p.currentBet + p.stack)
+        );
+        const isCappedByAllIns = raiseTotal > highestOpponentTotal && highestOpponentTotal <= maxBet;
+        if (!isCappedByAllIns) {
+          const minRaise = maxBet + Math.max(BIG_BLIND, this.lastRaise);
+          if (raiseTotal < minRaise && player.stack > raiseTotal - player.currentBet) {
+            return { valid: false, error: `Minimum raise is ${minRaise}` };
+          }
+        }
+        break;
+      }
+      default:
+        return { valid: false, error: 'Invalid action' };
+    }
+
+    // Action is valid — now deduct time bank and clear timer
+    this.deductTimeBank(player);
+    this.clearActionTimer();
+
+    // Execute the validated action
     switch (action) {
       case 'fold':
         player.folded = true;
@@ -385,10 +413,6 @@ class PokerGame {
         break;
 
       case 'check':
-        if (player.currentBet < maxBet) {
-          this.startActionTimer();
-          return { valid: false, error: 'Cannot check - must call or fold' };
-        }
         this.emitLog(`${player.username}: checks`, 'action');
         break;
 
@@ -406,10 +430,6 @@ class PokerGame {
 
       case 'raise': {
         let raiseTotal = amount;
-        if (raiseTotal <= maxBet) {
-          this.startActionTimer();
-          return { valid: false, error: 'Raise must be higher than current bet' };
-        }
 
         // Cap raise to max possible opponent can match — if all opponents are
         // all-in or folded, the excess over the highest all-in is uncontestable
@@ -433,11 +453,6 @@ class PokerGame {
           break;
         }
 
-        const minRaise = maxBet + Math.max(BIG_BLIND, this.lastRaise);
-        if (raiseTotal < minRaise && player.stack > raiseTotal - player.currentBet) {
-          this.startActionTimer();
-          return { valid: false, error: `Minimum raise is ${minRaise}` };
-        }
         const raiseAmount = Math.min(raiseTotal - player.currentBet, player.stack);
         this.placeBet(idx, raiseAmount);
         player._hasBet = true;
@@ -463,10 +478,6 @@ class PokerGame {
         this.actedThisRound = [player.seatIndex]; // Reset action tracker
         break;
       }
-
-      default:
-        this.startActionTimer();
-        return { valid: false, error: 'Invalid action' };
     }
 
     this.actedThisRound.push(player.seatIndex);
