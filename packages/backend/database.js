@@ -486,7 +486,7 @@ function getPlayerByPubkey(pubkeyHex) {
  * Uses hex pubkey as user_id for consistency.
  */
 function upsertNostrPlayer(pubkeyHex, npub, nostrName, nostrPicture, lud16) {
-  const displayName = nostrName || npub.slice(0, 12) + '...' + npub.slice(-4);
+  const displayName = nostrName || npub.slice(0, 8) + '...' + npub.slice(-3);
   const stmt = db.prepare(`
     INSERT INTO players (user_id, username, pubkey_hex, npub, nostr_name, nostr_picture, lud16, auth_type)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'nostr')

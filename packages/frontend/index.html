@@ -277,9 +277,9 @@ z-index: 3;
 position: absolute;
 display: flex;
 align-items: center;
-gap: 6px;
+gap: 8px;
 background: linear-gradient(135deg, rgba(18, 24, 30, 0.92), rgba(30, 38, 48, 0.92));
-padding: 5px 14px 5px 8px;
+padding: 6px 16px 6px 10px;
 border-radius: var(--radius-pill);
 border: 1.5px solid rgba(120, 100, 80, 0.4);
 backdrop-filter: blur(8px);
@@ -292,29 +292,29 @@ transition: var(--transition);
 pointer-events: none;
 }
 .player-nameplate .np-icon {
-width: 20px;
-height: 20px;
+width: 24px;
+height: 24px;
 flex-shrink: 0;
 line-height: 0;
 }
 .player-nameplate .np-name {
-font-size: 13px;
+font-size: 14px;
 font-weight: 800;
 color: var(--cream);
 letter-spacing: 0.3px;
 text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-max-width: clamp(80px, 12vw, 140px);
+max-width: clamp(60px, 8vw, 100px);
 overflow: hidden;
 text-overflow: ellipsis;
 }
 .player-nameplate .np-divider {
 width: 1px;
-height: 16px;
+height: 18px;
 background: rgba(255,255,255,0.15);
 flex-shrink: 0;
 }
 .player-nameplate .np-amount {
-font-size: 15px;
+font-size: 16px;
 font-weight: 900;
 color: var(--mustard);
 text-shadow: 0 1px 3px rgba(0,0,0,0.5);
@@ -1173,10 +1173,10 @@ transition: transform 0.2s;
 /* === RESPONSIVE === */
 @media (max-width: 768px) {
 .poker-table { width: 92vw; }
-.player-nameplate .np-name { font-size: 11px; }
-.player-nameplate .np-amount { font-size: 13px; }
-.player-nameplate .np-icon { width: 16px; height: 16px; }
-.player-nameplate { padding: 4px 12px 4px 7px; gap: 5px; }
+.player-nameplate .np-name { font-size: 12px; }
+.player-nameplate .np-amount { font-size: 14px; }
+.player-nameplate .np-icon { width: 20px; height: 20px; }
+.player-nameplate { padding: 5px 14px 5px 8px; gap: 6px; }
 .seat-1 { top: 7%; left: 75%; }
 .seat-2 { top: 50%; left: 97%; }
 .seat-3 { top: 93%; left: 75%; }
@@ -1192,11 +1192,11 @@ transition: transform 0.2s;
     0 0 0 10px #6b5040, 0 -2px 0 10px #8a6b55, 0 0 0 13px #4a3628,
     0 5px 0 13px #3a2a1e, 0 10px 30px rgba(0,0,0,0.5);
 }
-.player-nameplate .np-name { font-size: 10px; }
-.player-nameplate .np-amount { font-size: 12px; }
-.player-nameplate .np-icon { width: 14px; height: 14px; }
-.player-nameplate { padding: 3px 10px 3px 6px; gap: 4px; }
-.player-nameplate .np-divider { height: 12px; }
+.player-nameplate .np-name { font-size: 11px; }
+.player-nameplate .np-amount { font-size: 13px; }
+.player-nameplate .np-icon { width: 16px; height: 16px; }
+.player-nameplate { padding: 4px 12px 4px 7px; gap: 5px; }
+.player-nameplate .np-divider { height: 14px; }
 .chip-stack { gap: 2px; }
 .chip-stack-count { font-size: 8px; }
 .controls-area { width: 60vw; padding: 8px 14px; }
@@ -1224,11 +1224,11 @@ transition: transform 0.2s;
 .bet-slider::-webkit-slider-thumb { width: 28px; height: 28px; }
 .bet-slider { height: 8px; }
 .bet-amount-input { width: 65px; font-size: 14px; padding: 4px 6px; }
-.player-nameplate .np-name { font-size: 9px; }
-.player-nameplate .np-amount { font-size: 10px; }
-.player-nameplate .np-icon { width: 12px; height: 12px; }
-.player-nameplate { padding: 2px 8px 2px 5px; gap: 3px; }
-.player-nameplate .np-divider { height: 10px; }
+.player-nameplate .np-name { font-size: 10px; }
+.player-nameplate .np-amount { font-size: 11px; }
+.player-nameplate .np-icon { width: 14px; height: 14px; }
+.player-nameplate { padding: 3px 10px 3px 6px; gap: 4px; }
+.player-nameplate .np-divider { height: 12px; }
 .chip-stack { gap: 1px; }
 .chip-stack-count { font-size: 7px; }
 .np-cards { gap: 2px; }
@@ -1743,6 +1743,12 @@ const $ = id => document.getElementById(id);
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// Truncate long names/npubs for nameplate display (max 10 chars)
+function truncName(name) {
+  if (!name) return '?';
+  if (name.length <= 10) return name;
+  return name.slice(0, 8) + '…';
 }
 
 // Chip denominations — sorted high-to-low for greedy breakdown
@@ -2481,8 +2487,8 @@ function updateNameplates() {
       <div class="np-life-bar" id="lifeBar-${visualPos}"></div>
       <div class="np-action" id="npAction-${visualPos}"></div>
       <div class="np-content">
-        <div class="np-icon">${renderChipPillIcon(player.stack, 20)}</div>
-        <span class="np-name">${esc(player.nostrName || player.username)}</span>
+        <div class="np-icon">${renderChipPillIcon(player.stack, 24)}</div>
+        <span class="np-name">${esc(truncName(player.nostrName || player.username))}</span>
         <div class="np-divider"></div>
         <div class="np-amount-wrap"><span class="np-amount">${fmt(player.stack)}</span></div>
       </div>
