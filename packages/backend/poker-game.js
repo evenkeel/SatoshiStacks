@@ -106,6 +106,9 @@ class PokerGame {
       throw new Error('Table is full (6/6 seats occupied)');
     }
 
+    // If hand is in progress, new player sits out until next hand
+    const joinedMidHand = this.handInProgress;
+
     this.players[seatIndex] = {
       userId,
       username,
@@ -113,14 +116,15 @@ class PokerGame {
       nostrPicture: opts.nostrPicture || null,
       stack: opts.initialStack || STARTING_STACK,
       holeCards: [],
-      folded: false,
+      folded: joinedMidHand,            // folded if joining mid-hand
       allIn: false,
       currentBet: 0,
       totalInvested: 0,
       seatIndex,
       sittingOut: false,
       disconnected: false,
-      sitOutTime: null
+      sitOutTime: null,
+      participatedThisHand: false       // never participated if joining mid-hand
     };
 
     console.log(`[PokerGame ${this.tableId}] Assigned ${username} to seat ${seatIndex + 1} (index ${seatIndex})`);
@@ -634,9 +638,6 @@ class PokerGame {
     // Save hand to database
     this.saveHandToDatabase(handStartTime, winners);
 
-    // Clean up players who left mid-hand
-    this.cleanupPendingRemovals();
-
     // Auto-rebuy busted players (play-money: everyone gets back in)
     let hadRebuy = false;
     this.players.forEach(p => {
@@ -658,6 +659,10 @@ class PokerGame {
     // Schedule next hand — extra pause after rebuys so players can see it
     const nextHandDelay = hadRebuy ? 5000 : 3000;
     setTimeout(() => {
+      // Clean up players who left mid-hand — defer until just before next hand
+      // so seats stay visually stable between hands
+      this.cleanupPendingRemovals();
+
       const stillActive = this.players.filter(p => p !== null && p.stack > 0 && !p.sittingOut);
       if (stillActive.length >= 2) {
         this.startNewHand();
