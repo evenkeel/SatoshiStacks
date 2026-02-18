@@ -10,8 +10,12 @@ const STARTING_STACK = 10000;
 const SMALL_BLIND = 50;
 const BIG_BLIND = 100;
 const NUM_SEATS = 6;
-const ACTION_TIMEOUT_MS = 20000; // 20 seconds
-const SIT_OUT_KICK_MS = 300000; // 5 minutes
+const BASE_ACTION_MS = 15000;     // 15-second base action timer
+const DEFAULT_TIME_BANK_MS = 15000; // 15s initial time bank per pool
+const TIME_BANK_CAP_MS = 60000;    // Max 60s time bank
+const TIME_BANK_GROWTH_MS = 5000;  // +5s per growth interval
+const TIME_BANK_GROWTH_HANDS = 10; // Grow every 10 hands dealt
+const SIT_OUT_KICK_MS = 300000;    // 5 minutes
 
 // Chip denominations — sorted high-to-low for greedy breakdown
 const CHIP_DEFS = [
@@ -68,7 +72,7 @@ class PokerGame {
   }
 
   /**
-   * Format a card for PokerStars output (e.g., "Ah", "Td")
+   * Format a card for hand history output (e.g., "Ah", "Td")
    */
   cardStr(c) {
     return c || '??';
@@ -125,7 +129,10 @@ class PokerGame {
       disconnected: false,
       sitOutTime: null,
       participatedThisHand: false,      // never participated if joining mid-hand
-      consecutiveTimeouts: 0            // track timeouts — sit out after 3
+      timeBankPreflop: DEFAULT_TIME_BANK_MS,  // pre-flop time bank pool (ms)
+      timeBankPostflop: DEFAULT_TIME_BANK_MS, // post-flop time bank pool (ms)
+      handsDealtCount: 0,                      // track hands dealt for time bank growth
+      sittingOutNextHand: false                // deferred sit-out after timeout
     };
 
     console.log(`[PokerGame ${this.tableId}] Assigned ${username} to seat ${seatIndex + 1} (index ${seatIndex})`);
@@ -221,6 +228,24 @@ class PokerGame {
     // Create and shuffle deck (crypto-secure)
     this.deck = shuffleSecure(createDeck());
 
+    // Apply deferred sit-outs from previous hand timeouts
+    this.players.forEach(p => {
+      if (p && p.sittingOutNextHand) {
+        p.sittingOut = true;
+        p.sittingOutNextHand = false;
+        p.sitOutTime = Date.now();
+        console.log(`[PokerGame ${this.tableId}] ${p.username} sat out (timed out last hand)`);
+        this.startSitOutKickTimer(p.userId);
+      }
+    });
+
+    // Re-check active count after deferred sit-outs
+    const activeCheck = this.players.filter(p => p !== null && p.stack > 0 && !p.sittingOut);
+    if (activeCheck.length < 2) {
+      console.log(`[PokerGame ${this.tableId}] Not enough players after sit-outs (${activeCheck.length}), aborting`);
+      return;
+    }
+
     // Reset player states — sitting-out and busted players don't participate
     this.players.forEach(p => {
       if (p) {
@@ -239,6 +264,13 @@ class PokerGame {
         } else {
           p.folded = false;
           p.participatedThisHand = true;
+          // Grow time bank every N hands
+          p.handsDealtCount = (p.handsDealtCount || 0) + 1;
+          if (p.handsDealtCount % TIME_BANK_GROWTH_HANDS === 0) {
+            p.timeBankPreflop = Math.min((p.timeBankPreflop || DEFAULT_TIME_BANK_MS) + TIME_BANK_GROWTH_MS, TIME_BANK_CAP_MS);
+            p.timeBankPostflop = Math.min((p.timeBankPostflop || DEFAULT_TIME_BANK_MS) + TIME_BANK_GROWTH_MS, TIME_BANK_CAP_MS);
+            console.log(`[PokerGame ${this.tableId}] ${p.username} time bank grew to ${p.timeBankPreflop}ms pre / ${p.timeBankPostflop}ms post`);
+          }
         }
       }
     });
@@ -335,11 +367,11 @@ class PokerGame {
     if (player.folded || player.allIn) return { valid: false, error: 'Cannot act' };
     if (player.sittingOut) return { valid: false, error: 'Cannot act while sitting out' };
 
+    // Deduct time bank if player acted during time bank phase
+    this.deductTimeBank(player);
+
     // Clear action timer (player acted in time)
     this.clearActionTimer();
-
-    // Player acted — reset consecutive timeout counter
-    player.consecutiveTimeouts = 0;
 
     const idx = player.seatIndex;
     const maxBet = this.getMaxBet();
@@ -410,7 +442,7 @@ class PokerGame {
         this.placeBet(idx, raiseAmount);
         player._hasBet = true;
 
-        // Log in PokerStars format: "bets" if first aggression, "raises X to Y" otherwise
+        // Log in standard format: "bets" if first aggression, "raises X to Y" otherwise
         if (prevMaxBet === 0 || (this.phase === 'preflop' && prevMaxBet <= BIG_BLIND && player.currentBet > BIG_BLIND)) {
           if (this.phase !== 'preflop' || prevMaxBet === 0) {
             if (player.allIn) this.emitLog(`${player.username}: bets ${player.currentBet} and is all-in`, 'action');
@@ -629,11 +661,25 @@ class PokerGame {
         }
       });
 
-      potResults.forEach(({ potWinners, share, potName }) => {
-        potWinners.forEach(w => {
-          const src = pots.length > 1 ? ` from ${potName}` : ' from pot';
-          this.emitLog(`${w.username} collected ${share}${src}`, 'winner');
+      // Track actual amounts each winner received (share + remainder)
+      const winnerAmounts = new Map();
+      potResults.forEach(({ pot, potWinners, share, potName }) => {
+        const remainder = pot.amount - share * potWinners.length;
+        const sorted = [...potWinners].sort((a, b) => {
+          const aDist = (a.seatIndex - this.dealerSeat + NUM_SEATS) % NUM_SEATS;
+          const bDist = (b.seatIndex - this.dealerSeat + NUM_SEATS) % NUM_SEATS;
+          return aDist - bDist;
         });
+        sorted.forEach((w, i) => {
+          const actual = share + (i < remainder ? 1 : 0);
+          const key = `${w.userId}:${potName}`;
+          winnerAmounts.set(key, { player: w, amount: actual, potName });
+        });
+      });
+
+      winnerAmounts.forEach(({ player: w, amount, potName }) => {
+        const src = pots.length > 1 ? ` from ${potName}` : ' from pot';
+        this.emitLog(`${w.username} collected ${amount}${src}`, 'winner');
       });
 
       this.pot = 0;
@@ -796,7 +842,7 @@ class PokerGame {
   }
 
   /**
-   * Generate hand history text (PokerStars format)
+   * Generate hand history text (standard format)
    * Uses the accumulated currentHandLog from emitLog calls
    */
   generateHandHistoryText() {
@@ -939,6 +985,9 @@ class PokerGame {
           allIn: p.allIn,
           seatIndex: idx,
           sittingOut: p.sittingOut || false,
+          sittingOutNextHand: p.sittingOutNextHand || false,
+          timeBankPreflop: p.timeBankPreflop || 0,
+          timeBankPostflop: p.timeBankPostflop || 0,
           // Only show hole cards if:
           // 1. It's the requesting player's own cards
           // 2. Showdown phase and player is active
@@ -1022,35 +1071,96 @@ class PokerGame {
     );
   }
 
-  // ==================== PHASE 5.4: TIMEOUT & DISCONNECT HANDLING ====================
+  // ==================== TIMEOUT & DISCONNECT HANDLING ====================
 
   /**
-   * Start action timer for current player
+   * Start two-phase action timer for current player:
+   *   Phase 1: Base timer (15s) — no time bank deducted
+   *   Phase 2: Time bank — auto-activates if player has chips invested, deducts from pool
    */
   startActionTimer() {
     this.clearActionTimer();
-    
+
     const playerIndex = this.currentPlayerIndex;
     if (playerIndex === -1) return;
-    
+
     const player = this.players[playerIndex];
     if (!player || player.sittingOut) return;
-    
-    console.log(`[PokerGame ${this.tableId}] Starting 20s timer for ${player.username}`);
-    
+
+    // Determine which time bank pool to use
+    const isPreflop = this.phase === 'preflop';
+    const tbPool = isPreflop ? (player.timeBankPreflop || 0) : (player.timeBankPostflop || 0);
+
+    // Track timer state for time bank deduction
+    this.timerPhase = 'base';           // 'base' or 'timebank'
+    this.timerPlayerIndex = playerIndex; // Which player this timer belongs to
+    this.timeBankStartedAt = null;       // When time bank phase started
+
+    console.log(`[PokerGame ${this.tableId}] Starting ${BASE_ACTION_MS / 1000}s base timer for ${player.username} (time bank: ${Math.round(tbPool / 1000)}s ${isPreflop ? 'pre' : 'post'})`);
+
+    // Phase 1: Base timer
     this.actionTimeout = setTimeout(() => {
-      console.log(`[PokerGame ${this.tableId}] ${player.username} timed out!`);
-      this.handleTimeout(playerIndex);
-    }, ACTION_TIMEOUT_MS);
-    
-    // Notify frontend to start countdown
+      // SAFETY GUARD: Verify this timer is still for the current player
+      if (this.currentPlayerIndex !== playerIndex) {
+        console.log(`[PokerGame ${this.tableId}] Stale base timer for seat ${playerIndex} (current is ${this.currentPlayerIndex}) — ignoring`);
+        return;
+      }
+
+      console.log(`[PokerGame ${this.tableId}] Base timer expired for ${player.username}`);
+
+      // Check if player has chips invested in this pot
+      const hasInvestment = player.totalInvested > 0 || player.currentBet > 0;
+      const currentTbPool = isPreflop ? (player.timeBankPreflop || 0) : (player.timeBankPostflop || 0);
+
+      if (!hasInvestment || currentTbPool <= 0) {
+        // No investment or no time bank — timeout immediately
+        console.log(`[PokerGame ${this.tableId}] No investment or empty time bank — immediate timeout`);
+        this.handleTimeout(playerIndex);
+        return;
+      }
+
+      // Phase 2: Time bank — auto-activate
+      this.timerPhase = 'timebank';
+      this.timeBankStartedAt = Date.now();
+
+      console.log(`[PokerGame ${this.tableId}] Time bank activated for ${player.username}: ${Math.round(currentTbPool / 1000)}s`);
+
+      // Notify frontend of time bank activation
+      if (this.onTimeBankStart) {
+        this.onTimeBankStart(playerIndex, currentTbPool);
+      }
+
+      this.actionTimeout = setTimeout(() => {
+        // SAFETY GUARD: Verify this timer is still for the current player
+        if (this.currentPlayerIndex !== playerIndex) {
+          console.log(`[PokerGame ${this.tableId}] Stale time bank timer for seat ${playerIndex} (current is ${this.currentPlayerIndex}) — ignoring`);
+          return;
+        }
+
+        // Fully deplete the time bank pool
+        if (isPreflop) {
+          player.timeBankPreflop = 0;
+        } else {
+          player.timeBankPostflop = 0;
+        }
+
+        console.log(`[PokerGame ${this.tableId}] Time bank expired for ${player.username}`);
+        this.handleTimeout(playerIndex);
+      }, currentTbPool);
+
+    }, BASE_ACTION_MS);
+
+    // Notify frontend to start countdown (sends both base and time bank info)
     if (this.onTimerStart) {
-      this.onTimerStart(playerIndex, ACTION_TIMEOUT_MS);
+      this.onTimerStart(playerIndex, BASE_ACTION_MS, {
+        timeBankMs: tbPool,
+        isPreflop: isPreflop
+      });
     }
   }
 
   /**
-   * Clear action timer
+   * Clear action timer and all related state
    */
   clearActionTimer() {
     if (this.actionTimeout) {
@@ -1060,33 +1170,61 @@ class PokerGame {
   }
 
   /**
-   * Handle timeout - auto-fold; sit out only after 3 consecutive timeouts
+   * Deduct used time bank after player acts during time bank phase
+   */
+  deductTimeBank(player) {
+    if (this.timerPhase !== 'timebank' || !this.timeBankStartedAt) return;
+
+    const elapsed = Date.now() - this.timeBankStartedAt;
+    const isPreflop = this.phase === 'preflop';
+
+    if (isPreflop) {
+      player.timeBankPreflop = Math.max(0, (player.timeBankPreflop || 0) - elapsed);
+      console.log(`[PokerGame ${this.tableId}] ${player.username} used ${Math.round(elapsed / 1000)}s of pre-flop time bank (${Math.round(player.timeBankPreflop / 1000)}s remaining)`);
+    } else {
+      player.timeBankPostflop = Math.max(0, (player.timeBankPostflop || 0) - elapsed);
+      console.log(`[PokerGame ${this.tableId}] ${player.username} used ${Math.round(elapsed / 1000)}s of post-flop time bank (${Math.round(player.timeBankPostflop / 1000)}s remaining)`);
+    }
+
+    this.timerPhase = 'base';
+    this.timeBankStartedAt = null;
+  }
+
+  /**
+   * Handle timeout — auto-check if possible, auto-fold if owes chips.
+   * 1 timeout = sit out next hand.
    */
   handleTimeout(playerIndex) {
+    // SAFETY GUARD: Verify this is actually the current player
+    if (this.currentPlayerIndex !== playerIndex) {
+      console.log(`[PokerGame ${this.tableId}] handleTimeout called for seat ${playerIndex} but current is ${this.currentPlayerIndex} — ignoring stale callback`);
+      return;
+    }
+
     const player = this.players[playerIndex];
     if (!player) return;
 
-    player.consecutiveTimeouts = (player.consecutiveTimeouts || 0) + 1;
+    const maxBet = this.getMaxBet();
+    const canCheck = player.currentBet >= maxBet;
 
-    console.log(`[PokerGame ${this.tableId}] Auto-folding ${player.username} due to timeout (${player.consecutiveTimeouts} consecutive)`);
-
-    // Auto-fold
-    player.folded = true;
-    player._foldPhase = this.phase;
-    this.emitLog(`${player.username}: folds [timeout]`, 'action');
-
-    // Only sit out after 3 consecutive timeouts
-    if (player.consecutiveTimeouts >= 3) {
-      player.sittingOut = true;
-      player.sitOutTime = Date.now();
-      player.consecutiveTimeouts = 0;
-
-      console.log(`[PokerGame ${this.tableId}] ${player.username} is now sitting out (3 consecutive timeouts)`);
-
-      // Start 5-minute kick timer
-      this.startSitOutKickTimer(player.userId);
+    if (canCheck) {
+      // Auto-check
+      console.log(`[PokerGame ${this.tableId}] Auto-checking ${player.username} (timeout, can check)`);
+      this.emitLog(`${player.username}: checks [timeout]`, 'action');
+    } else {
+      // Auto-fold
+      console.log(`[PokerGame ${this.tableId}] Auto-folding ${player.username} (timeout, owes chips)`);
+      player.folded = true;
+      player._foldPhase = this.phase;
+      this.emitLog(`${player.username}: folds [timeout]`, 'action');
     }
-    
+
+    // 1 timeout = sit out next hand
+    player.sittingOutNextHand = true;
+    console.log(`[PokerGame ${this.tableId}] ${player.username} will sit out next hand (timeout)`);
+
+    this.actedThisRound.push(player.seatIndex);
+
     // Advance to next player
     this.currentPlayerIndex = this.nextActing(playerIndex);
     if (this.currentPlayerIndex === -1 || this.isRoundDone()) {
@@ -1094,7 +1232,7 @@ class PokerGame {
     } else {
       this.startActionTimer();
     }
-    
+
     // Broadcast state change
     if (this.onStateChange) {
       this.onStateChange();
@@ -1136,7 +1274,7 @@ class PokerGame {
 
     player.sittingOut = false;
     player.sitOutTime = null;
-    player.consecutiveTimeouts = 0; // Fresh start after sitting back in
+    player.sittingOutNextHand = false; // Cancel pending sit-out too
 
     // Cancel kick timer
     if (this.sitOutKickTimers.has(userId)) {

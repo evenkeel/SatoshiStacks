@@ -399,12 +399,12 @@
 
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('overview')">Overview</button>
-      <button class="tab" onclick="switchTab('players')">Players</button>
-      <button class="tab" onclick="switchTab('ipbans')">IP Bans</button>
-      <button class="tab" onclick="switchTab('abuse')">Abuse Log</button>
-      <button class="tab" onclick="switchTab('tables')">Active Tables</button>
-      <button class="tab" onclick="switchTab('hands')">Hand History</button>
+      <button class="tab active" onclick="switchTab('overview', event)">Overview</button>
+      <button class="tab" onclick="switchTab('players', event)">Players</button>
+      <button class="tab" onclick="switchTab('ipbans', event)">IP Bans</button>
+      <button class="tab" onclick="switchTab('abuse', event)">Abuse Log</button>
+      <button class="tab" onclick="switchTab('tables', event)">Active Tables</button>
+      <button class="tab" onclick="switchTab('hands', event)">Hand History</button>
     </div>
 
     <!-- Overview Tab -->
@@ -552,14 +552,38 @@
       return fetch(url, options);
     }
 
+    // HTML escape helper — prevents XSS from user-controlled DB values
+    function esc(str) {
+      if (str == null) return '';
+      const div = document.createElement('div');
+      div.textContent = String(str);
+      return div.innerHTML;
+    }
+
     // Tab switching
-    function switchTab(tabName) {
+    function switchTab(tabName, evt) {
       // Remove active class from all tabs and content
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      
+
       // Add active class to clicked tab and corresponding content
-      event.target.classList.add('active');
+      if (evt && evt.target) {
+        evt.target.classList.add('active');
+      } else {
+        // Programmatic call — find the tab button by matching onclick
+        const tabs = document.querySelectorAll('.tab');
+        tabs.forEach(t => {
+          if (t.textContent.toLowerCase().includes(tabName.replace(/\w+/, m => m))) {
+            // Match by tab content ID
+          }
+        });
+        // Fallback: find the tab that triggers this tabName
+        document.querySelectorAll('.tab').forEach(t => {
+          if (t.getAttribute('onclick') && t.getAttribute('onclick').includes(`'${tabName}'`)) {
+            t.classList.add('active');
+          }
+        });
+      }
       document.getElementById(tabName).classList.add('active');
       
       // Load data for the tab
@@ -578,7 +602,8 @@
     // Load overview stats
     async function loadOverview() {
       try {
-        const stats = await fetch('/api/stats').then(r => r.json());
+        const statsResp = await fetch('/api/stats').then(r => r.json());
+        const stats = statsResp.stats || statsResp; // Unwrap { success, stats } envelope
         document.getElementById('totalPlayers').textContent = stats.totalPlayers || 0;
         document.getElementById('totalHands').textContent = stats.totalHands || 0;
         
@@ -598,9 +623,9 @@
           activityEl.innerHTML = '<div class="empty-state">No recent activity</div>';
         } else {
           activityEl.innerHTML = abuseLog.map(entry => `
-            <div class="log-entry ${entry.event_type}">
-              <div class="log-time">${new Date(entry.timestamp).toLocaleString()}</div>
-              <div><strong>${entry.event_type}</strong>: ${entry.user_id || 'N/A'} - ${entry.details || ''}</div>
+            <div class="log-entry ${esc(entry.action_type)}">
+              <div class="log-time">${new Date(entry.timestamp * 1000).toLocaleString()}</div>
+              <div><strong>${esc(entry.action_type)}</strong>: ${esc(entry.user_id) || 'N/A'}</div>
             </div>
           `).join('');
         }
@@ -620,16 +645,17 @@
           return;
         }
         
-        // Also fetch player IPs (they're in the abuse_log)
+        // Fetch abuse log ONCE to extract player IPs (avoids N+1)
         const playerIps = {};
-        for (const p of players) {
-          try {
-            const logs = await fetch(`/api/admin/abuse-log?limit=1000`).then(r => r.json());
-            const playerLog = logs.find(log => log.user_id === p.user_id);
-            playerIps[p.user_id] = playerLog ? playerLog.ip_address : 'Unknown';
-          } catch (e) {
-            playerIps[p.user_id] = 'Unknown';
+        try {
+          const allLogs = await adminFetch('/api/admin/abuse-log?limit=1000').then(r => r.json());
+          for (const log of allLogs) {
+            if (log.user_id && log.ip_address && !playerIps[log.user_id]) {
+              playerIps[log.user_id] = log.ip_address;
+            }
           }
+        } catch (e) {
+          console.error('Error fetching abuse log for IPs:', e);
         }
         
         tbody.innerHTML = players.map(p => {
@@ -643,16 +669,16 @@
           
           return `
             <tr>
-              <td><code>${p.user_id.substring(0, 8)}...</code></td>
-              <td><strong>${p.username}</strong></td>
-              <td><code style="font-size: 11px;">${playerIp}</code></td>
-              <td>${p.hands_played}</td>
-              <td>${p.hands_won}</td>
-              <td>${winRate}%</td>
+              <td><code>${esc(p.user_id.substring(0, 8))}...</code></td>
+              <td><strong>${esc(p.username)}</strong></td>
+              <td><code style="font-size: 11px;">${esc(playerIp)}</code></td>
+              <td>${Number(p.hands_played) || 0}</td>
+              <td>${Number(p.hands_won) || 0}</td>
+              <td>${esc(winRate)}%</td>
               <td>${status}</td>
               <td>
                 ${actionBtn}
-                <button class="btn btn-view" onclick="viewPlayerHands('${p.user_id}')">View Hands</button>
+                <button class="btn btn-view" onclick="viewPlayerHands('${esc(p.user_id)}')">View Hands</button>
               </td>
             </tr>
           `;
@@ -716,12 +742,12 @@
           
           return `
             <tr>
-              <td><code>${ban.ip_address}</code></td>
-              <td>${bannedDate}</td>
-              <td>${ban.reason || 'No reason provided'}</td>
-              <td>${ban.banned_by || 'System'}</td>
+              <td><code>${esc(ban.ip_address)}</code></td>
+              <td>${esc(bannedDate)}</td>
+              <td>${esc(ban.reason || 'No reason provided')}</td>
+              <td>${esc(ban.banned_by || 'System')}</td>
               <td>
-                <button class="btn btn-unban" onclick="unbanIpFunction('${ban.ip_address}')">Unban</button>
+                <button class="btn btn-unban" onclick="unbanIpFunction('${esc(ban.ip_address)}')">Unban</button>
               </td>
             </tr>
           `;
@@ -794,12 +820,12 @@
         }
         
         logEl.innerHTML = logs.map(entry => `
-          <div class="log-entry ${entry.event_type}">
-            <div class="log-time">${new Date(entry.timestamp).toLocaleString()}</div>
+          <div class="log-entry ${esc(entry.action_type)}">
+            <div class="log-time">${new Date(entry.timestamp * 1000).toLocaleString()}</div>
             <div>
-              <strong>${entry.event_type}</strong>: 
-              User ${entry.user_id ? entry.user_id.substring(0, 8) + '...' : 'N/A'} 
-              ${entry.details ? '- ' + entry.details : ''}
+              <strong>${esc(entry.action_type)}</strong>:
+              User ${entry.user_id ? esc(entry.user_id.substring(0, 8)) + '...' : 'N/A'}
+              ${entry.ip_address ? ' (IP: ' + esc(entry.ip_address) + ')' : ''}
             </div>
           </div>
         `).join('');
@@ -821,10 +847,10 @@
         
         tablesEl.innerHTML = tables.map(table => `
           <div class="card">
-            <h3>Table ${table.id}</h3>
-            <p><strong>Players:</strong> ${table.players.length}/6</p>
+            <h3>Table ${esc(table.id)}</h3>
+            <p><strong>Players:</strong> ${(table.players || []).length}/6</p>
             <p><strong>Hand in progress:</strong> ${table.handInProgress ? 'Yes' : 'No'}</p>
-            <p><strong>Players:</strong> ${table.players.map(p => p.username).join(', ')}</p>
+            <p><strong>Players:</strong> ${(table.players || []).map(p => esc(p.username)).join(', ')}</p>
           </div>
         `).join('');
       } catch (error) {
@@ -842,18 +868,19 @@
       }
       
       try {
-        const hands = await fetch(`/api/hands/${userId}`).then(r => r.json());
+        const resp = await fetch(`/api/hands/${userId}`).then(r => r.json());
+        const hands = resp.hands || []; // Unwrap { success, hands } envelope
         const historyEl = document.getElementById('handHistory');
-        
+
         if (!hands || hands.length === 0) {
           historyEl.innerHTML = '<div class="empty-state">No hand history found for this user</div>';
           return;
         }
-        
+
         historyEl.innerHTML = hands.map(hand => `
           <div class="card">
-            <h3>Hand #${hand.hand_id}</h3>
-            <div class="hand-history">${hand.hand_history}</div>
+            <h3>Hand #${esc(hand.hand_id)}</h3>
+            <div class="hand-history">${esc(hand.hand_history)}</div>
           </div>
         `).join('');
       } catch (error) {
@@ -863,10 +890,7 @@
 
     // View player hands
     function viewPlayerHands(userId) {
-      switchTab('hands');
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab')[4].classList.add('active'); // Hands tab
-      
+      switchTab('hands'); // Programmatic call — no event, finds tab by onclick attr
       document.getElementById('handSearch').value = userId;
       searchHands();
     }

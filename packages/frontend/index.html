@@ -1471,164 +1471,10 @@ function isSoundEnabled(alertOnly) {
 }
 
 const SFX = {
-  deal() {
-    if (!isSoundEnabled()) return;
-    const ctx = getAudioCtx();
-    // Card sliding onto felt — filtered noise snap
-    const dur = 0.08;
-    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      const t = i / ctx.sampleRate;
-      // Quick attack, fast decay — sounds like a card snapping down
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 50) * 0.6;
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = 3000; bp.Q.value = 0.8;
-    const gain = ctx.createGain();
-    gain.gain.value = 0.2;
-    src.connect(bp).connect(gain).connect(ctx.destination);
-    src.start();
-  },
-
-  check() {
-    if (!isSoundEnabled()) return;
-    const ctx = getAudioCtx();
-    // Two soft knocks on table
-    [0, 0.09].forEach(delay => {
-      const dur = 0.06;
-      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < data.length; i++) {
-        const t = i / ctx.sampleRate;
-        // Low thump — knuckle on felt
-        data[i] = (Math.sin(2 * Math.PI * 120 * t) * 0.6 +
-                   Math.sin(2 * Math.PI * 240 * t) * 0.2) * Math.exp(-t * 60);
-      }
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      const gain = ctx.createGain();
-      gain.gain.value = 0.25;
-      src.connect(gain).connect(ctx.destination);
-      src.start(ctx.currentTime + delay);
-    });
-  },
-
-  chip() {
-    if (!isSoundEnabled()) return;
-    const ctx = getAudioCtx();
-    // Soft thud — chip landing on felt, muted and warm
-    const dur = 0.09;
-    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      const t = i / ctx.sampleRate;
-      // Low muted thump — no high-freq ring, just a gentle plop
-      data[i] = (Math.sin(2 * Math.PI * 350 * t) * 0.5 +
-                 Math.sin(2 * Math.PI * 700 * t) * 0.1) * Math.exp(-t * 55);
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 900;
-    const gain = ctx.createGain();
-    gain.gain.value = 0.15;
-    src.connect(lp).connect(gain).connect(ctx.destination);
-    src.start();
-  },
-
-  fold() {
-    if (!isSoundEnabled()) return;
-    const ctx = getAudioCtx();
-    // Soft card slide — gentle whoosh, low-passed
-    const dur = 0.15;
-    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      const t = i / ctx.sampleRate;
-      // Fade in slightly then out — feels like cards sliding across felt
-      const env = Math.sin(Math.PI * t / 0.15) * Math.exp(-t * 12);
-      data[i] = (Math.random() * 2 - 1) * env * 0.25;
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 1200;
-    const gain = ctx.createGain();
-    gain.gain.value = 0.2;
-    src.connect(lp).connect(gain).connect(ctx.destination);
-    src.start();
-  },
-
-  allIn() {
-    if (!isSoundEnabled()) return;
-    const ctx = getAudioCtx();
-    // Chips pushed forward — soft tumble of muted thuds
-    [0, 0.07, 0.12, 0.16, 0.22].forEach((delay, idx) => {
-      const dur = 0.08;
-      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      const freq = 300 + idx * 40 + Math.random() * 80;
-      for (let i = 0; i < data.length; i++) {
-        const t = i / ctx.sampleRate;
-        data[i] = Math.sin(2 * Math.PI * freq * t) * 0.4 * Math.exp(-t * 50);
-      }
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = 800;
-      const gain = ctx.createGain();
-      gain.gain.value = 0.12;
-      src.connect(lp).connect(gain).connect(ctx.destination);
-      src.start(ctx.currentTime + delay);
-    });
-  },
-
-  win() {
-    if (!isSoundEnabled()) return;
-    const ctx = getAudioCtx();
-    // Chips sliding to winner — gentle muted cascade
-    for (let i = 0; i < 5; i++) {
-      const delay = i * 0.06 + Math.random() * 0.03;
-      const dur = 0.07;
-      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      const freq = 280 + Math.random() * 200;
-      for (let j = 0; j < data.length; j++) {
-        const t = j / ctx.sampleRate;
-        data[j] = Math.sin(2 * Math.PI * freq * t) * 0.35 * Math.exp(-t * 50);
-      }
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = 700;
-      const gain = ctx.createGain();
-      gain.gain.value = 0.1;
-      src.connect(lp).connect(gain).connect(ctx.destination);
-      src.start(ctx.currentTime + delay);
-    }
-  },
-
-  timerWarning() {
-    if (!isSoundEnabled(true)) return;
-    const ctx = getAudioCtx();
-    // Soft tick — not harsh, just noticeable
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = 660;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.06);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + 0.06);
-  },
-
   yourTurn() {
     if (!isSoundEnabled(true)) return;
     const ctx = getAudioCtx();
-    // Gentle two-note chime — warm sine tones
+    // Gentle two-note chime — warm sine tones (C5 → E5)
     [523, 659].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
@@ -2124,11 +1970,16 @@ function connectToServer() {
     showToast(error.message);
   });
 
-  socket.on('action-timer-start', ({ playerIndex, timeoutMs }) => {
-    handleTimerStart(playerIndex, timeoutMs);
+  socket.on('action-timer-start', ({ playerIndex, timeoutMs, timeBankMs, isPreflop }) => {
+    handleTimerStart(playerIndex, timeoutMs, timeBankMs || 0, isPreflop);
   });
 
-  // Real-time hand log — PokerStars-format play-by-play
+  // Time bank activation — switches life bar to time bank phase
+  socket.on('time-bank-start', ({ playerIndex, timeBankMs }) => {
+    handleTimeBankStart(playerIndex, timeBankMs);
+  });
+
+  // Real-time hand log — standard format play-by-play
   socket.on('hand-log', ({ line, type }) => {
     if (!line || !line.trim()) return;
     // Reset chip fly flag on new hand
@@ -2717,9 +2568,15 @@ let actionTimer = null;
 let timeRemaining = 0;
 let currentTurnTime = 20000; // Updated from server timeoutMs each timer start
 
-function lifeBarColor(pct) {
+function lifeBarColor(pct, isTimeBank) {
   let r, g, b;
-  if (pct > 50) {
+  if (isTimeBank) {
+    // Time bank: blue/purple gradient
+    const t = pct / 100;
+    r = Math.round(80 + (120 - 80) * t);
+    g = Math.round(100 + (140 - 100) * t);
+    b = Math.round(200 + (240 - 200) * t);
+  } else if (pct > 50) {
     const t = (pct - 50) / 50;
     r = Math.round(232 + (76 - 232) * t);
     g = Math.round(195 + (175 - 195) * t);
@@ -2733,18 +2590,28 @@ function lifeBarColor(pct) {
   return `linear-gradient(135deg, rgba(${r},${g},${b},0.50), rgba(${r},${g},${b},0.35))`;
 }
 
-function handleTimerStart(playerIndex, timeoutMs) {
+// Track time bank state for the active timer
+let timerTimeBankMs = 0;
+let timerIsPreflop = true;
+let timerVisualPos = null;
+let timerIsTimeBank = false;
+
+function handleTimerStart(playerIndex, baseMs, timeBankMs, isPreflop) {
   clearTimer();
-  timeRemaining = timeoutMs;
-  currentTurnTime = timeoutMs; // Capture actual timeout for life bar calculation
+  timeRemaining = baseMs;
+  currentTurnTime = baseMs;
+  timerTimeBankMs = timeBankMs || 0;
+  timerIsPreflop = isPreflop;
+  timerIsTimeBank = false;
   const visualPos = getVisualPosition(playerIndex);
+  timerVisualPos = visualPos;
   if (!visualPos) return;
 
   const bar = $(`lifeBar-${visualPos}`);
   if (bar) {
     bar.style.width = '100%';
     bar.classList.add('active');
-    bar.style.background = lifeBarColor(100);
+    bar.style.background = lifeBarColor(100, false);
   }
 
   // Play "your turn" chime if it's the local player's timer
@@ -2752,7 +2619,6 @@ function handleTimerStart(playerIndex, timeoutMs) {
   const isMyTimer = timerPlayer && timerPlayer.userId === myUserId;
   if (isMyTimer) SFX.yourTurn();
 
-  let lastWarnSec = -1;
   const tick = () => {
     timeRemaining -= 100;
     const pct = (timeRemaining / currentTurnTime) * 100;
@@ -2760,15 +2626,44 @@ function handleTimerStart(playerIndex, timeoutMs) {
     if (bar) {
       bar.style.width = Math.max(0, pct) + '%';
       bar.classList.add('active');
-      bar.style.background = lifeBarColor(pct);
+      bar.style.background = lifeBarColor(pct, timerIsTimeBank);
     }
-    // Timer warning beeps in last 5 seconds (one per second)
-    if (isMyTimer && timeRemaining <= 5000 && timeRemaining > 0) {
-      const sec = Math.ceil(timeRemaining / 1000);
-      if (sec !== lastWarnSec) {
-        lastWarnSec = sec;
-        SFX.timerWarning();
-      }
+    if (timeRemaining <= 0) {
+      clearTimer();
+      return;
+    }
+    actionTimer = setTimeout(tick, 100);
+  };
+  actionTimer = setTimeout(tick, 100);
+}
+
+/**
+ * Handle time bank activation from server — switch life bar to time bank phase
+ */
+function handleTimeBankStart(playerIndex, timeBankMs) {
+  clearTimer();
+  timerIsTimeBank = true;
+  timeRemaining = timeBankMs;
+  currentTurnTime = timeBankMs;
+  const visualPos = getVisualPosition(playerIndex);
+  timerVisualPos = visualPos;
+  if (!visualPos) return;
+
+  const bar = $(`lifeBar-${visualPos}`);
+  if (bar) {
+    bar.style.width = '100%';
+    bar.classList.add('active');
+    bar.style.background = lifeBarColor(100, true);
+  }
+
+  const tick = () => {
+    timeRemaining -= 100;
+    const pct = (timeRemaining / currentTurnTime) * 100;
+    const bar = $(`lifeBar-${visualPos}`);
+    if (bar) {
+      bar.style.width = Math.max(0, pct) + '%';
+      bar.classList.add('active');
+      bar.style.background = lifeBarColor(pct, true);
     }
     if (timeRemaining <= 0) {
       clearTimer();
@@ -2784,6 +2679,7 @@ function clearTimer() {
     clearTimeout(actionTimer);
     actionTimer = null;
   }
+  timerIsTimeBank = false;
   for (let i = 1; i <= 6; i++) {
     const bar = $(`lifeBar-${i}`);
     if (bar) {

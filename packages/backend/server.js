@@ -22,6 +22,9 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'change-me-in-production';
+if (!process.env.ADMIN_TOKEN) {
+  console.warn('⚠️  WARNING: ADMIN_TOKEN not set in environment — using insecure default. Set ADMIN_TOKEN in .env for production.');
+}
 
 const io = new Server(server, {
   cors: {
@@ -820,11 +823,21 @@ io.on('connection', (socket) => {
           broadcastGameState(tableId);
         };
 
-        // Set up timer start callback
-        game.onTimerStart = (playerIndex, timeoutMs) => {
+        // Set up timer start callback (two-phase: base + time bank)
+        game.onTimerStart = (playerIndex, baseMs, timeBankInfo) => {
           io.to(`table-${tableId}`).emit('action-timer-start', {
             playerIndex,
-            timeoutMs
+            timeoutMs: baseMs,
+            timeBankMs: timeBankInfo ? timeBankInfo.timeBankMs : 0,
+            isPreflop: timeBankInfo ? timeBankInfo.isPreflop : true
+          });
+        };
+
+        // Set up time bank activation callback
+        game.onTimeBankStart = (playerIndex, timeBankMs) => {
+          io.to(`table-${tableId}`).emit('time-bank-start', {
+            playerIndex,
+            timeBankMs
           });
         };
 
