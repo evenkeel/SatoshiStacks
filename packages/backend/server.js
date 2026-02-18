@@ -43,6 +43,27 @@ const socketUsers = new Map(); // socket.id -> userId
 // Future: Consolidate to Main Table when possible (full tables priority)
 const MULTI_TABLES_ENABLED = false;
 
+// NIP-05: NOSTR identifier verification endpoint (must be before static middleware)
+app.get('/.well-known/nostr.json', (req, res) => {
+  const name = (req.query.name || '').toLowerCase().trim();
+
+  // Static mapping of NIP-05 identifiers → hex pubkeys
+  const identifiers = {
+    'allen': '8a3a9236d0eae6bc92eb17782d57e828a01f03cd28d3c68297c7e19d374b9419'
+  };
+
+  // CORS required by NIP-05 spec
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  if (name && identifiers[name]) {
+    res.json({ names: { [name]: identifiers[name] } });
+  } else {
+    // Return all identifiers if no name or unknown name
+    res.json({ names: identifiers });
+  }
+});
+
 // Serve static files (frontend)
 app.use(express.static(path.join(__dirname, '../../packages/frontend')));
 
