@@ -124,7 +124,8 @@ class PokerGame {
       sittingOut: false,
       disconnected: false,
       sitOutTime: null,
-      participatedThisHand: false       // never participated if joining mid-hand
+      participatedThisHand: false,      // never participated if joining mid-hand
+      consecutiveTimeouts: 0            // track timeouts — sit out after 3
     };
 
     console.log(`[PokerGame ${this.tableId}] Assigned ${username} to seat ${seatIndex + 1} (index ${seatIndex})`);
@@ -319,6 +320,9 @@ class PokerGame {
 
     // Clear action timer (player acted in time)
     this.clearActionTimer();
+
+    // Player acted — reset consecutive timeout counter
+    player.consecutiveTimeouts = 0;
 
     const idx = player.seatIndex;
     const maxBet = this.getMaxBet();
@@ -1015,27 +1019,32 @@ class PokerGame {
   }
 
   /**
-   * Handle timeout - auto-fold and sit out
+   * Handle timeout - auto-fold; sit out only after 3 consecutive timeouts
    */
   handleTimeout(playerIndex) {
     const player = this.players[playerIndex];
     if (!player) return;
-    
-    console.log(`[PokerGame ${this.tableId}] Auto-folding ${player.username} due to timeout`);
+
+    player.consecutiveTimeouts = (player.consecutiveTimeouts || 0) + 1;
+
+    console.log(`[PokerGame ${this.tableId}] Auto-folding ${player.username} due to timeout (${player.consecutiveTimeouts} consecutive)`);
 
     // Auto-fold
     player.folded = true;
     player._foldPhase = this.phase;
     this.emitLog(`${player.username}: folds [timeout]`, 'action');
-    
-    // Sit out immediately
-    player.sittingOut = true;
-    player.sitOutTime = Date.now();
-    
-    console.log(`[PokerGame ${this.tableId}] ${player.username} is now sitting out`);
-    
-    // Start 5-minute kick timer
-    this.startSitOutKickTimer(player.userId);
+
+    // Only sit out after 3 consecutive timeouts
+    if (player.consecutiveTimeouts >= 3) {
+      player.sittingOut = true;
+      player.sitOutTime = Date.now();
+      player.consecutiveTimeouts = 0;
+
+      console.log(`[PokerGame ${this.tableId}] ${player.username} is now sitting out (3 consecutive timeouts)`);
+
+      // Start 5-minute kick timer
+      this.startSitOutKickTimer(player.userId);
+    }
     
     // Advance to next player
     this.currentPlayerIndex = this.nextActing(playerIndex);
