@@ -432,37 +432,40 @@ transform: translate(-50%, -50%);
 .bet-pos-4 { top: 82%; left: 22%; }
 .bet-pos-5 { top: 50%; left: 24%; }
 .bet-pos-6 { top: 18%; left: 34%; }
-/* Cards peeking from nameplate */
+/* Cards peeking from nameplate — overflow-hidden wrapper */
 .np-cards {
 position: absolute;
 display: flex;
+align-items: flex-start;
 gap: 2px;
 bottom: 100%;
-margin-bottom: -2px;
 left: 50%;
 transform: translateX(-50%);
 z-index: 17;
 pointer-events: none;
+overflow: hidden;
+height: clamp(28px, 3.6vw, 47px);
 }
-.np-cards .card { clip-path: inset(0 0 35% 0); }
 .np-cards .card.small {
-width: clamp(44px, 5.6vw, 72px);
-height: clamp(64px, 8vw, 104px);
+width: clamp(32px, 4.2vw, 52px);
+height: clamp(46px, 6vw, 76px);
+}
+.player-nameplate.hero .np-cards {
+height: clamp(43px, 5.7vw, 72px);
 }
 .player-nameplate.hero .np-cards .card {
-width: clamp(68px, 9vw, 112px);
-height: clamp(98px, 13vw, 162px);
-clip-path: inset(0 0 30% 0);
-border-radius: clamp(8px, 1vw, 12px);
+width: clamp(50px, 6.5vw, 82px);
+height: clamp(72px, 9.5vw, 120px);
+border-radius: clamp(6px, 0.7vw, 9px);
 box-shadow: none;
 }
 .np-cards .card .card-corner.top-left {
-top: clamp(4px, 0.6vw, 8px);
-left: clamp(6px, 0.8vw, 10px);
+top: clamp(3px, 0.4vw, 6px);
+left: clamp(4px, 0.6vw, 7px);
 }
-.np-cards .card .card-corner .card-rank { font-size: clamp(18px, 2vw, 24px); }
-.np-cards .card .card-corner .card-suit { font-size: clamp(14px, 1.6vw, 20px); }
-.np-cards .card .card-pip { font-size: clamp(32px, 4vw, 48px); }
+.np-cards .card .card-corner .card-rank { font-size: clamp(13px, 1.5vw, 17px); }
+.np-cards .card .card-corner .card-suit { font-size: clamp(10px, 1.2vw, 15px); }
+.np-cards .card .card-pip { font-size: clamp(24px, 3vw, 36px); }
 /* Folded hero cards — silhouette on hover */
 .player-nameplate.hero.folded-np {
 pointer-events: auto;
