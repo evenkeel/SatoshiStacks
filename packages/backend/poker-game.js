@@ -356,11 +356,34 @@ class PokerGame {
       }
 
       case 'raise': {
-        const raiseTotal = amount;
+        let raiseTotal = amount;
         if (raiseTotal <= maxBet) {
           this.startActionTimer();
           return { valid: false, error: 'Raise must be higher than current bet' };
         }
+
+        // Cap raise to max possible opponent can match — if all opponents are
+        // all-in or folded, the excess over the highest all-in is uncontestable
+        // and the action becomes a call, not a raise.
+        const highestOpponentTotal = Math.max(
+          ...this.players.filter((p, i) => p && i !== idx && !p.folded)
+            .map(p => p.currentBet + p.stack)
+        );
+        const isCappedByAllIns = raiseTotal > highestOpponentTotal && highestOpponentTotal <= maxBet;
+
+        if (isCappedByAllIns) {
+          // Everyone else is all-in or folded — treat as a call
+          const callAmount = Math.min(maxBet - player.currentBet, player.stack);
+          this.placeBet(idx, callAmount);
+          player._hasBet = true;
+          if (player.allIn) {
+            this.emitLog(`${player.username}: calls ${callAmount} and is all-in`, 'action');
+          } else {
+            this.emitLog(`${player.username}: calls ${callAmount}`, 'action');
+          }
+          break;
+        }
+
         const minRaise = maxBet + Math.max(BIG_BLIND, this.lastRaise);
         if (raiseTotal < minRaise && player.stack > raiseTotal - player.currentBet) {
           this.startActionTimer();
