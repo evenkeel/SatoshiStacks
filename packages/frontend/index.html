@@ -2062,9 +2062,16 @@ function connectToServer() {
   });
 
   socket.on('seat-assigned', ({ seatIndex, displayName }) => {
-    mySeat = seatIndex + 1;
+    const newSeat = seatIndex + 1;
+    if (mySeat && mySeat !== newSeat) {
+      // Seat changed (e.g. reconnect after kick) — suppress transition flicker
+      console.warn(`[Seat] Seat changed from ${mySeat} to ${newSeat}`);
+    }
+    mySeat = newSeat;
     if (displayName) myUsername = displayName;
     showToast(`Playing as ${myUsername}`, 'info');
+    // Render now that we know our seat (game-state may have arrived first)
+    render();
   });
 
   socket.on('auth-error', ({ message }) => {
@@ -2195,7 +2202,7 @@ function connectToServer() {
 //  MAIN RENDER — called on every game-state update
 // ============================================================
 function render() {
-  if (!gameState) return;
+  if (!gameState || !mySeat) return; // Wait for seat assignment before rendering
 
   // Execute pre-action BEFORE rendering clears it
   if (gameState.yourTurn && preAction) {
