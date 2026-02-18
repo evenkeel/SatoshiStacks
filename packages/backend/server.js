@@ -841,9 +841,12 @@ io.on('connection', (socket) => {
           }
         };
 
-        // Set up hand complete callback — send compiled history to all players
-        game.onHandComplete = (historyText) => {
-          io.to(`table-${tableId}`).emit('hand-complete', { history: historyText });
+        // Set up hand complete callback — send personalized history to each player
+        game.onHandComplete = (userId, historyText) => {
+          const socketId = userSockets.get(userId);
+          if (socketId) {
+            io.to(socketId).emit('hand-complete', { history: historyText });
+          }
         };
 
         // Set up auto-rebuy callback — persist chip reset to database

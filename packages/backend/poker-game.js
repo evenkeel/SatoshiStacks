@@ -628,11 +628,20 @@ class PokerGame {
       }
     }
 
-    // === Finish hand history — emit the complete compiled log ===
-    const historyText = this.currentHandLog.join('\n');
+    // === Finish hand history — emit personalized log per player ===
+    // Insert "Dealt to <name> [cards]" after "*** HOLE CARDS ***" for each player
+    const baseLog = [...this.currentHandLog];
     this.emitLog('', 'finish'); // blank line separator
     if (this.onHandComplete) {
-      this.onHandComplete(historyText);
+      const holeIdx = baseLog.findIndex(l => l === '*** HOLE CARDS ***');
+      this.players.forEach(p => {
+        if (!p || !p.participatedThisHand || p.holeCards.length !== 2) return;
+        const personalLog = [...baseLog];
+        if (holeIdx !== -1) {
+          personalLog.splice(holeIdx + 1, 0, `Dealt to ${p.username} ${this.cardsStr(p.holeCards)}`);
+        }
+        this.onHandComplete(p.userId, personalLog.join('\n'));
+      });
     }
 
     // Save hand to database
