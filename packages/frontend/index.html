@@ -428,7 +428,7 @@ transform: translate(-50%, -50%);
 .player-bet .chip-stack { justify-content: center; }
 .bet-pos-1 { top: 18%; left: 66%; }
 .bet-pos-2 { top: 50%; left: 76%; }
-.bet-pos-3 { top: 82%; left: 66%; }
+.bet-pos-3 { top: 82%; left: 78%; }
 .bet-pos-4 { top: 82%; left: 34%; }
 .bet-pos-5 { top: 50%; left: 24%; }
 .bet-pos-6 { top: 18%; left: 34%; }
@@ -437,7 +437,7 @@ transform: translate(-50%, -50%);
 position: absolute;
 display: flex;
 gap: 2px;
-bottom: 55%;
+bottom: 60%;
 left: 50%;
 transform: translateX(-50%);
 z-index: 17;
@@ -445,23 +445,23 @@ pointer-events: none;
 }
 .np-cards .card { clip-path: inset(0 0 40% 0); }
 .np-cards .card.small {
-width: clamp(22px, 2.8vw, 36px);
-height: clamp(32px, 4vw, 52px);
+width: clamp(44px, 5.6vw, 72px);
+height: clamp(64px, 8vw, 104px);
 }
 .player-nameplate.hero .np-cards .card {
-width: clamp(34px, 4.5vw, 56px);
-height: clamp(49px, 6.5vw, 81px);
+width: clamp(68px, 9vw, 112px);
+height: clamp(98px, 13vw, 162px);
 clip-path: inset(0 0 35% 0);
-border-radius: clamp(4px, 0.5vw, 6px);
+border-radius: clamp(8px, 1vw, 12px);
 box-shadow: none;
 }
 .np-cards .card .card-corner.top-left {
-top: clamp(2px, 0.3vw, 4px);
-left: clamp(3px, 0.4vw, 5px);
+top: clamp(4px, 0.6vw, 8px);
+left: clamp(6px, 0.8vw, 10px);
 }
-.np-cards .card .card-corner .card-rank { font-size: clamp(9px, 1vw, 12px); }
-.np-cards .card .card-corner .card-suit { font-size: clamp(7px, 0.8vw, 10px); }
-.np-cards .card .card-pip { font-size: clamp(16px, 2vw, 24px); }
+.np-cards .card .card-corner .card-rank { font-size: clamp(18px, 2vw, 24px); }
+.np-cards .card .card-corner .card-suit { font-size: clamp(14px, 1.6vw, 20px); }
+.np-cards .card .card-pip { font-size: clamp(32px, 4vw, 48px); }
 /* Folded hero cards — silhouette on hover */
 .player-nameplate.hero.folded-np {
 pointer-events: auto;
@@ -475,6 +475,17 @@ transition: opacity 0.2s ease;
 .np-cards.folded-peek .card { filter: brightness(0.3) saturate(0); }
 .player-nameplate.hero.folded-np:hover .np-cards.folded-peek { opacity: 1; }
 .player-nameplate.hero.folded-np:hover { opacity: 0.6; }
+/* Dimmed cards for showdown — non-winning hand cards */
+.card.dimmed {
+filter: brightness(0.35) saturate(0.2);
+opacity: 0.55;
+transition: filter 0.6s ease, opacity 0.6s ease;
+}
+.community-card.dimmed .card {
+filter: brightness(0.35) saturate(0.2);
+opacity: 0.55;
+transition: filter 0.6s ease, opacity 0.6s ease;
+}
 .np-amount-wrap {
 display: flex;
 align-items: center;
@@ -1256,6 +1267,166 @@ transition: transform 0.2s;
   from { opacity: 1; transform: translateX(0); }
   to   { opacity: 0; transform: translateX(100px); }
 }
+/* === EMPTY SEAT STYLES === */
+.empty-avatar {
+  width: clamp(48px, 7vw, 72px);
+  height: clamp(48px, 7vw, 72px);
+  border-radius: 50%;
+  border: 2px dashed rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 900;
+  color: rgba(255,255,255,0.2);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.empty-avatar:hover {
+  border-color: var(--mustard);
+  color: var(--mustard);
+  box-shadow: 0 0 16px rgba(232,168,56,0.3);
+}
+.empty-np {
+  pointer-events: auto !important;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: all 0.3s ease;
+}
+.empty-np:hover {
+  opacity: 0.85;
+  filter: brightness(1.2);
+}
+.empty-np .np-content {
+  border: 2px dashed rgba(255,255,255,0.25) !important;
+  background: rgba(0,0,0,0.25) !important;
+}
+.empty-np:hover .np-content {
+  border-color: var(--mustard) !important;
+  box-shadow: 0 0 12px rgba(232,168,56,0.2);
+}
+/* === BUY-IN DIALOG === */
+.buyin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+}
+.buyin-overlay.hidden { display: none; }
+.buyin-card {
+  text-align: center;
+  padding: 36px 32px;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(145deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  max-width: 340px;
+  width: 90vw;
+}
+.buyin-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--cream);
+  margin-bottom: 8px;
+}
+.buyin-subtitle {
+  font-size: 13px;
+  color: var(--text-medium);
+  margin-bottom: 20px;
+  opacity: 0.7;
+}
+.buyin-amount {
+  font-size: 36px;
+  font-weight: 900;
+  color: var(--mustard);
+  margin-bottom: 4px;
+}
+.buyin-unit {
+  font-size: 13px;
+  color: var(--text-medium);
+  margin-bottom: 16px;
+  font-weight: 700;
+}
+.buyin-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--felt-dark), var(--mustard));
+  outline: none;
+  margin-bottom: 24px;
+  cursor: pointer;
+}
+.buyin-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--mustard);
+  border: 3px solid var(--outline);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.buyin-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--mustard);
+  border: 3px solid var(--outline);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.buyin-btns {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.buyin-btn-sit {
+  padding: 12px 28px;
+  border-radius: var(--radius-pill);
+  border: 2.5px solid var(--outline);
+  background: linear-gradient(145deg, var(--mustard) 0%, var(--mustard-dark) 100%);
+  color: var(--text-dark);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.buyin-btn-sit:hover { transform: scale(1.04); }
+.buyin-btn-cancel {
+  padding: 12px 20px;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--outline-light);
+  background: transparent;
+  color: var(--cream);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.buyin-btn-cancel:hover { opacity: 1; }
+/* === BUSTED BADGE === */
+.busted-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--rust);
+  color: var(--warm-white);
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1.5px solid var(--outline);
+  z-index: 10;
+}
 /* === NOSTR LOGIN OVERLAY === */
 .nostr-login-overlay {
   position: fixed;
@@ -1381,6 +1552,10 @@ transition: transform 0.2s;
 <div id="sitBackInBtn" style="position:fixed;bottom:120px;left:50%;transform:translateX(-50%);padding:12px 32px;border-radius:12px;font-size:16px;font-weight:800;background:var(--mustard);color:var(--text-dark);box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;display:none;cursor:pointer;border:2px solid var(--outline);" onclick="handleSitBackIn()">
   Sit Back In
 </div>
+<!-- Sit Out Button -->
+<div id="sitOutBtn" style="position:fixed;bottom:70px;right:16px;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:var(--warm-navy);color:var(--warm-white);box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:999;display:none;cursor:pointer;border:1.5px solid var(--outline-light);opacity:0.85;" onclick="handleSitOut()">
+  Sit Out Next Hand
+</div>
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer" style="position:fixed;top:60px;right:10px;z-index:1001;display:flex;flex-direction:column;gap:8px;"></div>
 <!-- Chat Box -->
@@ -1424,8 +1599,8 @@ transition: transform 0.2s;
 <button class="chat-send-btn" id="chatSendBtn">Send</button>
 </div>
 </div>
-<!-- NOSTR Login Overlay -->
-<div class="nostr-login-overlay" id="loginOverlay">
+<!-- NOSTR Login Overlay (hidden by default — triggered by clicking empty seat) -->
+<div class="nostr-login-overlay hidden" id="loginOverlay">
 <div class="login-card">
 <div class="login-logo">
 <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="22" stroke="var(--mustard)" stroke-width="3" fill="none"/><text x="24" y="30" text-anchor="middle" font-size="22" font-weight="900" fill="var(--mustard)">S</text></svg>
@@ -1438,6 +1613,20 @@ transition: transform 0.2s;
 Connect with NOSTR
 </button>
 <p class="login-help" id="loginHelp">Requires a NIP-07 browser extension (nos2x, Alby, etc.)</p>
+</div>
+</div>
+<!-- Buy-In Dialog -->
+<div class="buyin-overlay hidden" id="buyinOverlay">
+<div class="buyin-card">
+<div class="buyin-title">Choose your buy-in</div>
+<div class="buyin-subtitle">Slide to set your starting stack</div>
+<div class="buyin-amount" id="buyinAmountDisplay">10,000</div>
+<div class="buyin-unit">playsats</div>
+<input type="range" class="buyin-slider" id="buyinSlider" min="2000" max="10000" step="500" value="10000">
+<div class="buyin-btns">
+<button class="buyin-btn-sit" id="buyinSitBtn">Sit Down</button>
+<button class="buyin-btn-cancel" id="buyinCancelBtn">Cancel</button>
+</div>
 </div>
 </div>
 <!-- Socket.IO Client -->
@@ -1487,6 +1676,34 @@ const SFX = {
       osc.stop(ctx.currentTime + i * 0.12 + 0.2);
     });
   },
+  timeBankStart() {
+    if (!isSoundEnabled(true)) return;
+    const ctx = getAudioCtx();
+    // Distinct single triangle-wave beep — A5, signals time bank activation
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 880;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.15);
+  },
+  countdownBeep() {
+    if (!isSoundEnabled(true)) return;
+    const ctx = getAudioCtx();
+    // Short tick sound — warns before autofold
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = 1200;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.06);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.06);
+  },
 };
 
 // NOSTR auth state — persisted in localStorage
@@ -1507,6 +1724,9 @@ let currentHandLog = [];     // Accumulates hand-log lines for current hand
 let chipFlyTriggered = false; // Prevent multiple chip fly animations per hand
 let savedPotForAnimation = 0; // Captures pot total before server zeroes it, for chip fly
 let cachedHoleCards = null;    // Cache our hole cards so they survive state glitches
+let isObserver = false;       // True when watching without a seat
+let observerName = null;      // Random name assigned by server for observers
+let pendingSeat = null;       // Seat index clicked (0-5) while waiting for auth/buy-in
 
 const SUITS = ['h','d','c','s'];
 const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
@@ -1548,7 +1768,7 @@ const NP_TARGETS = {
 const BET_TARGETS = {
   1: { top: 18, left: 66 },
   2: { top: 50, left: 76 },
-  3: { top: 82, left: 66 },
+  3: { top: 82, left: 78 },
   4: { top: 82, left: 34 },
   5: { top: 50, left: 24 },
   6: { top: 18, left: 34 },
@@ -1671,10 +1891,11 @@ function renderCardHTML(card, sizeClass) {
   const d = RANK_DISP[r] || r;
   const sym = SUIT_SYM[s];
   const color = isRed(s) ? 'red' : 'black';
+  const extraClasses = sizeClass || '';
 
   // Small cards — keep compact
-  if (sizeClass === 'small') {
-    return `<div class="card small ${color}">
+  if (extraClasses.includes('small')) {
+    return `<div class="card ${extraClasses} ${color}">
       <span class="card-rank">${d}</span><span class="card-suit">${sym}</span>
     </div>`;
   }
@@ -1684,14 +1905,14 @@ function renderCardHTML(card, sizeClass) {
 
   // Ace — large centered suit
   if (r === 'A') {
-    return `<div class="card ${color} ace-card">${corners}
+    return `<div class="card ${color} ${extraClasses} ace-card">${corners}
       <div class="card-center"><span class="card-pip">${sym}</span></div>
     </div>`;
   }
 
   // Face cards (J, Q, K) — large suit + ghosted letter
   if (r === 'J' || r === 'Q' || r === 'K') {
-    return `<div class="card ${color} face-card">${corners}
+    return `<div class="card ${color} ${extraClasses} face-card">${corners}
       <div class="card-face-icon"><span class="card-face-letter">${d}</span></div>
       <div class="card-face-icon"><span class="card-face-suit">${sym}</span></div>
     </div>`;
@@ -1706,11 +1927,11 @@ function renderCardHTML(card, sizeClass) {
       `<span class="pip${flip ? ' flip' : ''}" style="position:absolute;left:${colPos[col]};top:${row}%;transform:translate(-50%,-50%)${flip ? ' rotate(180deg)' : ''}">${sym}</span>`
     ).join('');
     pipsHTML += '</div>';
-    return `<div class="card ${color} pip-card">${corners}${pipsHTML}</div>`;
+    return `<div class="card ${color} ${extraClasses} pip-card">${corners}${pipsHTML}</div>`;
   }
 
   // Fallback
-  return `<div class="card ${color}">${corners}
+  return `<div class="card ${color} ${extraClasses}">${corners}
     <div class="card-center"><span class="card-pip">${sym}</span></div>
   </div>`;
 }
@@ -1833,7 +2054,8 @@ async function handleNostrLogin() {
 
     setLoginStatus('Connected!', false);
     hideLoginOverlay();
-    connectToServer();
+    // Show buy-in dialog (user didn't click a specific seat, so no preferred seat)
+    showBuyinDialog();
 
   } catch (err) {
     console.error('[NOSTR] Login error:', err);
@@ -1849,6 +2071,7 @@ function nostrLogout() {
   localStorage.removeItem('ss_npub');
   localStorage.removeItem('ss_nostrName');
   localStorage.removeItem('ss_nostrPicture');
+  localStorage.removeItem('ss_lud16');
   mySessionToken = null;
   myPubkeyHex = null;
   myNpub = null;
@@ -1856,12 +2079,16 @@ function nostrLogout() {
   myNostrPicture = null;
   myUserId = null;
   myUsername = 'Anon';
+  mySeat = null;
+  gameState = null;
+  cachedHoleCards = null;
   if (socket) {
     socket.emit('leave-table');
     socket.disconnect();
     socket = null;
   }
-  showLoginOverlay();
+  // Reconnect as observer so they still see the table
+  connectAsObserver();
 }
 window.nostrLogout = nostrLogout;
 
@@ -1893,30 +2120,82 @@ async function tryRestoreSession() {
 }
 
 // ============================================================
-//  WEBSOCKET CONNECTION
+//  OBSERVER MODE — watch table without authenticating
 // ============================================================
-function connectToServer() {
+function connectAsObserver() {
+  isObserver = true;
   socket = io(window.location.origin);
   window.socket = socket;
 
   socket.on('connect', () => {
     updateConnectionStatus(true);
-    socket.emit('join-table', {
-      tableId: myTableId,
-      sessionToken: mySessionToken
-    });
+    socket.emit('observe-table', { tableId: myTableId });
   });
 
+  socket.on('observer-joined', ({ observerName: name }) => {
+    observerName = name;
+    myUsername = name;
+    showToast(`Watching as ${name}`, 'info');
+  });
+
+  // Share common socket event handlers
+  setupCommonSocketHandlers();
+}
+
+// ============================================================
+//  WEBSOCKET CONNECTION (authenticated player)
+// ============================================================
+function connectToServer() {
+  // If already connected as observer, reuse socket — just emit join-table
+  if (socket && socket.connected && isObserver) {
+    isObserver = false;
+    const buyIn = pendingBuyIn || 10000;
+    socket.emit('join-table', {
+      tableId: myTableId,
+      sessionToken: mySessionToken,
+      preferredSeat: pendingSeat != null ? pendingSeat : undefined,
+      buyIn
+    });
+    pendingSeat = null;
+    pendingBuyIn = null;
+    return;
+  }
+
+  socket = io(window.location.origin);
+  window.socket = socket;
+
+  socket.on('connect', () => {
+    updateConnectionStatus(true);
+    const buyIn = pendingBuyIn || 10000;
+    socket.emit('join-table', {
+      tableId: myTableId,
+      sessionToken: mySessionToken,
+      preferredSeat: pendingSeat != null ? pendingSeat : undefined,
+      buyIn
+    });
+    pendingSeat = null;
+    pendingBuyIn = null;
+  });
+
+  // Set up handlers shared with observer mode
+  setupCommonSocketHandlers();
+}
+
+/**
+ * Common socket event handlers — shared between observer and player modes
+ */
+function setupCommonSocketHandlers() {
   socket.on('seat-assigned', ({ seatIndex, displayName }) => {
     const newSeat = seatIndex + 1;
     if (mySeat && mySeat !== newSeat) {
-      // Seat changed (e.g. reconnect after kick) — suppress transition flicker
       console.warn(`[Seat] Seat changed from ${mySeat} to ${newSeat}`);
     }
     mySeat = newSeat;
+    isObserver = false;
     if (displayName) myUsername = displayName;
+    // Close buy-in dialog if open
+    hideBuyinDialog();
     showToast(`Playing as ${myUsername}`, 'info');
-    // Render now that we know our seat (game-state may have arrived first)
     render();
   });
 
@@ -1926,7 +2205,7 @@ function connectToServer() {
   });
 
   // Server fetched our NOSTR profile from relays — update local state
-  socket.on('profile-updated', ({ name, picture }) => {
+  socket.on('profile-updated', ({ name, picture, lud16 }) => {
     if (name) {
       myUsername = name;
       myNostrName = name;
@@ -1937,6 +2216,9 @@ function connectToServer() {
       myNostrPicture = picture;
       localStorage.setItem('ss_nostrPicture', picture);
     }
+    if (lud16) {
+      localStorage.setItem('ss_lud16', lud16);
+    }
   });
 
   socket.on('game-state', (state) => {
@@ -1944,23 +2226,22 @@ function connectToServer() {
     gameState = state;
 
     // Cache our hole cards so they survive transient state glitches
-    const me = (state.players || []).find(p => p && p.userId === myUserId);
-    if (me) {
-      const cards = me.holeCards;
-      if (cards && cards.length === 2 && cards[0] !== '??' && cards[0]) {
-        // Server sent us real cards — cache them
-        cachedHoleCards = [...cards];
-      } else if (!cards || cards.length === 0) {
-        // Cards explicitly empty (new hand or not dealt yet) — clear cache
-        cachedHoleCards = null;
-      }
-      // If cards are ['??','??'] or missing but cache exists, restore from cache
-      if (cachedHoleCards && (!cards || cards.length === 0 || (cards.length === 2 && !cards[0]))) {
-        me.holeCards = [...cachedHoleCards];
+    if (myUserId) {
+      const me = (state.players || []).find(p => p && p.userId === myUserId);
+      if (me) {
+        const cards = me.holeCards;
+        if (cards && cards.length === 2 && cards[0] !== '??' && cards[0]) {
+          cachedHoleCards = [...cards];
+        } else if (!cards || cards.length === 0) {
+          cachedHoleCards = null;
+        }
+        if (cachedHoleCards && (!cards || cards.length === 0 || (cards.length === 2 && !cards[0]))) {
+          me.holeCards = [...cachedHoleCards];
+        }
       }
     }
 
-    // Save pot total for chip fly animation — capture before server zeroes it
+    // Save pot total for chip fly animation
     const currentPot = (state.pot || 0) + (state.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
     if (currentPot > 0) savedPotForAnimation = currentPot;
     render();
@@ -1974,28 +2255,28 @@ function connectToServer() {
     handleTimerStart(playerIndex, timeoutMs, timeBankMs || 0, isPreflop);
   });
 
-  // Time bank activation — switches life bar to time bank phase
   socket.on('time-bank-start', ({ playerIndex, timeBankMs }) => {
     handleTimeBankStart(playerIndex, timeBankMs);
   });
 
-  // Real-time hand log — standard format play-by-play
+  // Server-side chat messages
+  socket.on('chat-message', ({ sender, text, isObserver: fromObserver, timestamp }) => {
+    const prefix = fromObserver ? `[${sender}]` : sender;
+    addChatMessage(prefix, text);
+  });
+
+  // Real-time hand log
   socket.on('hand-log', ({ line, type }) => {
     if (!line || !line.trim()) return;
-    // Reset chip fly flag on new hand
     if (type === 'header' && line.startsWith('Satoshi Stacks Hand')) {
       chipFlyTriggered = false;
       savedPotForAnimation = 0;
     }
-    // Add to real-time chat play-by-play
     addPlayByPlay(line);
-    // Accumulate for hand history tab
     currentHandLog.push(line);
 
-    // Show action badges based on type
     if (type === 'action' && gameState) {
       const lower = line.toLowerCase();
-      // Extract player name (before the colon) and match to seat
       const colonIdx = line.indexOf(':');
       if (colonIdx > 0) {
         const name = line.substring(0, colonIdx).trim();
@@ -2014,11 +2295,9 @@ function connectToServer() {
       }
     }
     if (type === 'winner' && gameState) {
-      // Extract winner name (before "collected")
       const match = line.match(/^(.+?)\s+collected/);
       if (match) {
         const name = match[1].trim();
-        // Trigger chip fly animation (only once per hand)
         if (!chipFlyTriggered) {
           chipFlyTriggered = true;
           animateChipsToWinner(name);
@@ -2039,7 +2318,7 @@ function connectToServer() {
     if (history) {
       handHistories.push(history);
       histViewIdx = handHistories.length - 1;
-      currentHandLog = []; // Reset for next hand
+      currentHandLog = [];
       renderHistoryView();
     }
   });
@@ -2053,7 +2332,23 @@ function connectToServer() {
 //  MAIN RENDER — called on every game-state update
 // ============================================================
 function render() {
-  if (!gameState || !mySeat) return; // Wait for seat assignment before rendering
+  if (!gameState) return; // Wait for game state
+
+  // In observer mode (no seat), render table but skip player controls
+  if (!mySeat) {
+    renderSeats();
+    updateNameplates();
+    renderCommunityCards();
+    highlightWinningCards();
+    updateBets();
+    updatePot();
+    // Hide player controls for observers
+    const ca = document.querySelector('.controls-area');
+    if (ca) ca.classList.remove('visible');
+    const preBar = document.querySelector('.pre-action-bar');
+    if (preBar) preBar.classList.remove('visible');
+    return;
+  }
 
   // Execute pre-action BEFORE rendering clears it
   if (gameState.yourTurn && preAction) {
@@ -2063,11 +2358,13 @@ function render() {
   renderSeats();
   updateNameplates();
   renderCommunityCards();
+  highlightWinningCards();
   updateBets();
   updatePot();
   renderControls();
   renderPreActions();
   updateSitBackInButton();
+  updateSitOutButton();
 }
 
 // ============================================================
@@ -2082,8 +2379,11 @@ function renderSeats() {
     if (!seatEl) continue;
 
     if (!player) {
-      seatEl.innerHTML = '';
+      // Render clickable empty seat avatar
       seatEl.className = `seat seat-${visualPos}`;
+      seatEl.innerHTML = `
+        <div class="empty-avatar" data-empty-seat="${idx}">+</div>
+      `;
       continue;
     }
 
@@ -2120,8 +2420,16 @@ function updateNameplates() {
     if (!el) continue;
 
     if (!player) {
-      el.innerHTML = '';
-      el.className = `player-nameplate np-pos-${visualPos}`;
+      // Render clickable "EMPTY" nameplate
+      el.className = `player-nameplate np-pos-${visualPos} empty-np`;
+      el.removeAttribute('data-userid');
+      el.removeAttribute('data-is-me');
+      el.style.cursor = 'pointer';
+      el.innerHTML = `
+        <div class="np-content" data-empty-seat="${idx}">
+          <span class="np-name" style="opacity:0.5;font-style:italic;">EMPTY</span>
+        </div>
+      `;
       continue;
     }
 
@@ -2137,7 +2445,11 @@ function updateNameplates() {
         cardsHTML = `<div class="np-cards">${renderCardHTML(null, 'small')}${renderCardHTML(null, 'small')}</div>`;
       } else {
         const sc = isMe ? '' : 'small';
-        cardsHTML = `<div class="np-cards">${renderCardHTML(card1, sc)}${renderCardHTML(card2, sc)}</div>`;
+        // During showdown with evaluated hands, dim cards not in the best hand
+        const bestCards = player.hand && player.hand.bestCards ? player.hand.bestCards : null;
+        const dim1 = bestCards && !bestCards.includes(card1) ? ' dimmed' : '';
+        const dim2 = bestCards && !bestCards.includes(card2) ? ' dimmed' : '';
+        cardsHTML = `<div class="np-cards">${renderCardHTML(card1, sc + dim1)}${renderCardHTML(card2, sc + dim2)}</div>`;
       }
     } else if (isMe && player.folded && player.holeCards && player.holeCards.length === 2 && player.holeCards[0] !== '??') {
       // Folded peek for hero
@@ -2147,8 +2459,12 @@ function updateNameplates() {
     // Dealer button
     const dealerHTML = gameState.dealerSeat === idx ? '<div class="np-dealer">D</div>' : '';
 
-    // Sitting out badge
-    const sitOutBadge = player.sittingOut ? '<div style="position:absolute;top:-8px;right:-8px;background:var(--rust);color:var(--warm-white);font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px;border:1.5px solid var(--outline);z-index:10;">SITTING OUT</div>' : '';
+    // Sitting out / busted badge
+    const sitOutBadge = player.busted
+      ? '<div class="busted-badge">BUSTED</div>'
+      : player.sittingOut
+        ? '<div style="position:absolute;top:-8px;right:-8px;background:var(--rust);color:var(--warm-white);font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px;border:1.5px solid var(--outline);z-index:10;">SITTING OUT</div>'
+        : '';
 
     el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}`;
     el.setAttribute('data-userid', player.userId);
@@ -2198,6 +2514,38 @@ function renderCommunityCards() {
   }
 
   lastCommunityCount = cards.length;
+}
+
+/**
+ * Highlight winning hand cards on the community board during showdown.
+ * Dims community cards that are NOT part of any winner's best 5-card hand.
+ */
+function highlightWinningCards() {
+  if (!gameState || gameState.phase !== 'showdown') return;
+
+  // Collect all bestCards from players who have evaluated hands (winners)
+  const winningCards = new Set();
+  gameState.players.forEach(p => {
+    if (p && p.hand && p.hand.bestCards) {
+      p.hand.bestCards.forEach(c => winningCards.add(c));
+    }
+  });
+
+  // If no evaluated hands yet (still dealing), skip
+  if (winningCards.size === 0) return;
+
+  const el = $('communityCards');
+  if (!el) return;
+  const cards = gameState.communityCards || [];
+  const children = el.children;
+
+  for (let i = 0; i < children.length && i < cards.length; i++) {
+    if (winningCards.has(cards[i])) {
+      children[i].classList.remove('dimmed');
+    } else {
+      children[i].classList.add('dimmed');
+    }
+  }
 }
 
 // ============================================================
@@ -2503,14 +2851,31 @@ function renderPreActions() {
 
   bar.classList.add('visible');
 
+  // Determine which pre-actions are legal
+  const maxBet = Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
+  const toCall = maxBet - (myPlayer.currentBet || 0);
+  const canCheck = toCall === 0;
+
+  // Force rebuild when legality changes (e.g., opponent raises while pre-actions shown)
+  const prevCanCheck = bar.dataset.canCheck === 'true';
+  if (bar.children.length && prevCanCheck !== canCheck) {
+    bar.innerHTML = '';
+    // Clear pre-action if it became illegal
+    if (preAction === 'check' && !canCheck) preAction = null;
+    if (preAction === 'checkfold' && !canCheck) preAction = null;
+  }
+  bar.dataset.canCheck = canCheck;
+
   // Only rebuild DOM if buttons don't exist yet
   if (!bar.children.length) {
-    bar.innerHTML = `
-      <button class="pre-action-btn" data-pa="check">Check</button>
-      <button class="pre-action-btn" data-pa="checkfold">Check / Fold</button>
-      <button class="pre-action-btn" data-pa="fold">Fold</button>
-      <button class="pre-action-btn" data-pa="shove">Insta-Shove</button>
-    `;
+    let buttonsHTML = '';
+    if (canCheck) {
+      buttonsHTML += '<button class="pre-action-btn" data-pa="check">Check</button>';
+      buttonsHTML += '<button class="pre-action-btn" data-pa="checkfold">Check / Fold</button>';
+    }
+    buttonsHTML += '<button class="pre-action-btn" data-pa="fold">Fold</button>';
+    buttonsHTML += '<button class="pre-action-btn" data-pa="shove">Insta-Shove</button>';
+    bar.innerHTML = buttonsHTML;
     bar.querySelectorAll('.pre-action-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const pa = btn.dataset.pa;
@@ -2656,6 +3021,11 @@ function handleTimeBankStart(playerIndex, timeBankMs) {
     bar.style.background = lifeBarColor(100, true);
   }
 
+  // Play time bank beep for the local player
+  const tbPlayer = gameState && gameState.players[playerIndex];
+  const isMyTB = tbPlayer && tbPlayer.userId === myUserId;
+  if (isMyTB) SFX.timeBankStart();
+
   const tick = () => {
     timeRemaining -= 100;
     const pct = (timeRemaining / currentTurnTime) * 100;
@@ -2664,6 +3034,10 @@ function handleTimeBankStart(playerIndex, timeBankMs) {
       bar.style.width = Math.max(0, pct) + '%';
       bar.classList.add('active');
       bar.style.background = lifeBarColor(pct, true);
+    }
+    // Countdown beeps for final 5 seconds (local player only)
+    if (isMyTB && timeRemaining > 0 && timeRemaining <= 5000 && timeRemaining % 1000 < 100) {
+      SFX.countdownBeep();
     }
     if (timeRemaining <= 0) {
       clearTimer();
@@ -2854,13 +3228,14 @@ function initChat() {
     }).catch(() => {});
   });
 
-  // Send message
+  // Send message (server-side relay)
   const input = $('chatInput');
   const sendMsg = () => {
     const text = input.value.trim();
     if (!text) return;
-    addChatMessage(myUsername, text);
-    // TODO: emit chat message to server when chat is implemented server-side
+    if (socket && socket.connected) {
+      socket.emit('chat-message', { text });
+    }
     input.value = '';
   };
   $('chatSendBtn')?.addEventListener('click', sendMsg);
@@ -3029,15 +3404,70 @@ function updateSitBackInButton() {
   const btn = $('sitBackInBtn');
   if (!btn || !gameState) return;
   const myPlayer = gameState.players?.find(p => p && p.userId === myUserId);
-  btn.style.display = (myPlayer && myPlayer.sittingOut) ? 'block' : 'none';
+  // Show sit-back-in only for sitting out (not busted — busted players click nameplate to rebuy)
+  btn.style.display = (myPlayer && myPlayer.sittingOut && !myPlayer.busted) ? 'block' : 'none';
+}
+
+// ============================================================
+//  VOLUNTARY SIT OUT
+// ============================================================
+window.handleSitOut = function() {
+  if (!socket) return;
+  socket.emit('sit-out', { tableId: myTableId });
+};
+
+function updateSitOutButton() {
+  const btn = $('sitOutBtn');
+  if (!btn || !gameState) return;
+  const myPlayer = gameState.players?.find(p => p && p.userId === myUserId);
+
+  if (!myPlayer || myPlayer.sittingOut || myPlayer.busted) {
+    btn.style.display = 'none';
+    return;
+  }
+
+  if (myPlayer.sittingOutNextHand) {
+    btn.style.display = 'block';
+    btn.textContent = 'Cancel Sit Out';
+    btn.style.background = 'var(--rust)';
+  } else {
+    btn.style.display = 'block';
+    btn.textContent = 'Sit Out Next Hand';
+    btn.style.background = 'var(--warm-navy)';
+  }
 }
 
 // ============================================================
 //  AVATAR / NAMEPLATE CLICK HANDLERS
 // ============================================================
 
+// Delegated click handler for EMPTY seats
+document.addEventListener('click', (e) => {
+  const emptySeatEl = e.target.closest('[data-empty-seat]');
+  if (!emptySeatEl) return;
+
+  const seatIdx = parseInt(emptySeatEl.dataset.emptySeat, 10);
+  if (isNaN(seatIdx) || seatIdx < 0 || seatIdx >= NUM_SEATS) return;
+
+  // Already seated? Ignore
+  if (mySeat) return;
+
+  pendingSeat = seatIdx;
+
+  if (mySessionToken) {
+    // Already authenticated — show buy-in dialog
+    showBuyinDialog();
+  } else {
+    // Need to authenticate first
+    handleNostrLoginThenSit();
+  }
+});
+
 // Delegated click handler for avatars and nameplates
 document.addEventListener('click', (e) => {
+  // Check for empty seat clicks first (handled above)
+  if (e.target.closest('[data-empty-seat]')) return;
+
   // Find the clicked avatar or nameplate
   const avatar = e.target.closest('.player-avatar[data-userid]');
   const nameplate = e.target.closest('.player-nameplate[data-userid]');
@@ -3066,11 +3496,9 @@ function showRebuyDialog() {
     return;
   }
 
-  // Confirm rebuy
-  const current = myPlayer.stack.toLocaleString();
-  if (confirm(`Rebuy to 10,000 chips?\n\nCurrent stack: ${current}`)) {
-    socket.emit('rebuy', { tableId: myTableId });
-  }
+  // Show buy-in dialog for rebuy
+  buyinMode = 'rebuy';
+  showBuyinDialog();
 }
 
 function showPlayerProfile(userId) {
@@ -3141,10 +3569,156 @@ function showPlayerProfile(userId) {
 // showToast is defined above (line 3099) — removed duplicate
 
 // ============================================================
+//  BUY-IN DIALOG
+// ============================================================
+let pendingBuyIn = null;
+let buyinMode = 'sit'; // 'sit' or 'rebuy'
+
+function showBuyinDialog() {
+  const overlay = $('buyinOverlay');
+  const slider = $('buyinSlider');
+  const display = $('buyinAmountDisplay');
+  const title = overlay?.querySelector('.buyin-title');
+
+  if (!overlay || !slider) return;
+
+  // Set dialog mode
+  if (buyinMode === 'rebuy') {
+    if (title) title.textContent = 'Reload your stack';
+  } else {
+    if (title) title.textContent = 'Choose your buy-in';
+  }
+
+  // Reset to default 10K
+  slider.value = 10000;
+  if (display) display.textContent = '10,000';
+
+  overlay.classList.remove('hidden');
+}
+
+function hideBuyinDialog() {
+  const overlay = $('buyinOverlay');
+  if (overlay) overlay.classList.add('hidden');
+  buyinMode = 'sit';
+}
+
+function initBuyinDialog() {
+  const slider = $('buyinSlider');
+  const display = $('buyinAmountDisplay');
+  const sitBtn = $('buyinSitBtn');
+  const cancelBtn = $('buyinCancelBtn');
+
+  if (slider && display) {
+    slider.addEventListener('input', () => {
+      display.textContent = parseInt(slider.value).toLocaleString();
+    });
+  }
+
+  if (sitBtn) {
+    sitBtn.addEventListener('click', () => {
+      const amount = parseInt(slider?.value || 10000);
+
+      if (buyinMode === 'rebuy') {
+        // Rebuy mode — emit rebuy with chosen amount
+        if (socket) {
+          socket.emit('rebuy', { tableId: myTableId, buyIn: amount });
+        }
+        hideBuyinDialog();
+      } else {
+        // Sit-down mode — join table with chosen buy-in
+        pendingBuyIn = amount;
+        hideBuyinDialog();
+        connectToServer();
+      }
+    });
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      pendingSeat = null;
+      pendingBuyIn = null;
+      hideBuyinDialog();
+    });
+  }
+}
+
+/**
+ * Nostr login flow triggered by clicking an empty seat.
+ * After successful auth, shows buy-in dialog.
+ */
+async function handleNostrLoginThenSit() {
+  const hasNostr = await detectNostr();
+  if (!hasNostr) {
+    showToast('No NOSTR extension found. Install nos2x, Alby, or another NIP-07 extension.');
+    pendingSeat = null;
+    return;
+  }
+
+  showToast('Connecting with NOSTR...', 'info');
+
+  try {
+    // Step 1: Get challenge
+    const challengeRes = await fetch('/api/auth/challenge', { method: 'POST' });
+    const challengeData = await challengeRes.json();
+    if (!challengeData.success) throw new Error(challengeData.error || 'Failed to get challenge');
+
+    // Step 2: Get pubkey
+    const pubkey = await window.nostr.getPublicKey();
+
+    // Step 3: Sign
+    showToast('Please sign the login event...', 'info');
+    const eventTemplate = {
+      kind: 22242,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['challenge', challengeData.nonce],
+        ['relay', window.location.origin]
+      ],
+      content: ''
+    };
+    const signedEvent = await window.nostr.signEvent(eventTemplate);
+
+    // Step 4: Verify
+    const verifyRes = await fetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challengeId: challengeData.challengeId, signedEvent })
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyData.success) throw new Error(verifyData.error || 'Verification failed');
+
+    // Step 5: Store session
+    mySessionToken = verifyData.sessionToken;
+    myPubkeyHex = verifyData.pubkeyHex;
+    myNpub = verifyData.npub;
+    myNostrName = verifyData.profile.name;
+    myNostrPicture = verifyData.profile.picture;
+    myUserId = myPubkeyHex;
+    myUsername = myNostrName || myNpub.slice(0, 12) + '...';
+
+    localStorage.setItem('ss_sessionToken', mySessionToken);
+    localStorage.setItem('ss_pubkeyHex', myPubkeyHex);
+    localStorage.setItem('ss_npub', myNpub);
+    if (myNostrName) localStorage.setItem('ss_nostrName', myNostrName);
+    if (myNostrPicture) localStorage.setItem('ss_nostrPicture', myNostrPicture);
+    if (verifyData.profile.lud16) localStorage.setItem('ss_lud16', verifyData.profile.lud16);
+
+    // Step 6: Show buy-in dialog
+    showBuyinDialog();
+
+  } catch (err) {
+    console.error('[NOSTR] Login error:', err);
+    showToast(err.message || 'Login failed');
+    pendingSeat = null;
+  }
+}
+
+// ============================================================
 //  INIT
 // ============================================================
 async function init() {
   initChat();
+  initBuyinDialog();
   scheduleBolt();
 
   // Try to restore existing NOSTR session
@@ -3153,7 +3727,8 @@ async function init() {
     hideLoginOverlay();
     connectToServer();
   } else {
-    showLoginOverlay();
+    // No session — connect as observer (see table immediately)
+    connectAsObserver();
   }
 }
 

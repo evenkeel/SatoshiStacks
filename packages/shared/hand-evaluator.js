@@ -23,14 +23,17 @@ const RANK_NAME = [
 function evaluateHand(cards) {
   const combos = getCombos(cards, 5);
   let best = { rank: -1, tb: [], name: '' };
-  
+  let bestCards = [];
+
   for (const c of combos) {
     const r = eval5(c);
     if (r.rank > best.rank || (r.rank === best.rank && cmpTB(r.tb, best.tb) > 0)) {
       best = r;
+      bestCards = [...c];
     }
   }
-  
+
+  best.bestCards = bestCards;
   return best;
 }
 

@@ -160,6 +160,7 @@ function initDatabase() {
     `ALTER TABLE players ADD COLUMN nip05 TEXT`,
     `ALTER TABLE players ADD COLUMN session_token TEXT`,
     `ALTER TABLE players ADD COLUMN session_expires INTEGER`,
+    `ALTER TABLE players ADD COLUMN lud16 TEXT`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (e) {
@@ -484,22 +485,23 @@ function getPlayerByPubkey(pubkeyHex) {
  * Create or update NOSTR-authenticated player.
  * Uses hex pubkey as user_id for consistency.
  */
-function upsertNostrPlayer(pubkeyHex, npub, nostrName, nostrPicture) {
+function upsertNostrPlayer(pubkeyHex, npub, nostrName, nostrPicture, lud16) {
   const displayName = nostrName || npub.slice(0, 12) + '...' + npub.slice(-4);
   const stmt = db.prepare(`
-    INSERT INTO players (user_id, username, pubkey_hex, npub, nostr_name, nostr_picture, auth_type)
-    VALUES (?, ?, ?, ?, ?, ?, 'nostr')
+    INSERT INTO players (user_id, username, pubkey_hex, npub, nostr_name, nostr_picture, lud16, auth_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'nostr')
     ON CONFLICT(user_id) DO UPDATE SET
       username = ?,
       npub = excluded.npub,
       nostr_name = COALESCE(excluded.nostr_name, nostr_name),
       nostr_picture = COALESCE(excluded.nostr_picture, nostr_picture),
+      lud16 = COALESCE(excluded.lud16, lud16),
       auth_type = 'nostr',
       last_seen = strftime('%s','now')
     RETURNING *
   `);
   try {
-    return stmt.get(pubkeyHex, displayName, pubkeyHex, npub, nostrName, nostrPicture, displayName);
+    return stmt.get(pubkeyHex, displayName, pubkeyHex, npub, nostrName, nostrPicture, lud16 || null, displayName);
   } catch (error) {
     console.error('[Database] Error upserting NOSTR player:', error);
     return null;

@@ -36,7 +36,18 @@ const io = new Server(server, {
 // Game state
 const games = new Map(); // tableId -> PokerGame instance
 const userSockets = new Map(); // userId -> socket.id
-const socketUsers = new Map(); // socket.id -> userId
+const socketUsers = new Map(); // socket.id -> { userId, tableId, seatIndex }
+const observerSockets = new Map(); // socket.id -> { observerName, tableId }
+
+// Random observer name generation
+const OBSERVER_ADJECTIVES = ['Curious', 'Lucky', 'Swift', 'Cosmic', 'Zen', 'Bold', 'Neon', 'Pixel', 'Lunar', 'Solar', 'Turbo', 'Ultra'];
+const OBSERVER_NOUNS = ['Satoshi', 'Whale', 'Hodler', 'Degen', 'Ape', 'Llama', 'Fox', 'Wolf', 'Eagle', 'Panda', 'Tiger', 'Bear'];
+function generateObserverName() {
+  const adj = OBSERVER_ADJECTIVES[Math.floor(Math.random() * OBSERVER_ADJECTIVES.length)];
+  const noun = OBSERVER_NOUNS[Math.floor(Math.random() * OBSERVER_NOUNS.length)];
+  const num = Math.floor(Math.random() * 100);
+  return `${adj}${noun}${num}`;
+}
 
 // Multi-table system (toggled OFF for now - focus on single Main Table)
 // Future: Spawn table2, table3, etc. when waitlist ≥10
@@ -596,6 +607,7 @@ app.post('/api/auth/verify', (req, res) => {
       profile: {
         name: player.nostr_name || player.username,
         picture: player.nostr_picture,
+        lud16: player.lud16 || null,
         chips: player.current_chips
       }
     });
@@ -634,6 +646,7 @@ app.get('/api/auth/session', (req, res) => {
       profile: {
         name: player.nostr_name || player.username,
         picture: player.nostr_picture,
+        lud16: player.lud16 || null,
         chips: player.current_chips
       }
     });
@@ -689,14 +702,15 @@ async function fetchNostrProfile(pubkeyHex) {
               const profile = JSON.parse(msg[2].content);
               const name = profile.display_name || profile.name || null;
               const picture = profile.picture || null;
+              const lud16 = profile.lud16 || null;
 
               if (name && !resolved) {
                 resolved = true;
                 clearTimeout(timeout);
 
-                // Update DB with relay profile
-                db.upsertNostrPlayer(pubkeyHex, npubEncode(pubkeyHex), name, picture);
-                console.log(`[Auth] Relay profile fetched: ${name} (${pubkeyHex.slice(0, 8)}...)`);
+                // Update DB with relay profile (including lud16 Lightning address)
+                db.upsertNostrPlayer(pubkeyHex, npubEncode(pubkeyHex), name, picture, lud16);
+                console.log(`[Auth] Relay profile fetched: ${name} (${pubkeyHex.slice(0, 8)}...)${lud16 ? ` lud16: ${lud16}` : ''}`);
 
                 // Update in-memory game state if player is seated, and broadcast
                 for (const [tableId, game] of games) {
@@ -705,6 +719,7 @@ async function fetchNostrProfile(pubkeyHex) {
                     player.username = name;
                     player.nostrName = name;
                     player.nostrPicture = picture;
+                    player.lud16 = lud16;
                     broadcastGameState(tableId);
                   }
                 }
@@ -712,10 +727,10 @@ async function fetchNostrProfile(pubkeyHex) {
                 // Also notify the player's socket directly with updated profile
                 const socketId = userSockets.get(pubkeyHex);
                 if (socketId) {
-                  io.to(socketId).emit('profile-updated', { name, picture });
+                  io.to(socketId).emit('profile-updated', { name, picture, lud16 });
                 }
 
-                resolve({ name, picture });
+                resolve({ name, picture, lud16 });
               }
             }
           } catch (e) { /* ignore parse errors */ }
@@ -748,11 +763,66 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   /**
-   * Join table
-   * Client sends: { tableId, sessionToken }
-   * Server validates session, loads persistent chips, assigns seat automatically
+   * Observe table — no auth required.
+   * Client sends: { tableId }
+   * Server assigns a random observer name and sends game state.
    */
-  socket.on('join-table', ({ tableId, sessionToken }) => {
+  socket.on('observe-table', ({ tableId }) => {
+    const observerName = generateObserverName();
+    observerSockets.set(socket.id, { observerName, tableId });
+    socket.join(`table-${tableId}`);
+    console.log(`Observer ${observerName} (${socket.id}) watching table ${tableId}`);
+
+    socket.emit('observer-joined', { observerName });
+
+    // Send current game state if game exists (observer view — no private cards)
+    const game = games.get(tableId);
+    if (game) {
+      socket.emit('game-state', game.getGameState(null));
+    }
+  });
+
+  /**
+   * Chat message — works for both players and observers.
+   * Client sends: { text }
+   */
+  socket.on('chat-message', ({ text }) => {
+    if (!text || typeof text !== 'string') return;
+    const trimmed = text.trim().slice(0, 120);
+    if (!trimmed) return;
+
+    // Determine sender name and table
+    const user = socketUsers.get(socket.id);
+    const observer = observerSockets.get(socket.id);
+
+    let senderName, tableId;
+    if (user) {
+      const game = games.get(user.tableId);
+      const player = game?.players?.find(p => p && p.userId === user.userId);
+      senderName = player?.nostrName || player?.username || 'Unknown';
+      tableId = user.tableId;
+    } else if (observer) {
+      senderName = observer.observerName;
+      tableId = observer.tableId;
+    } else {
+      return; // Not connected to any table
+    }
+
+    // Broadcast to all in the table room (players + observers)
+    io.to(`table-${tableId}`).emit('chat-message', {
+      sender: senderName,
+      text: trimmed,
+      isObserver: !!observer,
+      timestamp: Date.now()
+    });
+  });
+
+  /**
+   * Join table
+   * Client sends: { tableId, sessionToken, preferredSeat?, buyIn? }
+   * Server validates session, loads persistent chips, assigns seat
+   */
+  socket.on('join-table', ({ tableId, sessionToken, preferredSeat, buyIn }) => {
     try {
       // 1. Validate session token
       if (!sessionToken) {
@@ -797,24 +867,28 @@ io.on('connection', (socket) => {
       // Log action for abuse detection
       db.logAction(userId, clientIp, 'join-table');
 
-      // 2. Load chips with anti-rathole rules
-      //    Within 2hr window: must sit with at least old stack (min 10K)
-      //    Beyond 2hr window or first time: fresh 10K start
+      // 2. Determine buy-in amount with anti-rathole rules
+      const MIN_BUYIN = 2000;
+      const MAX_BUYIN = 10000;
       const RATHOLE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
+      let requestedBuyIn = typeof buyIn === 'number' ? Math.max(MIN_BUYIN, Math.min(MAX_BUYIN, Math.floor(buyIn))) : MAX_BUYIN;
+
       let chips;
-      if (playerData.current_chips <= 0) {
-        chips = 10000; // busted → auto-rebuy
-        console.log(`[Server] Auto-rebuy for ${displayName}: 10,000 chips`);
-      } else if (playerData.left_at && (Date.now() - playerData.left_at * 1000) < RATHOLE_WINDOW_MS) {
+      if (playerData.left_at && (Date.now() - playerData.left_at * 1000) < RATHOLE_WINDOW_MS && playerData.current_chips > 0) {
         // Within 2hr anti-rathole window: must sit with at least old stack
-        chips = Math.max(playerData.current_chips, 10000);
-        console.log(`[Server] Anti-rathole: ${displayName} returning within 2hr with ${chips} chips (left with ${playerData.current_chips})`);
+        chips = Math.max(requestedBuyIn, playerData.current_chips);
+        console.log(`[Server] Anti-rathole: ${displayName} returning within 2hr with ${chips} chips (requested ${requestedBuyIn}, left with ${playerData.current_chips})`);
       } else {
-        // Beyond 2hr window or never left: fresh start
-        chips = 10000;
-        console.log(`[Server] Fresh start for ${displayName}: 10,000 chips`);
+        // Fresh start or busted — use requested buy-in
+        chips = requestedBuyIn;
+        console.log(`[Server] ${displayName} buying in for ${chips} playsats`);
       }
       db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
+
+      // Clean up observer tracking if this socket was observing
+      if (observerSockets.has(socket.id)) {
+        observerSockets.delete(socket.id);
+      }
 
       // 3. Handle reconnection — if player already at this table, swap socket
       const existingSocketId = userSockets.get(userId);
@@ -919,11 +993,14 @@ io.on('connection', (socket) => {
 
       const game = games.get(tableId);
 
-      // 5. Add player with persistent chips and NOSTR metadata
+      // 5. Add player with persistent chips, NOSTR metadata, and preferred seat
+      const lud16 = playerData.lud16 || null;
       const assignedSeat = game.addPlayer(userId, displayName, {
         initialStack: chips,
         nostrName,
-        nostrPicture
+        nostrPicture,
+        lud16,
+        preferredSeat: typeof preferredSeat === 'number' ? preferredSeat : undefined
       });
 
       // Fix: Reset disconnected flag on reconnection via addPlayer path
@@ -1046,9 +1123,9 @@ io.on('connection', (socket) => {
   });
 
   /**
-   * Rebuy — reset chips to starting stack
+   * Voluntary sit out — toggle sit-out-next-hand
    */
-  socket.on('rebuy', ({ tableId }) => {
+  socket.on('sit-out', ({ tableId }) => {
     const user = socketUsers.get(socket.id);
     if (!user) {
       socket.emit('error', { message: 'Not authenticated' });
@@ -1061,7 +1138,35 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const result = game.rebuy(user.userId);
+    const result = game.voluntarySitOut(user.userId);
+    if (result.success) {
+      broadcastGameState(tableId);
+    } else {
+      socket.emit('error', { message: result.error });
+    }
+  });
+
+  /**
+   * Rebuy — reset chips to chosen buy-in amount (2000-10000)
+   */
+  socket.on('rebuy', ({ tableId, buyIn }) => {
+    const user = socketUsers.get(socket.id);
+    if (!user) {
+      socket.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+
+    const game = games.get(tableId);
+    if (!game) {
+      socket.emit('error', { message: 'Table not found' });
+      return;
+    }
+
+    const MIN_BUYIN = 2000;
+    const MAX_BUYIN = 10000;
+    const amount = typeof buyIn === 'number' ? Math.max(MIN_BUYIN, Math.min(MAX_BUYIN, Math.floor(buyIn))) : MAX_BUYIN;
+
+    const result = game.rebuy(user.userId, amount);
     if (result.success) {
       // Persist to database
       db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(result.chips, user.userId);
@@ -1076,6 +1181,13 @@ io.on('connection', (socket) => {
    * Disconnect
    */
   socket.on('disconnect', () => {
+    // Clean up observer if applicable
+    if (observerSockets.has(socket.id)) {
+      const obs = observerSockets.get(socket.id);
+      console.log(`Observer ${obs.observerName} disconnected from table ${obs.tableId}`);
+      observerSockets.delete(socket.id);
+    }
+
     const user = socketUsers.get(socket.id);
     if (user) {
       const game = games.get(user.tableId);
@@ -1085,7 +1197,7 @@ io.on('connection', (socket) => {
         if (player) {
           player.disconnected = true;
           console.log(`${user.userId} disconnected from table ${user.tableId}`);
-          
+
           // Give 60 seconds to reconnect before auto-sitting out
           setTimeout(() => {
             // Check if still disconnected
@@ -1100,11 +1212,11 @@ io.on('connection', (socket) => {
           }, 60000); // 60 second grace period
         }
       }
-      
+
       userSockets.delete(user.userId);
       socketUsers.delete(socket.id);
     }
-    
+
     console.log(`Client disconnected: ${socket.id}`);
   });
 });
@@ -1112,21 +1224,29 @@ io.on('connection', (socket) => {
 /**
  * Broadcast game state to all players at a table
  * Each player receives personalized state (only sees own hole cards)
+ * Observers receive spectator view (no private cards)
  */
 function broadcastGameState(tableId) {
   const game = games.get(tableId);
   if (!game) return;
 
-  // Get all players at this table
+  // Send personalized state to each seated player
   game.players.forEach((player, idx) => {
     if (!player) return;
 
     const socketId = userSockets.get(player.userId);
     if (!socketId) return;
 
-    // Send personalized game state to each player
     io.to(socketId).emit('game-state', game.getGameState(player.userId));
   });
+
+  // Send observer/spectator state to all observers at this table
+  const observerState = game.getGameState(null);
+  for (const [socketId, obs] of observerSockets) {
+    if (obs.tableId === tableId) {
+      io.to(socketId).emit('game-state', observerState);
+    }
+  }
 }
 
 // Start server

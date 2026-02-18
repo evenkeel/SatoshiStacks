@@ -10,7 +10,7 @@ const STARTING_STACK = 10000;
 const SMALL_BLIND = 50;
 const BIG_BLIND = 100;
 const NUM_SEATS = 6;
-const BASE_ACTION_MS = 15000;     // 15-second base action timer
+const BASE_ACTION_MS = 10000;     // 10-second base action timer
 const DEFAULT_TIME_BANK_MS = 15000; // 15s initial time bank per pool
 const TIME_BANK_CAP_MS = 60000;    // Max 60s time bank
 const TIME_BANK_GROWTH_MS = 5000;  // +5s per growth interval
@@ -51,6 +51,7 @@ class PokerGame {
     // Phase 5.4: Action timeouts & disconnect handling
     this.actionTimeout = null;
     this.sitOutKickTimers = new Map(); // userId -> timeout for kicking after 5 min
+    this.runoutTimeouts = []; // Dramatic runout timeout chain
 
     // Hand history tracking
     this.currentHandLog = [];
@@ -104,8 +105,13 @@ class PokerGame {
       return existing;
     }
 
-    // Find first available seat (server assigns, client doesn't choose)
-    const seatIndex = this.players.findIndex(p => p === null);
+    // Find seat: use preferred seat if available, otherwise first empty
+    let seatIndex = -1;
+    if (typeof opts.preferredSeat === 'number' && opts.preferredSeat >= 0 && opts.preferredSeat < NUM_SEATS && this.players[opts.preferredSeat] === null) {
+      seatIndex = opts.preferredSeat;
+    } else {
+      seatIndex = this.players.findIndex(p => p === null);
+    }
     if (seatIndex === -1) {
       throw new Error('Table is full (6/6 seats occupied)');
     }
@@ -118,6 +124,7 @@ class PokerGame {
       username,
       nostrName: opts.nostrName || null,
       nostrPicture: opts.nostrPicture || null,
+      lud16: opts.lud16 || null,
       stack: opts.initialStack || STARTING_STACK,
       holeCards: [],
       folded: joinedMidHand,            // folded if joining mid-hand
@@ -540,7 +547,7 @@ class PokerGame {
 
     // Run out if only one player can act (all others all-in)
     if (acting.length <= 1) {
-      this.runOut();
+      this.dramaticRunOut();
       return;
     }
 
@@ -579,39 +586,74 @@ class PokerGame {
   }
 
   /**
-   * Run out remaining board when all players all-in
+   * Dramatic run-out: phased dealing with pauses for all-in showdown.
+   * Reveals hole cards first, then deals each street with delays.
    */
-  runOut() {
+  dramaticRunOut() {
     const prevLen = this.communityCards.length;
 
-    // Deal remaining streets with correct burn pattern
-    if (this.communityCards.length < 3) {
-      // Flop: burn 1, deal 3
-      this.deck.pop(); // burn
-      this.communityCards.push(this.deck.pop(), this.deck.pop(), this.deck.pop());
-    }
-    if (this.communityCards.length < 4) {
-      // Turn: burn 1, deal 1
-      this.deck.pop(); // burn
-      this.communityCards.push(this.deck.pop());
-    }
-    if (this.communityCards.length < 5) {
-      // River: burn 1, deal 1
-      this.deck.pop(); // burn
-      this.communityCards.push(this.deck.pop());
+    // Phase 0: Set showdown phase to reveal hole cards to all players
+    this.phase = 'showdown';
+    this.emitLog('*** SHOW DOWN ***', 'phase');
+
+    // Broadcast state so frontends see revealed hole cards
+    if (this.onStateChange) this.onStateChange();
+
+    // Build dealing schedule: array of { delay (ms from now), action }
+    const steps = [];
+    let cumDelay = 2000; // 2s pause after card reveal
+
+    if (prevLen < 3) {
+      steps.push({ delay: cumDelay, action: () => {
+        this.deck.pop(); // burn
+        this.communityCards.push(this.deck.pop(), this.deck.pop(), this.deck.pop());
+        this.emitLog(`*** FLOP *** ${this.cardsStr(this.communityCards.slice(0, 3))}`, 'phase');
+        if (this.onStateChange) this.onStateChange();
+      }});
+      cumDelay += 2000; // 2s after flop
     }
 
-    // Log any new community cards dealt during runout
-    if (prevLen < 3) {
-      this.emitLog(`*** FLOP *** ${this.cardsStr(this.communityCards.slice(0, 3))}`, 'phase');
-    }
     if (prevLen < 4) {
-      this.emitLog(`*** TURN *** ${this.cardsStr(this.communityCards.slice(0, 3))} [${this.cardStr(this.communityCards[3])}]`, 'phase');
+      steps.push({ delay: cumDelay, action: () => {
+        this.deck.pop(); // burn
+        this.communityCards.push(this.deck.pop());
+        this.emitLog(`*** TURN *** ${this.cardsStr(this.communityCards.slice(0, 3))} [${this.cardStr(this.communityCards[3])}]`, 'phase');
+        if (this.onStateChange) this.onStateChange();
+      }});
+      cumDelay += 3000; // 3s after turn (longer pause for drama)
     }
+
     if (prevLen < 5) {
-      this.emitLog(`*** RIVER *** ${this.cardsStr(this.communityCards.slice(0, 4))} [${this.cardStr(this.communityCards[4])}]`, 'phase');
+      steps.push({ delay: cumDelay, action: () => {
+        this.deck.pop(); // burn
+        this.communityCards.push(this.deck.pop());
+        this.emitLog(`*** RIVER *** ${this.cardsStr(this.communityCards.slice(0, 4))} [${this.cardStr(this.communityCards[4])}]`, 'phase');
+        if (this.onStateChange) this.onStateChange();
+      }});
+      cumDelay += 2000; // 2s after river
     }
-    this.endHand();
+
+    // Final step: end hand (evaluates hands, distributes pot, triggers chip fly)
+    steps.push({ delay: cumDelay, action: () => {
+      this.endHand();
+    }});
+
+    // Execute the chain, storing timeout refs for cleanup
+    this.runoutTimeouts = [];
+    steps.forEach(step => {
+      const t = setTimeout(step.action, step.delay);
+      this.runoutTimeouts.push(t);
+    });
+  }
+
+  /**
+   * Clear any pending dramatic runout timeouts
+   */
+  clearRunoutTimeouts() {
+    if (this.runoutTimeouts) {
+      this.runoutTimeouts.forEach(t => clearTimeout(t));
+      this.runoutTimeouts = [];
+    }
   }
 
   /**
@@ -620,6 +662,7 @@ class PokerGame {
   endHand() {
     this.handInProgress = false;
     this.clearActionTimer(); // Clear any pending timeout
+    this.clearRunoutTimeouts(); // Clear any dramatic runout timeouts
     this.collectBetsToPot();
 
     const active = this.getActivePlayers();
@@ -640,8 +683,10 @@ class PokerGame {
       this.potChips = [];
     } else {
       // Showdown - evaluate hands
-      this.phase = 'showdown';
-      this.emitLog(`*** SHOW DOWN ***`, 'phase');
+      if (this.phase !== 'showdown') {
+        this.phase = 'showdown';
+        this.emitLog(`*** SHOW DOWN ***`, 'phase');
+      }
 
       // Evaluate all active players
       active.forEach(p => {
@@ -758,26 +803,24 @@ class PokerGame {
     // Save hand to database
     this.saveHandToDatabase(handStartTime, winners);
 
-    // Auto-rebuy busted players (play-money: everyone gets back in)
-    let hadRebuy = false;
+    // Mark busted players as sitting out (they must manually rebuy via nameplate click)
+    let hadBust = false;
     this.players.forEach(p => {
       if (p && p.stack <= 0 && !p.sittingOut) {
-        p.stack = STARTING_STACK;
-        hadRebuy = true;
-        console.log(`[PokerGame ${this.tableId}] Auto-rebuy: ${p.username} → ${STARTING_STACK} chips`);
-        if (this.onRebuy) {
-          this.onRebuy(p.userId, STARTING_STACK);
-        }
+        p.sittingOut = true;
+        p.busted = true;
+        hadBust = true;
+        console.log(`[PokerGame ${this.tableId}] ${p.username} busted — waiting for rebuy`);
       }
     });
 
-    // Broadcast rebuy state immediately so players see the chip reset
-    if (hadRebuy && this.onStateChange) {
+    // Broadcast busted state immediately so players see it
+    if (hadBust && this.onStateChange) {
       this.onStateChange();
     }
 
-    // Schedule next hand — extra pause after rebuys so players can see it
-    const nextHandDelay = hadRebuy ? 5000 : 3000;
+    // Schedule next hand
+    const nextHandDelay = hadBust ? 5000 : 3000;
     setTimeout(() => {
       // Clean up players who left mid-hand — defer until just before next hand
       // so seats stay visually stable between hands
@@ -999,10 +1042,12 @@ class PokerGame {
           username: p.username,
           nostrName: p.nostrName || null,
           nostrPicture: p.nostrPicture || null,
+          lud16: p.lud16 || null,
           stack: p.stack,
           currentBet: p.currentBet,
           folded: p.folded,
           allIn: p.allIn,
+          busted: p.busted || false,
           seatIndex: idx,
           sittingOut: p.sittingOut || false,
           sittingOutNextHand: p.sittingOutNextHand || false,
@@ -1320,10 +1365,40 @@ class PokerGame {
   }
 
   /**
-   * Rebuy — reset player stack to STARTING_STACK.
+   * Voluntary sit out — toggle sit-out-next-hand or sit out immediately
+   */
+  voluntarySitOut(userId) {
+    const player = this.players.find(p => p && p.userId === userId);
+    if (!player) return { success: false, error: 'Player not found' };
+    if (player.sittingOut) return { success: false, error: 'Already sitting out' };
+
+    // Toggle: if already set to sit out next hand, cancel it
+    if (player.sittingOutNextHand) {
+      player.sittingOutNextHand = false;
+      console.log(`[PokerGame ${this.tableId}] ${player.username} cancelled voluntary sit-out`);
+      return { success: true, cancelled: true };
+    }
+
+    // If hand is in progress and player is still active, defer to next hand
+    if (this.handInProgress && player.participatedThisHand && !player.folded) {
+      player.sittingOutNextHand = true;
+      console.log(`[PokerGame ${this.tableId}] ${player.username} will sit out next hand (voluntary)`);
+      return { success: true, deferred: true };
+    }
+
+    // Otherwise sit out immediately
+    player.sittingOut = true;
+    player.sitOutTime = Date.now();
+    this.startSitOutKickTimer(userId);
+    console.log(`[PokerGame ${this.tableId}] ${player.username} sat out (voluntary)`);
+    return { success: true };
+  }
+
+  /**
+   * Rebuy — set player stack to chosen amount (2000-10000).
    * Only allowed when not in an active hand (folded or between hands).
    */
-  rebuy(userId) {
+  rebuy(userId, amount) {
     const player = this.players.find(p => p && p.userId === userId);
     if (!player) return { success: false, error: 'Player not found' };
 
@@ -1336,10 +1411,25 @@ class PokerGame {
       return { success: false, error: 'Stack is already at or above starting amount' };
     }
 
-    player.stack = STARTING_STACK;
-    console.log(`[PokerGame ${this.tableId}] ${player.username} rebought → ${STARTING_STACK} chips`);
+    const buyIn = typeof amount === 'number' ? Math.max(2000, Math.min(STARTING_STACK, Math.floor(amount))) : STARTING_STACK;
+    player.stack = buyIn;
+    player.busted = false;
+    player.sittingOut = false;
+    console.log(`[PokerGame ${this.tableId}] ${player.username} rebought → ${buyIn} chips`);
 
-    return { success: true, chips: STARTING_STACK };
+    // If enough players and no hand scheduled, start one
+    const activePlayers = this.players.filter(p => p !== null && p.stack > 0 && !p.sittingOut);
+    if (activePlayers.length >= 2 && !this.handInProgress && !this.handStartTimeout) {
+      this.handStartTimeout = setTimeout(() => {
+        this.handStartTimeout = null;
+        this.startNewHand();
+        if (this.onStateChange) {
+          this.onStateChange();
+        }
+      }, 2000);
+    }
+
+    return { success: true, chips: buyIn };
   }
 }
 
