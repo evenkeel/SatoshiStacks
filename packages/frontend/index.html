@@ -2145,12 +2145,11 @@ function connectToServer() {
           const p = gameState.players[i];
           if (p && p.username === name) {
             const vp = calculateVisualPosition(i + 1);
-            const isMe = p.userId === myUserId;
-            if (lower.includes('all-in')) { showBadge(vp, 'All In'); if (isMe) SFX.allIn(); }
-            else if (lower.includes('folds')) { showBadge(vp, 'Fold'); if (isMe) SFX.fold(); }
-            else if (lower.includes('checks')) { showBadge(vp, 'Check'); if (isMe) SFX.check(); }
-            else if (lower.includes('calls')) { showBadge(vp, 'Call'); if (isMe) SFX.chip(); }
-            else if (lower.includes('raises') || lower.includes('bets')) { showBadge(vp, 'Raise'); if (isMe) SFX.chip(); }
+            if (lower.includes('all-in')) { showBadge(vp, 'All In'); }
+            else if (lower.includes('folds')) { showBadge(vp, 'Fold'); }
+            else if (lower.includes('checks')) { showBadge(vp, 'Check'); }
+            else if (lower.includes('calls')) { showBadge(vp, 'Call'); }
+            else if (lower.includes('raises') || lower.includes('bets')) { showBadge(vp, 'Raise'); }
             break;
           }
         }
@@ -2171,7 +2170,6 @@ function connectToServer() {
           if (p && p.username === name) {
             const vp = calculateVisualPosition(i + 1);
             showBadge(vp, 'Win');
-            if (p.userId === myUserId) SFX.win();
             break;
           }
         }
