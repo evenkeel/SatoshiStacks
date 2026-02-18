@@ -1474,39 +1474,43 @@ const SFX = {
   deal() {
     if (!isSoundEnabled()) return;
     const ctx = getAudioCtx();
-    // Short white noise burst — card snap
-    const dur = 0.06;
+    // Card sliding onto felt — filtered noise snap
+    const dur = 0.08;
     const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      const t = i / ctx.sampleRate;
+      // Quick attack, fast decay — sounds like a card snapping down
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 50) * 0.6;
     }
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 2000;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 3000; bp.Q.value = 0.8;
     const gain = ctx.createGain();
-    gain.gain.value = 0.3;
-    src.connect(hp).connect(gain).connect(ctx.destination);
+    gain.gain.value = 0.2;
+    src.connect(bp).connect(gain).connect(ctx.destination);
     src.start();
   },
 
   check() {
     if (!isSoundEnabled()) return;
     const ctx = getAudioCtx();
-    // Double tap — two short knocks
-    [0, 0.08].forEach(delay => {
-      const dur = 0.04;
+    // Two soft knocks on table
+    [0, 0.09].forEach(delay => {
+      const dur = 0.06;
       const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
       const data = buf.getChannelData(0);
       for (let i = 0; i < data.length; i++) {
         const t = i / ctx.sampleRate;
-        data[i] = Math.sin(2 * Math.PI * 180 * t) * Math.exp(-t * 80) * 0.5;
+        // Low thump — knuckle on felt
+        data[i] = (Math.sin(2 * Math.PI * 120 * t) * 0.6 +
+                   Math.sin(2 * Math.PI * 240 * t) * 0.2) * Math.exp(-t * 60);
       }
       const src = ctx.createBufferSource();
       src.buffer = buf;
       const gain = ctx.createGain();
-      gain.gain.value = 0.35;
+      gain.gain.value = 0.25;
       src.connect(gain).connect(ctx.destination);
       src.start(ctx.currentTime + delay);
     });
@@ -1515,41 +1519,45 @@ const SFX = {
   chip() {
     if (!isSoundEnabled()) return;
     const ctx = getAudioCtx();
-    // Metallic clink — bet/call/raise
-    const dur = 0.15;
+    // Soft thud — chip landing on felt, muted and warm
+    const dur = 0.09;
     const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) {
       const t = i / ctx.sampleRate;
-      data[i] = (Math.sin(2 * Math.PI * 3200 * t) * 0.3 +
-                 Math.sin(2 * Math.PI * 4800 * t) * 0.2 +
-                 (Math.random() * 2 - 1) * 0.15) * Math.exp(-t * 25);
+      // Low muted thump — no high-freq ring, just a gentle plop
+      data[i] = (Math.sin(2 * Math.PI * 350 * t) * 0.5 +
+                 Math.sin(2 * Math.PI * 700 * t) * 0.1) * Math.exp(-t * 55);
     }
     const src = ctx.createBufferSource();
     src.buffer = buf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 900;
     const gain = ctx.createGain();
-    gain.gain.value = 0.25;
-    src.connect(gain).connect(ctx.destination);
+    gain.gain.value = 0.15;
+    src.connect(lp).connect(gain).connect(ctx.destination);
     src.start();
   },
 
   fold() {
     if (!isSoundEnabled()) return;
     const ctx = getAudioCtx();
-    // Soft whoosh — cards sliding away
-    const dur = 0.18;
+    // Soft card slide — gentle whoosh, low-passed
+    const dur = 0.15;
     const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) {
       const t = i / ctx.sampleRate;
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 15) * 0.3;
+      // Fade in slightly then out — feels like cards sliding across felt
+      const env = Math.sin(Math.PI * t / 0.15) * Math.exp(-t * 12);
+      data[i] = (Math.random() * 2 - 1) * env * 0.25;
     }
     const src = ctx.createBufferSource();
     src.buffer = buf;
     const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 1500;
+    lp.type = 'lowpass'; lp.frequency.value = 1200;
     const gain = ctx.createGain();
-    gain.gain.value = 0.3;
+    gain.gain.value = 0.2;
     src.connect(lp).connect(gain).connect(ctx.destination);
     src.start();
   },
@@ -1557,66 +1565,80 @@ const SFX = {
   allIn() {
     if (!isSoundEnabled()) return;
     const ctx = getAudioCtx();
-    // Dramatic rising tone + chip cascade
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(200, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.3);
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + 0.4);
-    // Chip cascade on top
-    setTimeout(() => { SFX.chip(); }, 100);
-    setTimeout(() => { SFX.chip(); }, 200);
+    // Chips pushed forward — soft tumble of muted thuds
+    [0, 0.07, 0.12, 0.16, 0.22].forEach((delay, idx) => {
+      const dur = 0.08;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      const freq = 300 + idx * 40 + Math.random() * 80;
+      for (let i = 0; i < data.length; i++) {
+        const t = i / ctx.sampleRate;
+        data[i] = Math.sin(2 * Math.PI * freq * t) * 0.4 * Math.exp(-t * 50);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 800;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.12;
+      src.connect(lp).connect(gain).connect(ctx.destination);
+      src.start(ctx.currentTime + delay);
+    });
   },
 
   win() {
     if (!isSoundEnabled()) return;
     const ctx = getAudioCtx();
-    // Happy ascending notes
-    [440, 554, 659].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      osc.type = 'triangle';
-      osc.frequency.value = freq;
+    // Chips sliding to winner — gentle muted cascade
+    for (let i = 0; i < 5; i++) {
+      const delay = i * 0.06 + Math.random() * 0.03;
+      const dur = 0.07;
+      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      const freq = 280 + Math.random() * 200;
+      for (let j = 0; j < data.length; j++) {
+        const t = j / ctx.sampleRate;
+        data[j] = Math.sin(2 * Math.PI * freq * t) * 0.35 * Math.exp(-t * 50);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 700;
       const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.12);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.25);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + i * 0.12);
-      osc.stop(ctx.currentTime + i * 0.12 + 0.25);
-    });
+      gain.gain.value = 0.1;
+      src.connect(lp).connect(gain).connect(ctx.destination);
+      src.start(ctx.currentTime + delay);
+    }
   },
 
   timerWarning() {
     if (!isSoundEnabled(true)) return;
     const ctx = getAudioCtx();
-    // Short urgent beep
+    // Soft tick — not harsh, just noticeable
     const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = 880;
+    osc.type = 'sine';
+    osc.frequency.value = 660;
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.06);
     osc.connect(gain).connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + 0.08);
+    osc.start(); osc.stop(ctx.currentTime + 0.06);
   },
 
   yourTurn() {
     if (!isSoundEnabled(true)) return;
     const ctx = getAudioCtx();
-    // Two-note attention chime
-    [660, 880].forEach((freq, i) => {
+    // Gentle two-note chime — warm sine tones
+    [523, 659].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.value = freq;
       const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.18, ctx.currentTime + i * 0.1);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.15);
+      gain.gain.setValueAtTime(0.14, ctx.currentTime + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.2);
       osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + i * 0.1);
-      osc.stop(ctx.currentTime + i * 0.1 + 0.15);
+      osc.start(ctx.currentTime + i * 0.12);
+      osc.stop(ctx.currentTime + i * 0.12 + 0.2);
     });
   },
 };
