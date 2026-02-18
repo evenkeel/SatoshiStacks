@@ -429,7 +429,7 @@ transform: translate(-50%, -50%);
 .bet-pos-1 { top: 18%; left: 66%; }
 .bet-pos-2 { top: 50%; left: 76%; }
 .bet-pos-3 { top: 82%; left: 78%; }
-.bet-pos-4 { top: 82%; left: 34%; }
+.bet-pos-4 { top: 82%; left: 22%; }
 .bet-pos-5 { top: 50%; left: 24%; }
 .bet-pos-6 { top: 18%; left: 34%; }
 /* Cards peeking from nameplate */
@@ -437,13 +437,13 @@ transform: translate(-50%, -50%);
 position: absolute;
 display: flex;
 gap: 2px;
-bottom: 60%;
+bottom: 45%;
 left: 50%;
 transform: translateX(-50%);
 z-index: 17;
 pointer-events: none;
 }
-.np-cards .card { clip-path: inset(0 0 40% 0); }
+.np-cards .card { clip-path: inset(0 0 50% 0); }
 .np-cards .card.small {
 width: clamp(44px, 5.6vw, 72px);
 height: clamp(64px, 8vw, 104px);
@@ -451,7 +451,7 @@ height: clamp(64px, 8vw, 104px);
 .player-nameplate.hero .np-cards .card {
 width: clamp(68px, 9vw, 112px);
 height: clamp(98px, 13vw, 162px);
-clip-path: inset(0 0 35% 0);
+clip-path: inset(0 0 45% 0);
 border-radius: clamp(8px, 1vw, 12px);
 box-shadow: none;
 }
@@ -1553,7 +1553,7 @@ transition: transform 0.2s;
   Sit Back In
 </div>
 <!-- Sit Out Button -->
-<div id="sitOutBtn" style="position:fixed;bottom:70px;right:16px;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:var(--warm-navy);color:var(--warm-white);box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:999;display:none;cursor:pointer;border:1.5px solid var(--outline-light);opacity:0.85;" onclick="handleSitOut()">
+<div id="sitOutBtn" style="position:fixed;top:10px;left:10px;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:var(--warm-navy);color:var(--warm-white);box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:999;display:none;cursor:pointer;border:1.5px solid var(--outline-light);opacity:0.85;" onclick="handleSitOut()">
   Sit Out Next Hand
 </div>
 <!-- Toast Container -->
@@ -1769,7 +1769,7 @@ const BET_TARGETS = {
   1: { top: 18, left: 66 },
   2: { top: 50, left: 76 },
   3: { top: 82, left: 78 },
-  4: { top: 82, left: 34 },
+  4: { top: 82, left: 22 },
   5: { top: 50, left: 24 },
   6: { top: 18, left: 34 },
 };
