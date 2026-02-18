@@ -185,6 +185,11 @@ class PokerGame {
         if (this.onStateChange) this.onStateChange();
       }
     } else {
+      // Notify server to persist chips + departure time before nulling
+      const player = this.players[idx];
+      if (this.onPlayerLeaving && player) {
+        this.onPlayerLeaving(player.userId, player.stack);
+      }
       this.players[idx] = null;
     }
   }
@@ -195,6 +200,10 @@ class PokerGame {
   cleanupPendingRemovals() {
     for (let i = 0; i < this.players.length; i++) {
       if (this.players[i] && this.players[i]._pendingRemoval) {
+        // Notify server to persist chips + departure time before nulling
+        if (this.onPlayerLeaving) {
+          this.onPlayerLeaving(this.players[i].userId, this.players[i].stack);
+        }
         console.log(`[PokerGame ${this.tableId}] Removing ${this.players[i].username} (post-hand cleanup)`);
         this.players[i] = null;
       }

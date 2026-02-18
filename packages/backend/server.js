@@ -776,13 +776,24 @@ io.on('connection', (socket) => {
       // Log action for abuse detection
       db.logAction(userId, clientIp, 'join-table');
 
-      // 2. Load persistent chips — auto-rebuy to 10K if at 0
-      let chips = playerData.current_chips;
-      if (chips <= 0) {
-        chips = 10000;
-        db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
+      // 2. Load chips with anti-rathole rules
+      //    Within 2hr window: must sit with at least old stack (min 10K)
+      //    Beyond 2hr window or first time: fresh 10K start
+      const RATHOLE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
+      let chips;
+      if (playerData.current_chips <= 0) {
+        chips = 10000; // busted → auto-rebuy
         console.log(`[Server] Auto-rebuy for ${displayName}: 10,000 chips`);
+      } else if (playerData.left_at && (Date.now() - playerData.left_at * 1000) < RATHOLE_WINDOW_MS) {
+        // Within 2hr anti-rathole window: must sit with at least old stack
+        chips = Math.max(playerData.current_chips, 10000);
+        console.log(`[Server] Anti-rathole: ${displayName} returning within 2hr with ${chips} chips (left with ${playerData.current_chips})`);
+      } else {
+        // Beyond 2hr window or never left: fresh start
+        chips = 10000;
+        console.log(`[Server] Fresh start for ${displayName}: 10,000 chips`);
       }
+      db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
 
       // 3. Handle reconnection — if player already at this table, swap socket
       const existingSocketId = userSockets.get(userId);
@@ -859,6 +870,16 @@ io.on('connection', (socket) => {
           const socketId = userSockets.get(userId);
           if (socketId) {
             io.to(socketId).emit('hand-complete', { history: historyText });
+          }
+        };
+
+        // Set up player leaving callback — persist chips + departure time for anti-rathole
+        game.onPlayerLeaving = (userId, stack) => {
+          try {
+            db.updatePlayerLeftAt(userId, stack);
+            console.log(`[Server] Saved departure: ${userId.slice(0, 8)}... with ${stack} chips`);
+          } catch (err) {
+            console.error(`[Server] Failed to save departure for ${userId}:`, err.message);
           }
         };
 

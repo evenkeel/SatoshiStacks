@@ -89,6 +89,14 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players(last_seen);
   `);
 
+  // Migration: Add left_at column for anti-rathole tracking
+  try {
+    db.exec(`ALTER TABLE players ADD COLUMN left_at INTEGER DEFAULT NULL`);
+    console.log('[Database] Added left_at column to players table');
+  } catch (e) {
+    // Column already exists — ignore
+  }
+
   // Tables table
   db.exec(`
     CREATE TABLE IF NOT EXISTS tables (
@@ -276,6 +284,23 @@ function updatePlayerStats(userId, stats) {
   } catch (error) {
     console.error('[Database] Error updating player stats:', error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Save player's chip count and departure timestamp (anti-rathole tracking)
+ */
+function updatePlayerLeftAt(userId, chips) {
+  const stmt = db.prepare(`
+    UPDATE players SET
+      current_chips = ?,
+      left_at = strftime('%s','now')
+    WHERE user_id = ?
+  `);
+  try {
+    stmt.run(chips, userId);
+  } catch (error) {
+    console.error('[Database] Error updating player left_at:', error);
   }
 }
 
@@ -572,6 +597,7 @@ module.exports = {
   saveHand,
   upsertPlayer,
   updatePlayerStats,
+  updatePlayerLeftAt,
   getPlayer,
   getHand,
   getPlayerHands,
