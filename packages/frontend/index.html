@@ -1422,9 +1422,8 @@ transition: transform 0.2s;
 }
 .buyin-btn-cancel:hover { opacity: 1; }
 /* === BUSTED BADGE === */
-.busted-badge {
+.status-badge {
   position: absolute;
-  bottom: -8px;
   right: -8px;
   background: var(--rust);
   color: var(--warm-white);
@@ -1435,6 +1434,8 @@ transition: transform 0.2s;
   border: 1.5px solid var(--outline);
   z-index: 10;
 }
+.status-badge.badge-top { top: -8px; }
+.status-badge.badge-bottom { bottom: -8px; }
 /* === NOSTR LOGIN OVERLAY === */
 .nostr-login-overlay {
   position: fixed;
@@ -2484,11 +2485,12 @@ function updateNameplates() {
     // Dealer button
     const dealerHTML = gameState.dealerSeat === idx ? '<div class="np-dealer">D</div>' : '';
 
-    // Sitting out / busted badge
+    // Sitting out / busted badge — position toward table center
+    const badgePos = (visualPos === 3 || visualPos === 4) ? 'badge-top' : 'badge-bottom';
     const sitOutBadge = player.busted
-      ? '<div class="busted-badge">BUSTED</div>'
+      ? `<div class="status-badge ${badgePos}">BUSTED</div>`
       : player.sittingOut
-        ? '<div style="position:absolute;bottom:-8px;right:-8px;background:var(--rust);color:var(--warm-white);font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px;border:1.5px solid var(--outline);z-index:10;">SITTING OUT</div>'
+        ? `<div class="status-badge ${badgePos}">SITTING OUT</div>`
         : '';
 
     el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}`;
