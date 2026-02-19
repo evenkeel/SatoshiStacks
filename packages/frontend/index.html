@@ -2926,10 +2926,9 @@ function renderPreActions() {
   const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
   const isMyTurn = gameState.yourTurn;
 
-  // Show pre-actions when it's NOT our turn and we're still in the hand
+  // Hide pre-actions when it's our turn, hand over, folded, or all-in
   if (!myPlayer || isMyTurn || !gameState.handInProgress || myPlayer.folded || myPlayer.allIn) {
     bar.classList.remove('visible');
-    // Only clear preAction when hand ends or we fold (not on our turn — executePreAction handles that)
     if (!gameState.handInProgress || (myPlayer && myPlayer.folded)) {
       bar.innerHTML = '';
       preAction = null;
@@ -2937,32 +2936,41 @@ function renderPreActions() {
     return;
   }
 
-  bar.classList.add('visible');
-
-  // Determine which pre-actions are legal
+  // Only show pre-actions when there's a bet to face (guaranteed to act again).
+  // If no one has bet (canCheck), hero might not need to act — hide pre-actions.
   const maxBet = Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
   const toCall = maxBet - (myPlayer.currentBet || 0);
   const canCheck = toCall === 0;
 
-  // Force rebuild when legality changes (e.g., opponent raises while pre-actions shown)
-  const prevCanCheck = bar.dataset.canCheck === 'true';
-  if (bar.children.length && prevCanCheck !== canCheck) {
+  if (canCheck) {
+    bar.classList.remove('visible');
     bar.innerHTML = '';
-    // Clear pre-action if it became illegal
-    if (preAction === 'check' && !canCheck) preAction = null;
-    if (preAction === 'checkfold' && !canCheck) preAction = null;
+    preAction = null;
+    return;
   }
-  bar.dataset.canCheck = canCheck;
+
+  bar.classList.add('visible');
+
+  // Rebuild buttons when call amount changes (e.g., someone re-raises)
+  const prevToCall = parseInt(bar.dataset.toCall || '0', 10);
+  if (bar.children.length && prevToCall !== toCall) {
+    bar.innerHTML = '';
+    // Clear pre-action if call amount changed (player may want to reconsider)
+    if (preAction === 'call') preAction = null;
+  }
+  bar.dataset.toCall = toCall;
 
   // Only rebuild DOM if buttons don't exist yet
   if (!bar.children.length) {
+    const callAmt = Math.min(toCall, myPlayer.stack);
+    const callLabel = callAmt >= myPlayer.stack ? 'Call All-In' : `Call ${fmt(callAmt)}`;
     let buttonsHTML = '';
-    if (canCheck) {
-      buttonsHTML += '<button class="pre-action-btn" data-pa="check">Check</button>';
-      buttonsHTML += '<button class="pre-action-btn" data-pa="checkfold">Check / Fold</button>';
-    }
+    buttonsHTML += `<button class="pre-action-btn" data-pa="call">${callLabel}</button>`;
     buttonsHTML += '<button class="pre-action-btn" data-pa="fold">Fold</button>';
-    buttonsHTML += '<button class="pre-action-btn" data-pa="shove">Insta-Shove</button>';
+    // Only show shove if stack > call amount (otherwise call IS all-in)
+    if (myPlayer.stack > toCall) {
+      buttonsHTML += '<button class="pre-action-btn" data-pa="shove">Insta-Shove</button>';
+    }
     bar.innerHTML = buttonsHTML;
     bar.querySelectorAll('.pre-action-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2994,8 +3002,7 @@ function executePreAction() {
   const pa = preAction;
   preAction = null;
 
-  if (pa === 'check' && canCheck) { sendAction('check'); return true; }
-  if (pa === 'checkfold') { sendAction(canCheck ? 'check' : 'fold'); return true; }
+  if (pa === 'call' && toCall > 0) { sendAction('call'); return true; }
   if (pa === 'fold') { sendAction('fold'); return true; }
   if (pa === 'shove') { sendAction('raise', myPlayer.stack + (myPlayer.currentBet || 0)); return true; }
 
