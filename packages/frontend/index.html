@@ -767,12 +767,11 @@ background: var(--mustard);
 color: var(--text-dark);
 }
 .btn-raise:hover:not(:disabled) { background: var(--mustard-dark); }
-/* Pre-action buttons */
+/* Pre-action buttons — stacked above the table-actions-bar */
 .pre-action-bar {
 position: fixed;
-bottom: calc(clamp(150px, 24vh, 240px) / 2);
+bottom: 100px;
 left: min(34vw + 8px, 428px);
-transform: translateY(50%);
 padding: 6px;
 display: flex;
 flex-direction: column;
