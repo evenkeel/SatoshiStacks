@@ -269,6 +269,7 @@ class PokerGame {
         p._foldPhase = null;
         p._hasBet = false;
         p._histShare = 0;
+        p.wonPot = false;
         if (p.sittingOut || p.stack <= 0) {
           p.folded = true;
           p.participatedThisHand = false;
@@ -751,6 +752,10 @@ class PokerGame {
       this.potChips = [];
     }
 
+    // Mark winners so getGameState can include the flag for frontend highlighting
+    this.players.forEach(p => { if (p) p.wonPot = false; });
+    winners.forEach(w => { w.wonPot = true; });
+
     // === HAND HISTORY: Summary ===
     this.emitLog(`*** SUMMARY ***`, 'phase');
     const totalPot = this.players.reduce((s, p) => s + (p ? p.totalInvested || 0 : 0), 0);
@@ -1063,7 +1068,8 @@ class PokerGame {
           holeCards: (p.userId === userId || (this.phase === 'showdown' && !p.folded))
             ? p.holeCards
             : p.holeCards.length > 0 ? ['??', '??'] : [],
-          hand: (this.phase === 'showdown' && !p.folded) ? p.hand : null
+          hand: (this.phase === 'showdown' && !p.folded) ? p.hand : null,
+          wonPot: p.wonPot || false
         };
       }),
       communityCards: this.communityCards,

@@ -2527,11 +2527,13 @@ function updateNameplates() {
         cardsHTML = `<div class="np-cards">${renderCardHTML(null, 'small')}${renderCardHTML(null, 'small')}</div>`;
       } else {
         const sc = isMe ? '' : 'small';
-        // During showdown, dim cards not in the best hand — but ONLY after all 5 community cards are dealt
+        // During showdown, only highlight the WINNER's best 5-card hand
         const allDealt = gameState.communityCards && gameState.communityCards.length >= 5;
-        const bestCards = allDealt && player.hand && player.hand.bestCards ? player.hand.bestCards : null;
-        const dim1 = bestCards && !bestCards.includes(card1) ? ' dimmed' : '';
-        const dim2 = bestCards && !bestCards.includes(card2) ? ' dimmed' : '';
+        const isWinner = player.wonPot;
+        const bestCards = allDealt && isWinner && player.hand && player.hand.bestCards ? player.hand.bestCards : null;
+        // Winners: dim hole cards not in bestCards. Losers: dim both hole cards entirely.
+        const dim1 = allDealt && player.hand ? (bestCards ? (!bestCards.includes(card1) ? ' dimmed' : '') : ' dimmed') : '';
+        const dim2 = allDealt && player.hand ? (bestCards ? (!bestCards.includes(card2) ? ' dimmed' : '') : ' dimmed') : '';
         cardsHTML = `<div class="np-cards">${renderCardHTML(card1, sc + dim1)}${renderCardHTML(card2, sc + dim2)}</div>`;
       }
     } else if (isMe && player.folded && player.holeCards && player.holeCards.length === 2 && player.holeCards[0] !== '??') {
@@ -2610,10 +2612,10 @@ function highlightWinningCards() {
   // Only dim cards after all 5 community cards are dealt (not during dramatic runout)
   if (!gameState.communityCards || gameState.communityCards.length < 5) return;
 
-  // Collect all bestCards from players who have evaluated hands (winners)
+  // Collect bestCards ONLY from winners (not all showdown hands)
   const winningCards = new Set();
   gameState.players.forEach(p => {
-    if (p && p.hand && p.hand.bestCards) {
+    if (p && p.wonPot && p.hand && p.hand.bestCards) {
       p.hand.bestCards.forEach(c => winningCards.add(c));
     }
   });
