@@ -758,6 +758,76 @@ async function fetchNostrProfile(pubkeyHex) {
 
 // ==================== WEBSOCKET ====================
 
+/**
+ * Ensure a game instance exists for the given tableId.
+ * Creates one with all callbacks if it doesn't exist yet.
+ */
+function ensureGameExists(tableId) {
+  if (games.has(tableId)) return;
+
+  const game = new PokerGame(tableId);
+
+  game.onStateChange = () => {
+    console.log(`[Server] Broadcasting state for table ${tableId}`);
+    broadcastGameState(tableId);
+  };
+
+  game.onTimerStart = (playerIndex, baseMs, timeBankInfo) => {
+    io.to(`table-${tableId}`).emit('action-timer-start', {
+      playerIndex,
+      timeoutMs: baseMs,
+      timeBankMs: timeBankInfo ? timeBankInfo.timeBankMs : 0,
+      isPreflop: timeBankInfo ? timeBankInfo.isPreflop : true
+    });
+  };
+
+  game.onTimeBankStart = (playerIndex, timeBankMs) => {
+    io.to(`table-${tableId}`).emit('time-bank-start', {
+      playerIndex,
+      timeBankMs
+    });
+  };
+
+  game.onHandLog = (line, type) => {
+    io.to(`table-${tableId}`).emit('hand-log', { line, type });
+  };
+
+  game.onDealCards = (userId, line) => {
+    const socketId = userSockets.get(userId);
+    if (socketId) {
+      io.to(socketId).emit('hand-log', { line, type: 'deal' });
+    }
+  };
+
+  game.onHandComplete = (userId, historyText) => {
+    const socketId = userSockets.get(userId);
+    if (socketId) {
+      io.to(socketId).emit('hand-complete', { history: historyText });
+    }
+  };
+
+  game.onPlayerLeaving = (userId, stack) => {
+    try {
+      db.updatePlayerLeftAt(userId, stack);
+      console.log(`[Server] Saved departure: ${userId.slice(0, 8)}... with ${stack} chips`);
+    } catch (err) {
+      console.error(`[Server] Failed to save departure for ${userId}:`, err.message);
+    }
+  };
+
+  game.onRebuy = (userId, chips) => {
+    try {
+      db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
+      console.log(`[Server] Auto-rebuy persisted: ${userId.slice(0, 8)}... → ${chips} chips`);
+    } catch (err) {
+      console.error(`[Server] Failed to persist rebuy for ${userId}:`, err.message);
+    }
+  };
+
+  games.set(tableId, game);
+  console.log(`[Server] Created game for table ${tableId}`);
+}
+
 // WebSocket connection handling
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
@@ -775,7 +845,10 @@ io.on('connection', (socket) => {
 
     socket.emit('observer-joined', { observerName });
 
-    // Send current game state if game exists (observer view — no private cards)
+    // Create game if it doesn't exist yet (so observers see empty seats)
+    ensureGameExists(tableId);
+
+    // Send current game state (observer view — no private cards)
     const game = games.get(tableId);
     if (game) {
       socket.emit('game-state', game.getGameState(null));
@@ -920,76 +993,7 @@ io.on('connection', (socket) => {
       }
 
       // 4. Create game if doesn't exist
-      if (!games.has(tableId)) {
-        const game = new PokerGame(tableId);
-
-        // Set up state change callback to broadcast updates
-        game.onStateChange = () => {
-          console.log(`[Server] Broadcasting state for table ${tableId}`);
-          broadcastGameState(tableId);
-        };
-
-        // Set up timer start callback (two-phase: base + time bank)
-        game.onTimerStart = (playerIndex, baseMs, timeBankInfo) => {
-          io.to(`table-${tableId}`).emit('action-timer-start', {
-            playerIndex,
-            timeoutMs: baseMs,
-            timeBankMs: timeBankInfo ? timeBankInfo.timeBankMs : 0,
-            isPreflop: timeBankInfo ? timeBankInfo.isPreflop : true
-          });
-        };
-
-        // Set up time bank activation callback
-        game.onTimeBankStart = (playerIndex, timeBankMs) => {
-          io.to(`table-${tableId}`).emit('time-bank-start', {
-            playerIndex,
-            timeBankMs
-          });
-        };
-
-        // Set up hand log callback — emit real-time play-by-play lines
-        game.onHandLog = (line, type) => {
-          io.to(`table-${tableId}`).emit('hand-log', { line, type });
-        };
-
-        // Set up deal cards callback — per-player hole card notification
-        game.onDealCards = (userId, line) => {
-          const socketId = userSockets.get(userId);
-          if (socketId) {
-            io.to(socketId).emit('hand-log', { line, type: 'deal' });
-          }
-        };
-
-        // Set up hand complete callback — send personalized history to each player
-        game.onHandComplete = (userId, historyText) => {
-          const socketId = userSockets.get(userId);
-          if (socketId) {
-            io.to(socketId).emit('hand-complete', { history: historyText });
-          }
-        };
-
-        // Set up player leaving callback — persist chips + departure time for anti-rathole
-        game.onPlayerLeaving = (userId, stack) => {
-          try {
-            db.updatePlayerLeftAt(userId, stack);
-            console.log(`[Server] Saved departure: ${userId.slice(0, 8)}... with ${stack} chips`);
-          } catch (err) {
-            console.error(`[Server] Failed to save departure for ${userId}:`, err.message);
-          }
-        };
-
-        // Set up auto-rebuy callback — persist chip reset to database
-        game.onRebuy = (userId, chips) => {
-          try {
-            db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
-            console.log(`[Server] Auto-rebuy persisted: ${userId.slice(0, 8)}... → ${chips} chips`);
-          } catch (err) {
-            console.error(`[Server] Failed to persist rebuy for ${userId}:`, err.message);
-          }
-        };
-
-        games.set(tableId, game);
-      }
+      ensureGameExists(tableId);
 
       const game = games.get(tableId);
 
