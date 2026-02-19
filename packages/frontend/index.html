@@ -1301,6 +1301,14 @@ transition: transform 0.2s;
   opacity: 0.85;
   filter: brightness(1.2);
 }
+.empty-np .np-content {
+  border: 2px dashed rgba(255,255,255,0.25) !important;
+  background: rgba(0,0,0,0.25) !important;
+}
+.empty-np:hover .np-content {
+  border-color: var(--mustard) !important;
+  box-shadow: 0 0 12px rgba(232,168,56,0.2);
+}
 /* === BUY-IN DIALOG === */
 .buyin-overlay {
   position: fixed;
