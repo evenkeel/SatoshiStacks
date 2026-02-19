@@ -352,13 +352,13 @@ gap: inherit;
 position: relative;
 z-index: 1;
 }
-/* Nameplate positions */
-.np-pos-1 { top: 2%; left: 66%; }
-.np-pos-2 { top: 50%; left: 90%; }
-.np-pos-3 { top: 98%; left: 66%; }
-.np-pos-4 { top: 98%; left: 34%; }
-.np-pos-5 { top: 50%; left: 10%; }
-.np-pos-6 { top: 2%; left: 34%; }
+/* Nameplate positions — shifted toward table center so they don't overlap 140px avatars */
+.np-pos-1 { top: 2%; left: 62%; }
+.np-pos-2 { top: 50%; left: 84%; }
+.np-pos-3 { top: 98%; left: 62%; }
+.np-pos-4 { top: 98%; left: 38%; }
+.np-pos-5 { top: 50%; left: 16%; }
+.np-pos-6 { top: 2%; left: 38%; }
 /* Nameplate action announcement overlay */
 .np-action {
 position: absolute;
@@ -1339,11 +1339,11 @@ transition: transform 0.2s;
   width: 140px;
   height: 140px;
   border-radius: 50%;
-  border: 2px dashed rgba(255,255,255,0.2);
+  border: 2px dashed rgba(255,255,255,0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.3);
   cursor: pointer;
   transition: all 0.3s ease;
   flex-direction: column;
@@ -2538,8 +2538,8 @@ function updateNameplates() {
     // Dealer button
     const dealerHTML = gameState.dealerSeat === idx ? '<div class="np-dealer">D</div>' : '';
 
-    // Sitting out / busted badge — position toward table center
-    const badgePos = (visualPos === 3 || visualPos === 4) ? 'badge-top' : 'badge-bottom';
+    // Sitting out / busted badge — position away from table center (outer edge of nameplate)
+    const badgePos = (visualPos === 3 || visualPos === 4) ? 'badge-bottom' : 'badge-top';
     const sitOutBadge = player.busted
       ? `<div class="status-badge ${badgePos}">BUSTED</div>`
       : player.sittingOut
@@ -3562,8 +3562,20 @@ document.addEventListener('click', (e) => {
   const seatIdx = parseInt(emptySeatEl.dataset.emptySeat, 10);
   if (isNaN(seatIdx) || seatIdx < 0 || seatIdx >= NUM_SEATS) return;
 
-  // Already seated? Ignore
-  if (mySeat) return;
+  // Already seated? Stand up first, then take the new seat
+  if (mySeat) {
+    if (!socket) return;
+    socket.emit('leave-table', { tableId: myTableId });
+    mySeat = null;
+    socket.emit('observe-table', { tableId: myTableId });
+    const bar = $('tableActionsBar');
+    if (bar) bar.classList.remove('visible');
+    $('sitBackInBtn').style.display = 'none';
+    const ctrl = document.querySelector('.controls-area');
+    if (ctrl) ctrl.classList.add('hidden');
+    const preBar = document.querySelector('.pre-action-bar');
+    if (preBar) preBar.classList.remove('visible');
+  }
 
   pendingSeat = seatIdx;
 
