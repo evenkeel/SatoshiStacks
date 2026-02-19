@@ -767,12 +767,12 @@ background: var(--mustard);
 color: var(--text-dark);
 }
 .btn-raise:hover:not(:disabled) { background: var(--mustard-dark); }
-/* Pre-action buttons — stacked above the table-actions-bar */
+/* Pre-action buttons — to the right of the table-actions-bar */
 .pre-action-bar {
 position: fixed;
-bottom: 115px;
-left: min(34vw + 8px, 428px);
-padding: 6px 6px 0;
+bottom: 8px;
+left: min(34vw + 178px, 598px);
+padding: 6px;
 display: flex;
 flex-direction: column;
 gap: 5px;
@@ -1263,7 +1263,7 @@ transition: transform 0.2s;
 .chat-box { width: 36vw; height: clamp(140px, 25vh, 260px); }
 .chat-tab { font-size: 11px; }
 .chat-msg { font-size: 11px; }
-.pre-action-bar { left: min(36vw + 6px, 428px); }
+.pre-action-bar { left: min(36vw + 176px, 598px); }
 .pre-action-btn { padding: 7px 14px; font-size: 10px; }
 }
 @media (max-width: 480px) {
@@ -2458,13 +2458,18 @@ function renderSeats() {
     if (!seatEl) continue;
 
     if (!player) {
-      // Render clickable empty seat avatar with "EMPTY SEAT" text
       seatEl.className = `seat seat-${visualPos}`;
-      seatEl.innerHTML = `
-        <div class="empty-avatar" data-empty-seat="${idx}">
-          <span class="empty-label">EMPTY<br>SEAT</span>
-        </div>
-      `;
+      if (mySeat) {
+        // Hide empty seats when player is already seated — no seat-switching mid-game
+        seatEl.innerHTML = '';
+      } else {
+        // Render clickable empty seat avatar with "EMPTY SEAT" text
+        seatEl.innerHTML = `
+          <div class="empty-avatar" data-empty-seat="${idx}">
+            <span class="empty-label">EMPTY<br>SEAT</span>
+          </div>
+        `;
+      }
       continue;
     }
 
@@ -3561,20 +3566,8 @@ document.addEventListener('click', (e) => {
   const seatIdx = parseInt(emptySeatEl.dataset.emptySeat, 10);
   if (isNaN(seatIdx) || seatIdx < 0 || seatIdx >= NUM_SEATS) return;
 
-  // Already seated? Stand up first, then take the new seat
-  if (mySeat) {
-    if (!socket) return;
-    socket.emit('leave-table', { tableId: myTableId });
-    mySeat = null;
-    socket.emit('observe-table', { tableId: myTableId });
-    const bar = $('tableActionsBar');
-    if (bar) bar.classList.remove('visible');
-    $('sitBackInBtn').style.display = 'none';
-    const ctrl = document.querySelector('.controls-area');
-    if (ctrl) ctrl.classList.add('hidden');
-    const preBar = document.querySelector('.pre-action-bar');
-    if (preBar) preBar.classList.remove('visible');
-  }
+  // Already seated? Ignore
+  if (mySeat) return;
 
   pendingSeat = seatIdx;
 
