@@ -215,8 +215,8 @@ align-items: center;
 /* === AVATAR === */
 .player-avatar-wrap {
 position: relative;
-width: 110px;
-height: 110px;
+width: 140px;
+height: 140px;
 flex-shrink: 0;
 z-index: 3;
 }
@@ -241,7 +241,7 @@ border-radius: 50%;
 display: flex;
 align-items: center;
 justify-content: center;
-font-size: clamp(28px, 4vw, 42px);
+font-size: clamp(32px, 5vw, 52px);
 font-weight: 900;
 color: var(--warm-white);
 border: 4px solid var(--outline);
@@ -397,7 +397,7 @@ animation: avatar-pulse 1.8s ease-in-out infinite;
 }
 @keyframes avatar-pulse {
 0%, 100% { transform: scale(1); }
-50%      { transform: scale(1.136); }
+50%      { transform: scale(1.071); }
 }
 .seat-6 .player-avatar-wrap.active-turn .player-avatar img,
 .seat-6 .player-avatar-wrap.active-turn .player-avatar .avatar-initial {
@@ -405,7 +405,7 @@ animation: avatar-pulse-mirror 1.8s ease-in-out infinite;
 }
 @keyframes avatar-pulse-mirror {
 0%, 100% { transform: scaleX(-1) scale(1); }
-50%      { transform: scaleX(-1) scale(1.136); }
+50%      { transform: scaleX(-1) scale(1.071); }
 }
 /* Folded */
 .seat.folded .player-avatar {
@@ -426,12 +426,12 @@ transform: translate(-50%, -50%);
 }
 .player-bet.visible { opacity: 1; }
 .player-bet .chip-stack { justify-content: center; }
-.bet-pos-1 { top: 22%; left: 62%; }
-.bet-pos-2 { top: 50%; left: 72%; }
-.bet-pos-3 { top: 78%; left: 72%; }
-.bet-pos-4 { top: 78%; left: 28%; }
-.bet-pos-5 { top: 50%; left: 28%; }
-.bet-pos-6 { top: 22%; left: 38%; }
+.bet-pos-1 { top: 24%; left: 60%; }
+.bet-pos-2 { top: 50%; left: 68%; }
+.bet-pos-3 { top: 76%; left: 68%; }
+.bet-pos-4 { top: 76%; left: 32%; }
+.bet-pos-5 { top: 50%; left: 32%; }
+.bet-pos-6 { top: 24%; left: 40%; }
 /* Cards peeking from nameplate — overflow-hidden wrapper */
 .np-cards {
 position: absolute;
@@ -1173,8 +1173,8 @@ transition: transform 0.2s;
 /* === RESPONSIVE === */
 @media (max-width: 768px) {
 .poker-table { width: 92vw; }
-.player-avatar-wrap { width: 90px; height: 90px; }
-.empty-avatar { width: 90px; height: 90px; }
+.player-avatar-wrap { width: 110px; height: 110px; }
+.empty-avatar { width: 110px; height: 110px; }
 .player-nameplate .np-name { font-size: 12px; }
 .player-nameplate .np-amount { font-size: 14px; }
 .player-nameplate .np-icon { width: 20px; height: 20px; }
@@ -1187,8 +1187,8 @@ transition: transform 0.2s;
 .seat-6 { top: 7%; left: 25%; }
 }
 @media (max-width: 600px) {
-.player-avatar-wrap { width: 72px; height: 72px; }
-.empty-avatar { width: 72px; height: 72px; font-size: 28px; }
+.player-avatar-wrap { width: 84px; height: 84px; }
+.empty-avatar { width: 84px; height: 84px; font-size: 30px; }
 .player-avatar .avatar-initial { font-size: clamp(18px, 3vw, 28px); }
 .poker-table {
   width: 96vw;
@@ -1221,8 +1221,8 @@ transition: transform 0.2s;
 .pre-action-btn { padding: 7px 14px; font-size: 10px; }
 }
 @media (max-width: 480px) {
-.player-avatar-wrap { width: 56px; height: 56px; }
-.empty-avatar { width: 56px; height: 56px; font-size: 22px; }
+.player-avatar-wrap { width: 64px; height: 64px; }
+.empty-avatar { width: 64px; height: 64px; font-size: 24px; }
 .player-avatar .avatar-initial { font-size: 16px; }
 .chat-box { display: none !important; }
 .poker-table { width: 98vw; transform: translate(-50%, -56%); }
@@ -1258,8 +1258,8 @@ transition: transform 0.2s;
 .pre-action-bar { display: none !important; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
-.player-avatar-wrap { width: 56px; height: 56px; }
-.empty-avatar { width: 56px; height: 56px; font-size: 22px; }
+.player-avatar-wrap { width: 64px; height: 64px; }
+.empty-avatar { width: 64px; height: 64px; font-size: 24px; }
 .player-avatar .avatar-initial { font-size: 16px; }
 .poker-table { width: 80vw; height: 65vh; }
 .chat-box { display: none !important; }
@@ -1284,14 +1284,14 @@ transition: transform 0.2s;
 }
 /* === EMPTY SEAT STYLES === */
 .empty-avatar {
-  width: 110px;
-  height: 110px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
   border: 2px dashed rgba(255,255,255,0.2);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 36px;
+  font-size: 42px;
   font-weight: 900;
   color: rgba(255,255,255,0.2);
   cursor: pointer;
@@ -1787,12 +1787,12 @@ const NP_TARGETS = {
 
 // Bet position targets (where bet chips sit on felt), keyed by visual seat (1-6)
 const BET_TARGETS = {
-  1: { top: 22, left: 62 },
-  2: { top: 50, left: 72 },
-  3: { top: 78, left: 72 },
-  4: { top: 78, left: 28 },
-  5: { top: 50, left: 28 },
-  6: { top: 22, left: 38 },
+  1: { top: 24, left: 60 },
+  2: { top: 50, left: 68 },
+  3: { top: 76, left: 68 },
+  4: { top: 76, left: 32 },
+  5: { top: 50, left: 32 },
+  6: { top: 24, left: 40 },
 };
 
 // Avatar colors for each visual seat
