@@ -75,8 +75,16 @@ app.get('/.well-known/nostr.json', (req, res) => {
   }
 });
 
-// Serve static files (frontend)
-app.use(express.static(path.join(__dirname, '../../packages/frontend')));
+// Serve static files (frontend) — no caching so deploys take effect immediately
+app.use(express.static(path.join(__dirname, '../../packages/frontend'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: (res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+}));
 
 // Parse JSON bodies
 app.use(express.json());
