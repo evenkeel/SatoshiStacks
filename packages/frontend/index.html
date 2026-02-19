@@ -3504,6 +3504,8 @@ window.handleStandUp = function() {
   socket.emit('leave-table', { tableId: myTableId });
   // Reset to observer mode
   mySeat = null;
+  // Remember that player voluntarily stood up — prevents auto-rejoin on refresh
+  sessionStorage.setItem('ss_stoodUp', '1');
   // Re-register as observer to keep receiving game state
   socket.emit('observe-table', { tableId: myTableId });
   // Hide all seated-player UI
@@ -3744,6 +3746,7 @@ function initBuyinDialog() {
       } else {
         // Sit-down mode — join table with chosen buy-in
         pendingBuyIn = amount;
+        sessionStorage.removeItem('ss_stoodUp');
         hideBuyinDialog();
         connectToServer();
       }
@@ -3842,7 +3845,12 @@ async function init() {
   const hasSession = await tryRestoreSession();
   if (hasSession) {
     hideLoginOverlay();
-    connectToServer();
+    // If player voluntarily stood up, reconnect as observer — don't auto-rejoin
+    if (sessionStorage.getItem('ss_stoodUp')) {
+      connectAsObserver();
+    } else {
+      connectToServer();
+    }
   } else {
     // No session — connect as observer (see table immediately)
     connectAsObserver();
