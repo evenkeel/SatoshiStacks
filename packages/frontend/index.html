@@ -812,6 +812,55 @@ border-color: var(--mustard);
 background: rgba(232, 195, 56, 0.12);
 color: var(--mustard);
 }
+/* === TABLE ACTIONS BAR (Sit Out / Stand Up) === */
+.table-actions-bar {
+position: fixed;
+bottom: 8px;
+left: min(34vw + 8px, 428px);
+display: flex;
+flex-direction: column;
+gap: 5px;
+z-index: 51;
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.25s ease;
+}
+.table-actions-bar.visible {
+opacity: 1;
+pointer-events: auto;
+}
+.table-action-btn {
+padding: 9px 20px;
+border-radius: var(--radius-pill);
+border: 1.5px solid var(--outline-light);
+background: rgba(24, 36, 52, 0.85);
+color: var(--cream);
+font-size: 11px;
+font-weight: 700;
+cursor: pointer;
+opacity: 0.55;
+transition: all 0.15s ease;
+text-transform: uppercase;
+letter-spacing: 0.8px;
+backdrop-filter: blur(8px);
+text-align: left;
+}
+.table-action-btn:hover {
+opacity: 0.85;
+border-color: var(--cream);
+}
+.table-action-btn.cancel-sit-out {
+border-color: var(--rust);
+color: var(--rust);
+opacity: 0.75;
+}
+.table-action-btn.stand-up {
+border-color: rgba(212, 113, 78, 0.5);
+}
+.table-action-btn.stand-up:hover {
+border-color: var(--rust);
+color: var(--rust);
+}
 .waiting-message { display: none; }
 /* === CHIP STACKS === */
 .chip-stack {
@@ -1246,6 +1295,7 @@ transition: transform 0.2s;
 .seat-5 { top: 50%; left: 5%; }
 .seat-6 { top: 8%; left: 26%; }
 .pre-action-bar { display: none !important; }
+.table-actions-bar { bottom: 8px; left: 8px; }
 }
 @media (max-height: 700px) {
 .poker-table { height: min(50vh, 380px); }
@@ -1255,6 +1305,7 @@ transition: transform 0.2s;
 .chat-box { display: none !important; }
 .controls-area { width: 100vw; right: 0; padding: 6px 12px; }
 .pre-action-bar { display: none !important; }
+.table-actions-bar { bottom: 8px; left: 8px; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
 .player-avatar-wrap { width: 64px; height: 64px; }
@@ -1272,6 +1323,7 @@ transition: transform 0.2s;
 .seat-5 { top: 50%; left: 4%; }
 .seat-6 { top: 8%; left: 25%; }
 .pre-action-bar { display: none !important; }
+.table-actions-bar { bottom: 8px; left: 8px; }
 }
 /* Toast animations */
 @keyframes slideIn {
@@ -1561,9 +1613,10 @@ transition: transform 0.2s;
 <div id="sitBackInBtn" style="position:fixed;bottom:120px;left:50%;transform:translateX(-50%);padding:12px 32px;border-radius:12px;font-size:16px;font-weight:800;background:var(--mustard);color:var(--text-dark);box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;display:none;cursor:pointer;border:2px solid var(--outline);" onclick="handleSitBackIn()">
   Sit Back In
 </div>
-<!-- Sit Out Button -->
-<div id="sitOutBtn" style="position:fixed;top:10px;left:10px;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:var(--warm-navy);color:var(--warm-white);box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:999;display:none;cursor:pointer;border:1.5px solid var(--outline-light);opacity:0.85;" onclick="handleSitOut()">
-  Sit Out Next Hand
+<!-- Table Actions (Sit Out / Stand Up) -->
+<div class="table-actions-bar" id="tableActionsBar">
+  <button class="table-action-btn" id="sitOutBtn" onclick="handleSitOut()">Sit Out Next Hand</button>
+  <button class="table-action-btn stand-up" id="standUpBtn" onclick="handleStandUp()">Stand Up</button>
 </div>
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer" style="position:fixed;top:60px;right:10px;z-index:1001;display:flex;flex-direction:column;gap:8px;"></div>
@@ -3438,26 +3491,64 @@ window.handleSitOut = function() {
   socket.emit('sit-out', { tableId: myTableId });
 };
 
-function updateSitOutButton() {
-  const btn = $('sitOutBtn');
-  if (!btn || !gameState) return;
+// ============================================================
+//  STAND UP (leave seat, become observer)
+// ============================================================
+window.handleStandUp = function() {
+  if (!socket) return;
+  // Leave the table (backend removes player, persists chips)
+  socket.emit('leave-table', { tableId: myTableId });
+  // Reset to observer mode
+  mySeat = null;
+  // Re-register as observer to keep receiving game state
+  socket.emit('observe-table', { tableId: myTableId });
+  // Hide all seated-player UI
+  const bar = $('tableActionsBar');
+  if (bar) bar.classList.remove('visible');
+  $('sitBackInBtn').style.display = 'none';
+  const ctrl = document.querySelector('.controls-area');
+  if (ctrl) ctrl.classList.add('hidden');
+  const preBar = document.querySelector('.pre-action-bar');
+  if (preBar) preBar.classList.remove('visible');
+};
+
+// ============================================================
+//  TABLE ACTIONS VISIBILITY (Sit Out + Stand Up bar)
+// ============================================================
+function updateTableActions() {
+  const bar = $('tableActionsBar');
+  const sitOutBtn = $('sitOutBtn');
+  const standUpBtn = $('standUpBtn');
+  if (!bar || !sitOutBtn || !standUpBtn || !gameState) return;
+
   const myPlayer = gameState.players?.find(p => p && p.userId === myUserId);
 
-  if (!myPlayer || myPlayer.sittingOut || myPlayer.busted) {
-    btn.style.display = 'none';
+  // Not seated → hide entire bar
+  if (!myPlayer) {
+    bar.classList.remove('visible');
     return;
   }
 
-  if (myPlayer.sittingOutNextHand) {
-    btn.style.display = 'block';
-    btn.textContent = 'Cancel Sit Out';
-    btn.style.background = 'var(--rust)';
+  // Seated → show bar (Stand Up is always available)
+  bar.classList.add('visible');
+  standUpBtn.style.display = 'block';
+
+  // Sit Out button: only when actively playing (not sitting out, not busted)
+  if (myPlayer.sittingOut || myPlayer.busted) {
+    sitOutBtn.style.display = 'none';
+  } else if (myPlayer.sittingOutNextHand) {
+    sitOutBtn.style.display = 'block';
+    sitOutBtn.textContent = 'Cancel Sit Out';
+    sitOutBtn.className = 'table-action-btn cancel-sit-out';
   } else {
-    btn.style.display = 'block';
-    btn.textContent = 'Sit Out Next Hand';
-    btn.style.background = 'var(--warm-navy)';
+    sitOutBtn.style.display = 'block';
+    sitOutBtn.textContent = 'Sit Out Next Hand';
+    sitOutBtn.className = 'table-action-btn';
   }
 }
+
+// Keep old name as alias for any existing calls
+function updateSitOutButton() { updateTableActions(); }
 
 // ============================================================
 //  AVATAR / NAMEPLATE CLICK HANDLERS
