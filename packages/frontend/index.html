@@ -369,10 +369,12 @@ bottom: 0;
 display: flex;
 align-items: center;
 justify-content: center;
-font-size: 13px;
+font-size: 12px;
 font-weight: 900;
 text-transform: uppercase;
-letter-spacing: 1px;
+letter-spacing: 0.5px;
+white-space: nowrap;
+padding: 0 6px;
 border-radius: inherit;
 z-index: 5;
 opacity: 0;
@@ -1183,7 +1185,8 @@ transition: transform 0.2s;
 }
 @media (max-width: 600px) {
 .player-avatar-wrap { width: 84px; height: 84px; }
-.empty-avatar { width: 84px; height: 84px; font-size: 30px; }
+.empty-avatar { width: 84px; height: 84px; }
+.empty-label { font-size: 12px; }
 .player-avatar .avatar-initial { font-size: clamp(18px, 3vw, 28px); }
 .poker-table {
   width: 96vw;
@@ -1217,7 +1220,8 @@ transition: transform 0.2s;
 }
 @media (max-width: 480px) {
 .player-avatar-wrap { width: 64px; height: 64px; }
-.empty-avatar { width: 64px; height: 64px; font-size: 24px; }
+.empty-avatar { width: 64px; height: 64px; }
+.empty-label { font-size: 9px; }
 .player-avatar .avatar-initial { font-size: 16px; }
 .chat-box { display: none !important; }
 .poker-table { width: 98vw; transform: translate(-50%, -56%); }
@@ -1254,7 +1258,8 @@ transition: transform 0.2s;
 }
 @media (max-height: 500px) and (orientation: landscape) {
 .player-avatar-wrap { width: 64px; height: 64px; }
-.empty-avatar { width: 64px; height: 64px; font-size: 24px; }
+.empty-avatar { width: 64px; height: 64px; }
+.empty-label { font-size: 9px; }
 .player-avatar .avatar-initial { font-size: 16px; }
 .poker-table { width: 80vw; height: 65vh; }
 .chat-box { display: none !important; }
@@ -1286,11 +1291,18 @@ transition: transform 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 42px;
-  font-weight: 900;
   color: rgba(255,255,255,0.2);
   cursor: pointer;
   transition: all 0.3s ease;
+  flex-direction: column;
+}
+.empty-label {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 .empty-avatar:hover {
   border-color: var(--mustard);
@@ -1298,22 +1310,8 @@ transition: transform 0.2s;
   box-shadow: 0 0 16px rgba(232,168,56,0.3);
 }
 .empty-np {
-  pointer-events: auto !important;
-  cursor: pointer;
-  opacity: 0.5;
-  transition: all 0.3s ease;
-}
-.empty-np:hover {
-  opacity: 0.85;
-  filter: brightness(1.2);
-}
-.empty-np .np-content {
-  border: 2px dashed rgba(255,255,255,0.25) !important;
-  background: rgba(0,0,0,0.25) !important;
-}
-.empty-np:hover .np-content {
-  border-color: var(--mustard) !important;
-  box-shadow: 0 0 12px rgba(232,168,56,0.2);
+  pointer-events: none !important;
+  display: none !important;
 }
 /* === BUY-IN DIALOG === */
 .buyin-overlay {
@@ -2296,15 +2294,27 @@ function setupCommonSocketHandlers() {
       const colonIdx = line.indexOf(':');
       if (colonIdx > 0) {
         const name = line.substring(0, colonIdx).trim();
+        const actionPart = line.substring(colonIdx + 1).trim();
         for (let i = 0; i < NUM_SEATS; i++) {
           const p = gameState.players[i];
           if (p && p.username === name) {
             const vp = calculateVisualPosition(i + 1);
-            if (lower.includes('all-in')) { showBadge(vp, 'All In'); }
-            else if (lower.includes('folds')) { showBadge(vp, 'Fold'); }
-            else if (lower.includes('checks')) { showBadge(vp, 'Check'); }
-            else if (lower.includes('calls')) { showBadge(vp, 'Call'); }
-            else if (lower.includes('raises') || lower.includes('bets')) { showBadge(vp, 'Raise'); }
+            if (lower.includes('all-in')) {
+              showBadge(vp, 'ALL IN', 'allin');
+            } else if (lower.includes('folds')) {
+              showBadge(vp, 'FOLD', 'fold');
+            } else if (lower.includes('checks')) {
+              showBadge(vp, 'CHECK', 'check');
+            } else if (lower.includes('calls')) {
+              const m = actionPart.match(/calls\s+([\d,]+)/i);
+              showBadge(vp, m ? `CALLS ${m[1]}` : 'CALL', 'call');
+            } else if (lower.includes('bets')) {
+              const m = actionPart.match(/bets\s+([\d,]+)/i);
+              showBadge(vp, m ? `BETS ${m[1]}` : 'BET', 'bet');
+            } else if (lower.includes('raises')) {
+              const m = actionPart.match(/to\s+([\d,]+)/i);
+              showBadge(vp, m ? `RAISES ${m[1]}` : 'RAISE', 'raise');
+            }
             break;
           }
         }
@@ -2395,10 +2405,12 @@ function renderSeats() {
     if (!seatEl) continue;
 
     if (!player) {
-      // Render clickable empty seat avatar
+      // Render clickable empty seat avatar with "EMPTY SEAT" text
       seatEl.className = `seat seat-${visualPos}`;
       seatEl.innerHTML = `
-        <div class="empty-avatar" data-empty-seat="${idx}">+</div>
+        <div class="empty-avatar" data-empty-seat="${idx}">
+          <span class="empty-label">EMPTY<br>SEAT</span>
+        </div>
       `;
       continue;
     }
@@ -2436,16 +2448,12 @@ function updateNameplates() {
     if (!el) continue;
 
     if (!player) {
-      // Render clickable "EMPTY" nameplate
+      // No nameplate for empty seats — the avatar circle shows "EMPTY SEAT"
       el.className = `player-nameplate np-pos-${visualPos} empty-np`;
       el.removeAttribute('data-userid');
       el.removeAttribute('data-is-me');
-      el.style.cursor = 'pointer';
-      el.innerHTML = `
-        <div class="np-content" data-empty-seat="${idx}">
-          <span class="np-name" style="opacity:0.5;font-style:italic;">EMPTY</span>
-        </div>
-      `;
+      el.style.cursor = '';
+      el.innerHTML = '';
       continue;
     }
 
@@ -2620,12 +2628,13 @@ function updatePot() {
 //  ACTION BADGE SYSTEM (Fold / Check / Call / Raise / etc.)
 // ============================================================
 const badgeTimers = {};
-function showBadge(visualPos, text) {
+function showBadge(visualPos, text, cssClass) {
   const b = $(`npAction-${visualPos}`);
   if (!b) return;
   if (badgeTimers[visualPos]) clearTimeout(badgeTimers[visualPos]);
   b.textContent = text;
-  b.className = `np-action visible ${text.toLowerCase().replace(/[^a-z]/g, '')}`;
+  const cls = cssClass || text.toLowerCase().replace(/[^a-z]/g, '');
+  b.className = `np-action visible ${cls}`;
   badgeTimers[visualPos] = setTimeout(() => b.classList.remove('visible'), 1400);
 }
 
@@ -2939,6 +2948,8 @@ function executePreAction() {
 // ============================================================
 function sendAction(action, amount) {
   if (!socket) return;
+  // Immediately clear the timer/lifebar on the frontend — don't wait for server round-trip
+  clearTimer();
   socket.emit('action', {
     tableId: myTableId,
     action: action,
