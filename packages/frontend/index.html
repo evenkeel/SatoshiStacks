@@ -1292,15 +1292,18 @@ transition: transform 0.2s;
   box-shadow: 0 0 16px rgba(232,168,56,0.3);
 }
 .empty-np {
-  display: none !important;
+  pointer-events: auto !important;
+  cursor: pointer;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 0.5;
+  transition: all 0.3s ease;
 }
-.empty-np .np-content {
-  border: 2px dashed rgba(255,255,255,0.25) !important;
-  background: rgba(0,0,0,0.25) !important;
-}
-.empty-np:hover .np-content {
-  border-color: var(--mustard) !important;
-  box-shadow: 0 0 12px rgba(232,168,56,0.2);
+.empty-np:hover {
+  opacity: 0.85;
 }
 /* === BUY-IN DIALOG === */
 .buyin-overlay {
