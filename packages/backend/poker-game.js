@@ -803,6 +803,9 @@ class PokerGame {
     // Save hand to database
     this.saveHandToDatabase(handStartTime, winners);
 
+    // Broadcast showdown state with evaluated hands so frontends can dim non-best cards
+    if (this.onStateChange) this.onStateChange();
+
     // Mark busted players as sitting out (they must manually rebuy via nameplate click)
     let hadBust = false;
     this.players.forEach(p => {

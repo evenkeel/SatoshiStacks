@@ -323,7 +323,11 @@ letter-spacing: 0.3px;
 .player-nameplate.hero {
 border-color: rgba(232, 168, 56, 0.5);
 box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 12px rgba(232, 168, 56, 0.15), inset 0 1px 0 rgba(255,255,255,0.05);
+min-width: clamp(140px, 15vw, 180px);
+padding: 8px 20px 8px 14px;
 }
+.player-nameplate.hero .np-name { font-size: 15px; }
+.player-nameplate.hero .np-amount { font-size: 17px; }
 .player-nameplate.folded-np { opacity: 0.35; }
 /* Life bar */
 .np-life-bar {
@@ -340,11 +344,7 @@ pointer-events: none;
 opacity: 0;
 }
 .np-life-bar.active { opacity: 1; }
-/* Active player nameplate */
-.player-nameplate.active-np {
-border-color: rgba(232, 168, 56, 0.6);
-box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 16px rgba(232,168,56,0.25), inset 0 1px 0 rgba(255,255,255,0.05);
-}
+/* Active player nameplate — no special styling, avatar pulse indicates turn */
 .np-content {
 display: flex;
 align-items: center;
@@ -423,8 +423,8 @@ transform: translate(-50%, -50%);
 .player-bet .chip-stack { justify-content: center; }
 .bet-pos-1 { top: 24%; left: 60%; }
 .bet-pos-2 { top: 50%; left: 68%; }
-.bet-pos-3 { top: 76%; left: 68%; }
-.bet-pos-4 { top: 76%; left: 32%; }
+.bet-pos-3 { top: 68%; left: 68%; }
+.bet-pos-4 { top: 68%; left: 32%; }
 .bet-pos-5 { top: 50%; left: 32%; }
 .bet-pos-6 { top: 24%; left: 40%; }
 /* Cards peeking from nameplate — overflow-hidden wrapper */
@@ -1784,8 +1784,8 @@ const NP_TARGETS = {
 const BET_TARGETS = {
   1: { top: 24, left: 60 },
   2: { top: 50, left: 68 },
-  3: { top: 76, left: 68 },
-  4: { top: 76, left: 32 },
+  3: { top: 68, left: 68 },
+  4: { top: 68, left: 32 },
   5: { top: 50, left: 32 },
   6: { top: 24, left: 40 },
 };
@@ -2992,12 +2992,8 @@ function handleTimerStart(playerIndex, baseMs, timeBankMs, isPreflop) {
   timerVisualPos = visualPos;
   if (!visualPos) return;
 
-  const bar = $(`lifeBar-${visualPos}`);
-  if (bar) {
-    bar.style.width = '100%';
-    bar.classList.add('active');
-    bar.style.background = lifeBarColor(100, false);
-  }
+  // Base timer runs silently — no lifebar shown.
+  // Only the timebank lifebar is displayed (handled by handleTimeBankStart).
 
   // Play "your turn" chime if it's the local player's timer
   const timerPlayer = gameState && gameState.players[playerIndex];
@@ -3006,13 +3002,6 @@ function handleTimerStart(playerIndex, baseMs, timeBankMs, isPreflop) {
 
   const tick = () => {
     timeRemaining -= 100;
-    const pct = (timeRemaining / currentTurnTime) * 100;
-    const bar = $(`lifeBar-${visualPos}`);
-    if (bar) {
-      bar.style.width = Math.max(0, pct) + '%';
-      bar.classList.add('active');
-      bar.style.background = lifeBarColor(pct, timerIsTimeBank);
-    }
     if (timeRemaining <= 0) {
       clearTimer();
       return;
