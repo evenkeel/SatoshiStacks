@@ -385,19 +385,14 @@ transition: opacity 0.2s ease;
 background: var(--sage);
 color: var(--text-dark);
 }
-/* === ACTIVE TURN: pulsing glow === */
-.player-avatar-wrap.active-turn .player-avatar {
-filter: drop-shadow(0 0 16px rgba(232, 168, 56, 0.6))
-       drop-shadow(0 0 32px rgba(232, 168, 56, 0.3))
-       drop-shadow(0 5px 14px rgba(0, 0, 0, 0.5));
-}
+/* === ACTIVE TURN: pulsing scale === */
 .player-avatar-wrap.active-turn .player-avatar img,
 .player-avatar-wrap.active-turn .player-avatar .avatar-initial {
 animation: avatar-pulse 1.8s ease-in-out infinite;
 }
 @keyframes avatar-pulse {
 0%, 100% { transform: scale(1); }
-50%      { transform: scale(1.071); }
+50%      { transform: scale(1.143); }
 }
 .seat-6 .player-avatar-wrap.active-turn .player-avatar img,
 .seat-6 .player-avatar-wrap.active-turn .player-avatar .avatar-initial {
@@ -405,7 +400,7 @@ animation: avatar-pulse-mirror 1.8s ease-in-out infinite;
 }
 @keyframes avatar-pulse-mirror {
 0%, 100% { transform: scaleX(-1) scale(1); }
-50%      { transform: scaleX(-1) scale(1.071); }
+50%      { transform: scaleX(-1) scale(1.143); }
 }
 /* Folded */
 .seat.folded .player-avatar {
