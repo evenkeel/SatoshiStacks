@@ -810,7 +810,8 @@ class PokerGame {
         p.sittingOut = true;
         p.busted = true;
         hadBust = true;
-        console.log(`[PokerGame ${this.tableId}] ${p.username} busted — waiting for rebuy`);
+        this.startSitOutKickTimer(p.userId);
+        console.log(`[PokerGame ${this.tableId}] ${p.username} busted — waiting for rebuy (5 min to rebuy or kicked)`);
       }
     });
 
@@ -1415,6 +1416,11 @@ class PokerGame {
     player.stack = buyIn;
     player.busted = false;
     player.sittingOut = false;
+    // Cancel kick timer since player is back
+    if (this.sitOutKickTimers.has(userId)) {
+      clearTimeout(this.sitOutKickTimers.get(userId));
+      this.sitOutKickTimers.delete(userId);
+    }
     console.log(`[PokerGame ${this.tableId}] ${player.username} rebought → ${buyIn} chips`);
 
     // If enough players and no hand scheduled, start one
