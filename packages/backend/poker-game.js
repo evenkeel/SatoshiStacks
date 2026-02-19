@@ -10,7 +10,7 @@ const STARTING_STACK = 10000;
 const SMALL_BLIND = 50;
 const BIG_BLIND = 100;
 const NUM_SEATS = 6;
-const BASE_ACTION_MS = 10000;     // 10-second base action timer
+const BASE_ACTION_MS = 15000;     // 15-second base action timer
 const DEFAULT_TIME_BANK_MS = 15000; // 15s initial time bank per pool
 const TIME_BANK_CAP_MS = 60000;    // Max 60s time bank
 const TIME_BANK_GROWTH_MS = 5000;  // +5s per growth interval
@@ -810,7 +810,8 @@ class PokerGame {
         p.sittingOut = true;
         p.busted = true;
         hadBust = true;
-        console.log(`[PokerGame ${this.tableId}] ${p.username} busted — waiting for rebuy`);
+        this.startSitOutKickTimer(p.userId);
+        console.log(`[PokerGame ${this.tableId}] ${p.username} busted — waiting for rebuy (5 min to rebuy or kicked)`);
       }
     });
 
@@ -1415,6 +1416,11 @@ class PokerGame {
     player.stack = buyIn;
     player.busted = false;
     player.sittingOut = false;
+    // Cancel kick timer since player is back
+    if (this.sitOutKickTimers.has(userId)) {
+      clearTimeout(this.sitOutKickTimers.get(userId));
+      this.sitOutKickTimers.delete(userId);
+    }
     console.log(`[PokerGame ${this.tableId}] ${player.username} rebought → ${buyIn} chips`);
 
     // If enough players and no hand scheduled, start one
