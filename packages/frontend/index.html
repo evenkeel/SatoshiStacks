@@ -2969,10 +2969,6 @@ function renderPreActions() {
     let buttonsHTML = '';
     buttonsHTML += `<button class="pre-action-btn" data-pa="call">${callLabel}</button>`;
     buttonsHTML += '<button class="pre-action-btn" data-pa="fold">Fold</button>';
-    // Only show shove if stack > call amount (otherwise call IS all-in)
-    if (myPlayer.stack > toCall) {
-      buttonsHTML += '<button class="pre-action-btn" data-pa="shove">Insta-Shove</button>';
-    }
     bar.innerHTML = buttonsHTML;
     bar.querySelectorAll('.pre-action-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -3006,7 +3002,6 @@ function executePreAction() {
 
   if (pa === 'call' && toCall > 0) { sendAction('call'); return true; }
   if (pa === 'fold') { sendAction('fold'); return true; }
-  if (pa === 'shove') { sendAction('raise', myPlayer.stack + (myPlayer.currentBet || 0)); return true; }
 
   return false;
 }
