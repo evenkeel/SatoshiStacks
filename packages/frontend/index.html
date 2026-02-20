@@ -2900,6 +2900,9 @@ function animateChipsToWinner(winnerName) {
   const staggerWindow = Math.max(0, TOTAL_DURATION - CHIP_FLIGHT);
   const stagger = chips.length > 1 ? staggerWindow / (chips.length - 1) : 0;
 
+  // Allow chips to fly freely out of the pot container
+  potChipsEl.style.overflow = 'visible';
+
   // --- Vacuum: reparent each chip to the table, fly to nameplate ---
   chips.forEach((chip, i) => {
     setTimeout(() => {
@@ -2929,10 +2932,14 @@ function animateChipsToWinner(winnerName) {
     }, i * stagger);
   });
 
+  // Hide the now-emptying pot container so any stray chip isn't visible at the old pot position
+  const hideContainerAt = (chips.length - 1) * stagger + 50;
+  setTimeout(() => { potChipsEl.classList.remove('visible'); }, hideContainerAt);
+
   // --- Cleanup after all chips have arrived ---
   setTimeout(() => {
-    // Remove reparented chips from the table
-    table.querySelectorAll('.chip-pile-item.vacuum-fly').forEach(c => c.remove());
+    // Remove ALL chip-pile-items from the table (reparented + any strays)
+    table.querySelectorAll('.chip-pile-item').forEach(c => c.remove());
     // Reset pot container
     potChipsEl.classList.remove('visible');
     potChipsEl.innerHTML = '';
