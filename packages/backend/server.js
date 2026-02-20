@@ -21,10 +21,11 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'change-me-in-production';
 if (!process.env.ADMIN_TOKEN) {
-  console.warn('⚠️  WARNING: ADMIN_TOKEN not set in environment — using insecure default. Set ADMIN_TOKEN in .env for production.');
+  console.error('FATAL: ADMIN_TOKEN environment variable is not set. Refusing to start with insecure admin access. Set ADMIN_TOKEN in your .env file.');
+  process.exit(1);
 }
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
 const io = new Server(server, {
   cors: {
@@ -552,7 +553,10 @@ app.post('/api/auth/verify', (req, res) => {
     }
 
     // 3. Verify the event contains our nonce
-    const nonceTag = signedEvent.tags.find(t => t[0] === 'challenge' && t[1] === challenge.nonce);
+    if (!Array.isArray(signedEvent.tags)) {
+      return res.status(400).json({ success: false, error: 'Malformed event: tags must be an array' });
+    }
+    const nonceTag = signedEvent.tags.find(t => Array.isArray(t) && t[0] === 'challenge' && t[1] === challenge.nonce);
     if (!nonceTag) {
       return res.status(401).json({ success: false, error: 'Challenge nonce mismatch' });
     }
@@ -824,6 +828,13 @@ function ensureGameExists(tableId) {
     }
   };
 
+  game.onTableMaybeEmpty = () => {
+    if (game.players.every(p => p === null)) {
+      games.delete(tableId);
+      console.log(`Table ${tableId} destroyed (empty after auto-kick)`);
+    }
+  };
+
   games.set(tableId, game);
   console.log(`[Server] Created game for table ${tableId}`);
 }
@@ -895,7 +906,9 @@ io.on('connection', (socket) => {
    * Client sends: { tableId, sessionToken, preferredSeat?, buyIn? }
    * Server validates session, loads persistent chips, assigns seat
    */
-  socket.on('join-table', ({ tableId, sessionToken, preferredSeat, buyIn }) => {
+  socket.on('join-table', ({ tableId: requestedTableId, sessionToken, preferredSeat, buyIn }) => {
+    // Enforce single-table mode: ignore client tableId when multi-table is disabled
+    const tableId = MULTI_TABLES_ENABLED ? (requestedTableId || 'table-1') : 'table-1';
     try {
       // 1. Validate session token
       if (!sessionToken) {

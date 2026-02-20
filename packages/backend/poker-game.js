@@ -491,12 +491,24 @@ class PokerGame {
           else this.emitLog(`${player.username}: raises ${raiseBy} to ${player.currentBet}`, 'action');
         }
 
-        this.lastRaise = raiseTotal - maxBet;
-        this.lastAggressor = idx;
-        this.actedThisRound = [player.seatIndex]; // Reset action tracker
+        // Only reopen action if the raise meets the minimum increment.
+        // A short all-in above the current bet but below the min raise
+        // does NOT reopen — previous actors are not forced to act again.
+        const raiseIncrement = player.currentBet - maxBet;
+        const minRaiseIncrement = Math.max(BIG_BLIND, this.lastRaise);
+        if (raiseIncrement >= minRaiseIncrement) {
+          this.lastRaise = raiseIncrement;
+          this.lastAggressor = idx;
+          this.actedThisRound = [player.seatIndex]; // Reset — full raise reopens
+        }
+        // If short all-in: lastRaise/lastAggressor/actedThisRound stay as-is,
+        // so players who already acted are NOT forced to act again.
         break;
       }
     }
+
+    // Record action for hand history / analytics
+    player.actions.push({ action, phase: this.phase });
 
     this.actedThisRound.push(player.seatIndex);
 
@@ -1345,6 +1357,11 @@ class PokerGame {
 
       if (this.onStateChange) {
         this.onStateChange();
+      }
+
+      // Notify server to check if table is now empty and should be destroyed
+      if (this.onTableMaybeEmpty) {
+        this.onTableMaybeEmpty();
       }
     }, duration);
 
