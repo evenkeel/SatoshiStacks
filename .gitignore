@@ -50,6 +50,11 @@ packages/frontend/player2.html
 packages/frontend/index-old.html
 packages/backend/test-*.js
 
+# Bot files
+packages/backend/bot-player.js
+packages/backend/training-bot.js
+training-bots/
+
 # Old planning docs (not needed in repo)
 PHASE-*.md
 PLAY-MONEY-ROADMAP.md
