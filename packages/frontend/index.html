@@ -2613,6 +2613,12 @@ function updateNameplates() {
         ? `<div class="status-badge ${badgePos}">SITTING OUT</div>`
         : '';
 
+    // Preserve active badge state before re-render (hand-log events set badge,
+    // then game-state arrives and triggers re-render which would wipe it)
+    const oldBadge = $(`npAction-${visualPos}`);
+    const badgeText = oldBadge && oldBadge.classList.contains('visible') ? oldBadge.textContent : null;
+    const badgeClass = oldBadge ? oldBadge.className : '';
+
     el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}`;
     el.setAttribute('data-userid', player.userId);
     el.setAttribute('data-is-me', isMe);
@@ -2630,6 +2636,15 @@ function updateNameplates() {
         <div class="np-amount-wrap"><span class="np-amount">${fmt(player.stack)}</span></div>
       </div>
     `;
+
+    // Restore badge state after re-render
+    if (badgeText) {
+      const newBadge = $(`npAction-${visualPos}`);
+      if (newBadge) {
+        newBadge.textContent = badgeText;
+        newBadge.className = badgeClass;
+      }
+    }
   }
 }
 
