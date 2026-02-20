@@ -2916,18 +2916,22 @@ function animateChipsToWinner(winnerName) {
       chip.remove();
       table.appendChild(chip);
 
-      // Place at starting position
-      chip.style.setProperty('--vac-dur', flightSec);
+      // Place at starting position WITHOUT transition first
       chip.style.left = startX + 'px';
       chip.style.top = startY + 'px';
       chip.style.transform = 'translate(-50%, -50%)';
-      chip.classList.add('vacuum-fly');
 
-      // Next frame: set destination → CSS transition kicks in
+      // Double-rAF: first frame locks the start position in the layout,
+      // second frame adds the transition and sets the destination.
+      // Without this, the browser may skip the start position entirely.
       requestAnimationFrame(() => {
-        chip.style.left = destX + 'px';
-        chip.style.top = destY + 'px';
-        chip.style.opacity = '0';
+        chip.style.setProperty('--vac-dur', flightSec);
+        chip.classList.add('vacuum-fly');
+        requestAnimationFrame(() => {
+          chip.style.left = destX + 'px';
+          chip.style.top = destY + 'px';
+          chip.style.opacity = '0';
+        });
       });
     }, i * stagger);
   });
