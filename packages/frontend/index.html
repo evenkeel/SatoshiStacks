@@ -912,16 +912,13 @@ transition: top 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             opacity 0.4s ease,
             transform 0.4s ease;
 }
-/* Vacuum animation — pot pile slides to winner then chips get sucked into nameplate */
-.table-pot-chips.vacuum-slide {
-  transition: top 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              left 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              transform 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-.chip-pile-item.vacuum-suck {
-  transition: left 0.15s cubic-bezier(0.55, 0.0, 0.67, 0.14),
-              top 0.15s cubic-bezier(0.55, 0.0, 0.67, 0.14),
-              opacity 0.1s ease 0.1s;
+/* Vacuum animation — chips fly from pot directly to winner's nameplate */
+.chip-pile-item.vacuum-fly {
+  position: fixed !important;
+  transition: left var(--vac-dur, 0.3s) cubic-bezier(0.4, 0.0, 0.9, 0.5),
+              top var(--vac-dur, 0.3s) cubic-bezier(0.4, 0.0, 0.9, 0.5),
+              opacity calc(var(--vac-dur, 0.3s) * 0.4) ease calc(var(--vac-dur, 0.3s) * 0.6);
+  z-index: 100 !important;
 }
 /* === BACKGROUND DECORATION — faint lightning bolts === */
 .bg-decor {
@@ -2843,9 +2840,9 @@ function applyBadge(visualPos) {
 }
 
 // ============================================================
-//  CHIP VACUUM ANIMATION — pot pile slides to winner's nameplate,
-//  then each chip gets rapidly sucked into the nameplate center
-//  like a vacuum cleaner. Chips stay full size, no stacking.
+//  CHIP VACUUM ANIMATION — chips fly directly from the pot pile
+//  to the winner's nameplate like crumbs being vacuumed up.
+//  Duration scales with pot size (small pots = fast, max 2.5s).
 // ============================================================
 function animateChipsToWinner(winnerName) {
   if (!gameState) return;
@@ -2877,48 +2874,64 @@ function animateChipsToWinner(winnerName) {
   const potLabel = $('tablePotLabel');
   if (potLabel) potLabel.classList.remove('visible');
 
-  // --- Phase 1: Slide the messy pot pile to winner's nameplate ---
-  const dest = NP_TARGETS[winnerVisualPos];
-  potChipsEl.classList.add('vacuum-slide');
+  // Show badge
+  showBadge(winnerVisualPos, 'Stacking');
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      potChipsEl.style.top = dest.top + '%';
-      potChipsEl.style.left = dest.left + '%';
-      potChipsEl.style.transform = 'translate(-50%, -50%)';
-    });
+  // --- Calculate vacuum destination (center of winner's nameplate) ---
+  const dest = NP_TARGETS[winnerVisualPos];
+  const tableRect = table.getBoundingClientRect();
+  const destX = tableRect.left + (dest.left / 100) * tableRect.width;
+  const destY = tableRect.top + (dest.top / 100) * tableRect.height;
+
+  // --- Timing: scale with pot size, clamp 0.6s – 2.5s ---
+  // Small pot (≤1000): ~0.6s total | Big pot (≥20000): 2.5s total
+  const pot = savedPotForAnimation || 1000;
+  const t = Math.min(1, Math.max(0, (pot - 1000) / 19000)); // 0–1 normalized
+  const totalSuckDuration = 600 + t * 1900; // 600ms – 2500ms
+
+  // Per-chip flight time: 200ms–400ms depending on total duration
+  const chipFlightTime = 200 + t * 200;
+
+  // Collect chips and compute stagger
+  const chips = [...pile.querySelectorAll('.chip-pile-item')];
+  if (chips.length === 0) { vacuumAnimating = false; return; }
+
+  // Stagger: spread chip departures across (totalDuration - chipFlightTime)
+  const staggerWindow = Math.max(0, totalSuckDuration - chipFlightTime);
+  const stagger = chips.length > 1 ? staggerWindow / (chips.length - 1) : 0;
+
+  // Allow overflow so chips can fly out of the container
+  potChipsEl.style.overflow = 'visible';
+
+  // Set CSS variable for flight duration on the container
+  const flightSec = (chipFlightTime / 1000).toFixed(2) + 's';
+
+  // --- Vacuum: each chip flies from its current position to the nameplate ---
+  chips.forEach((chip, i) => {
+    // Snapshot current screen position BEFORE switching to fixed
+    const r = chip.getBoundingClientRect();
+    const startX = r.left + r.width / 2;
+    const startY = r.top + r.height / 2;
+
+    setTimeout(() => {
+      // Switch to fixed positioning at current screen location
+      chip.style.setProperty('--vac-dur', flightSec);
+      chip.style.left = startX + 'px';
+      chip.style.top = startY + 'px';
+      chip.style.transform = 'translate(-50%, -50%)';
+      chip.classList.add('vacuum-fly');
+
+      // Next frame: set destination → CSS transition kicks in
+      requestAnimationFrame(() => {
+        chip.style.left = destX + 'px';
+        chip.style.top = destY + 'px';
+        chip.style.opacity = '0';
+      });
+    }, i * stagger);
   });
 
-  // --- Phase 2: After slide completes, vacuum suck each chip into center ---
-  setTimeout(() => {
-    showBadge(winnerVisualPos, 'Stacking');
-    potChipsEl.classList.remove('vacuum-slide');
-
-    // Remove overflow hidden so chips animate freely during suck
-    potChipsEl.style.overflow = 'visible';
-
-    // Get the pile center — this is where chips get sucked into
-    const pileRect = pile.getBoundingClientRect();
-    const centerX = pileRect.width / 2;
-    const centerY = pileRect.height / 2;
-
-    // Collect all chip items and stagger their vacuum suck
-    const chips = [...pile.querySelectorAll('.chip-pile-item')];
-    const totalDuration = 800; // all chips sucked in within 800ms
-    const stagger = chips.length > 1 ? totalDuration / chips.length : 0;
-
-    chips.forEach((chip, i) => {
-      setTimeout(() => {
-        chip.classList.add('vacuum-suck');
-        chip.style.left = centerX + 'px';
-        chip.style.top = centerY + 'px';
-        chip.style.opacity = '0';
-      }, i * stagger);
-    });
-
-  }, 1300);
-
-  // --- Phase 3: Cleanup after all chips sucked in ---
+  // --- Cleanup after all chips have arrived ---
+  const cleanupDelay = totalSuckDuration + 100;
   setTimeout(() => {
     potChipsEl.classList.remove('visible');
     potChipsEl.innerHTML = '';
@@ -2930,7 +2943,7 @@ function animateChipsToWinner(winnerName) {
     potPileRng = null;
     vacuumAnimating = false;
     savedPotForAnimation = 0;
-  }, 2400);
+  }, cleanupDelay);
 }
 
 // ============================================================
