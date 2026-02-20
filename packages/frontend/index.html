@@ -2800,7 +2800,7 @@ function showBadge(visualPos, text, cssClass) {
   b.textContent = text;
   const cls = cssClass || text.toLowerCase().replace(/[^a-z]/g, '');
   b.className = `np-action visible ${cls}`;
-  badgeTimers[visualPos] = setTimeout(() => b.classList.remove('visible'), 1400);
+  badgeTimers[visualPos] = setTimeout(() => b.classList.remove('visible'), 1000);
 }
 
 // ============================================================
