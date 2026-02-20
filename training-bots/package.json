@@ -1,0 +1,16 @@
+{
+  "name": "satoshistacks-training-bots",
+  "version": "1.0.0",
+  "description": "Smart training bots for SatoshiStacks poker",
+  "main": "training-bot.js",
+  "scripts": {
+    "start": "node training-bot.js --url https://satoshistacks.com",
+    "bots3": "node training-bot.js --url https://satoshistacks.com --bots 3",
+    "bots5": "node training-bot.js --url https://satoshistacks.com --bots 5",
+    "local": "node training-bot.js"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.23.1",
+    "socket.io-client": "^4.8.3"
+  }
+}

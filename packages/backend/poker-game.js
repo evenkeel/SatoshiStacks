@@ -500,6 +500,12 @@ class PokerGame {
 
     this.actedThisRound.push(player.seatIndex);
 
+    // If only one player remains (everyone else folded), end immediately
+    if (action === 'fold' && this.getActivePlayers().length <= 1) {
+      this.advancePhase();
+      return { valid: true };
+    }
+
     // Advance to next player or next phase
     this.currentPlayerIndex = this.nextActing(idx);
     if (this.currentPlayerIndex === -1 || this.isRoundDone()) {
@@ -1304,12 +1310,17 @@ class PokerGame {
 
     this.actedThisRound.push(player.seatIndex);
 
-    // Advance to next player
-    this.currentPlayerIndex = this.nextActing(playerIndex);
-    if (this.currentPlayerIndex === -1 || this.isRoundDone()) {
+    // If only one player remains after a timeout fold, end immediately
+    if (player.folded && this.getActivePlayers().length <= 1) {
       this.advancePhase();
     } else {
-      this.startActionTimer();
+      // Advance to next player
+      this.currentPlayerIndex = this.nextActing(playerIndex);
+      if (this.currentPlayerIndex === -1 || this.isRoundDone()) {
+        this.advancePhase();
+      } else {
+        this.startActionTimer();
+      }
     }
 
     // Broadcast state change
