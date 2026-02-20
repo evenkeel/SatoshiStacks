@@ -963,32 +963,30 @@ io.on('connection', (socket) => {
         observerSockets.delete(socket.id);
       }
 
-      // 3. Handle reconnection — if player already at this table, swap socket
-      const existingSocketId = userSockets.get(userId);
-      if (existingSocketId && existingSocketId !== socket.id) {
-        const existingData = socketUsers.get(existingSocketId);
-        if (existingData && existingData.tableId === tableId) {
-          // Swap socket mapping — player is reconnecting
-          socketUsers.delete(existingSocketId);
+      // 3. Handle reconnection — if player already seated at this table, swap socket
+      const game0 = games.get(tableId);
+      if (game0) {
+        const existingSeatIdx = game0.players.findIndex(p => p && p.userId === userId);
+        if (existingSeatIdx !== -1) {
+          // Player is already in the game — this is a reconnection
+          const oldSocketId = userSockets.get(userId);
+          if (oldSocketId && oldSocketId !== socket.id) {
+            socketUsers.delete(oldSocketId); // clean up stale entry if any
+          }
           userSockets.set(userId, socket.id);
-          socketUsers.set(socket.id, { userId, tableId, seatIndex: existingData.seatIndex });
+          socketUsers.set(socket.id, { userId, tableId, seatIndex: existingSeatIdx });
           socket.join(`table-${tableId}`);
 
-          const game = games.get(tableId);
-          if (game) {
-            const player = game.players[existingData.seatIndex];
-            if (player && player.userId === userId) {
-              player.disconnected = false;
-              console.log(`${displayName} reconnected to table ${tableId} (seat ${existingData.seatIndex + 1})`);
+          const player = game0.players[existingSeatIdx];
+          player.disconnected = false;
+          console.log(`${displayName} reconnected to table ${tableId} (seat ${existingSeatIdx + 1})`);
 
-              socket.emit('seat-assigned', {
-                seatIndex: existingData.seatIndex,
-                displayName
-              });
-              broadcastGameState(tableId);
-              return;
-            }
-          }
+          socket.emit('seat-assigned', {
+            seatIndex: existingSeatIdx,
+            displayName
+          });
+          broadcastGameState(tableId);
+          return;
         }
       }
 
@@ -1200,7 +1198,21 @@ io.on('connection', (socket) => {
         const player = game.players.find(p => p && p.userId === user.userId);
         if (player) {
           player.disconnected = true;
-          console.log(`${user.userId} disconnected from table ${user.tableId}`);
+          console.log(`${user.userId} disconnected from table ${user.tableId} (socket ${socket.id})`);
+
+          // Keep userSockets mapping alive for 10 seconds so reconnection-swap works.
+          // If the player refreshes, the new join-table will find the old socketId and swap it.
+          // Only clean up socketUsers for the old socket immediately (it's dead).
+          socketUsers.delete(socket.id);
+
+          setTimeout(() => {
+            // After 10s, if the mapping still points to the old (dead) socket, clean it up.
+            // If the player reconnected, userSockets will point to a new socket — leave it alone.
+            if (userSockets.get(user.userId) === socket.id) {
+              userSockets.delete(user.userId);
+              console.log(`${user.userId} socket mapping cleaned up after grace period`);
+            }
+          }, 10000);
 
           // Give 60 seconds to reconnect before auto-sitting out
           setTimeout(() => {
@@ -1214,11 +1226,16 @@ io.on('connection', (socket) => {
               broadcastGameState(user.tableId);
             }
           }, 60000); // 60 second grace period
+        } else {
+          // Player not in game — clean up immediately
+          userSockets.delete(user.userId);
+          socketUsers.delete(socket.id);
         }
+      } else {
+        // No game — clean up immediately
+        userSockets.delete(user.userId);
+        socketUsers.delete(socket.id);
       }
-
-      userSockets.delete(user.userId);
-      socketUsers.delete(socket.id);
     }
 
     console.log(`Client disconnected: ${socket.id}`);

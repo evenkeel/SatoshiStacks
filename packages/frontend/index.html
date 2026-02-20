@@ -2219,31 +2219,40 @@ function nostrLogout() {
 }
 window.nostrLogout = nostrLogout;
 
-async function tryRestoreSession() {
+async function tryRestoreSession(retries = 2) {
   if (!mySessionToken) return false;
-  try {
-    const res = await fetch('/api/auth/session', {
-      headers: { 'x-session-token': mySessionToken }
-    });
-    const data = await res.json();
-    if (!data.success) {
-      // Session expired — clear and show login
-      nostrLogout();
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch('/api/auth/session', {
+        headers: { 'x-session-token': mySessionToken }
+      });
+      const data = await res.json();
+      if (!data.success) {
+        // Session expired — clear and show login
+        nostrLogout();
+        return false;
+      }
+      // Restore state from server
+      myPubkeyHex = data.pubkeyHex;
+      myNpub = data.npub;
+      myNostrName = data.profile.name;
+      myNostrPicture = data.profile.picture;
+      myUserId = myPubkeyHex;
+      myUsername = myNostrName || myNpub.slice(0, 12) + '...';
+      return true;
+    } catch (err) {
+      console.error(`[NOSTR] Session restore attempt ${attempt + 1} failed:`, err);
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1))); // 500ms, 1000ms backoff
+        continue;
+      }
+      // All retries exhausted — connect as observer, don't nuke session
+      // (user can try sitting down again manually)
+      console.warn('[NOSTR] Session restore failed after retries — connecting as observer');
       return false;
     }
-    // Restore state from server
-    myPubkeyHex = data.pubkeyHex;
-    myNpub = data.npub;
-    myNostrName = data.profile.name;
-    myNostrPicture = data.profile.picture;
-    myUserId = myPubkeyHex;
-    myUsername = myNostrName || myNpub.slice(0, 12) + '...';
-    return true;
-  } catch (err) {
-    console.error('[NOSTR] Session restore failed:', err);
-    nostrLogout();
-    return false;
   }
+  return false;
 }
 
 // ============================================================
@@ -2251,12 +2260,23 @@ async function tryRestoreSession() {
 // ============================================================
 function connectAsObserver() {
   isObserver = true;
+  if (socket) { socket.disconnect(); socket = null; }
   socket = io(window.location.origin);
   window.socket = socket;
 
   socket.on('connect', () => {
     updateConnectionStatus(true);
-    socket.emit('observe-table', { tableId: myTableId });
+    // On connect AND reconnect: if we have a seat, rejoin as player; otherwise observe
+    if (mySeat && mySessionToken) {
+      console.log('[Socket] Reconnecting as seated player (seat', mySeat, ')');
+      socket.emit('join-table', {
+        tableId: myTableId,
+        sessionToken: mySessionToken,
+        buyIn: 10000
+      });
+    } else {
+      socket.emit('observe-table', { tableId: myTableId });
+    }
   });
 
   socket.on('observer-joined', ({ observerName: name }) => {
@@ -2274,7 +2294,7 @@ function connectAsObserver() {
 // ============================================================
 function connectToServer() {
   // If already connected as observer, reuse socket — just emit join-table
-  if (socket && socket.connected && isObserver) {
+  if (socket && socket.connected) {
     isObserver = false;
     const buyIn = pendingBuyIn || 10000;
     socket.emit('join-table', {
@@ -2288,11 +2308,13 @@ function connectToServer() {
     return;
   }
 
+  if (socket) { socket.disconnect(); socket = null; }
   socket = io(window.location.origin);
   window.socket = socket;
 
   socket.on('connect', () => {
     updateConnectionStatus(true);
+    // On connect AND reconnect: always re-emit join-table to restore seat
     const buyIn = pendingBuyIn || 10000;
     socket.emit('join-table', {
       tableId: myTableId,
@@ -2465,6 +2487,9 @@ function setupCommonSocketHandlers() {
 
   socket.on('disconnect', () => {
     updateConnectionStatus(false);
+    if (mySeat) {
+      showToast('Connection lost — reconnecting...', 'info');
+    }
   });
 }
 
