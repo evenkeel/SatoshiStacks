@@ -15,7 +15,8 @@ const DEFAULT_TIME_BANK_MS = 15000; // 15s initial time bank per pool
 const TIME_BANK_CAP_MS = 60000;    // Max 60s time bank
 const TIME_BANK_GROWTH_MS = 5000;  // +5s per growth interval
 const TIME_BANK_GROWTH_HANDS = 10; // Grow every 10 hands dealt
-const SIT_OUT_KICK_MS = 300000;    // 5 minutes
+const SIT_OUT_KICK_MS = 300000;    // 5 minutes (voluntary sit-out)
+const BUST_KICK_MS = 60000;       // 60 seconds (busted players must rebuy or get kicked)
 
 // Chip denominations — sorted high-to-low for greedy breakdown
 const CHIP_DEFS = [
@@ -821,8 +822,8 @@ class PokerGame {
         p.sittingOut = true;
         p.busted = true;
         hadBust = true;
-        this.startSitOutKickTimer(p.userId);
-        console.log(`[PokerGame ${this.tableId}] ${p.username} busted — waiting for rebuy (5 min to rebuy or kicked)`);
+        this.startSitOutKickTimer(p.userId, BUST_KICK_MS);
+        console.log(`[PokerGame ${this.tableId}] ${p.username} busted — 60s to rebuy or kicked`);
       }
     });
 
@@ -1320,22 +1321,22 @@ class PokerGame {
   /**
    * Start timer to kick player after 5 minutes of sitting out
    */
-  startSitOutKickTimer(userId) {
+  startSitOutKickTimer(userId, duration = SIT_OUT_KICK_MS) {
     // Clear existing timer if any
     if (this.sitOutKickTimers.has(userId)) {
       clearTimeout(this.sitOutKickTimers.get(userId));
     }
-    
+
     const timer = setTimeout(() => {
-      console.log(`[PokerGame ${this.tableId}] Kicking player ${userId} (sitting out >5 min)`);
+      console.log(`[PokerGame ${this.tableId}] Kicking player ${userId} (idle ${duration / 1000}s)`);
       this.removePlayer(userId);
       this.sitOutKickTimers.delete(userId);
-      
+
       if (this.onStateChange) {
         this.onStateChange();
       }
-    }, SIT_OUT_KICK_MS);
-    
+    }, duration);
+
     this.sitOutKickTimers.set(userId, timer);
   }
 
