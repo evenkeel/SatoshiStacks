@@ -2613,12 +2613,6 @@ function updateNameplates() {
         ? `<div class="status-badge ${badgePos}">SITTING OUT</div>`
         : '';
 
-    // Preserve active badge state before re-render (hand-log events set badge,
-    // then game-state arrives and triggers re-render which would wipe it)
-    const oldBadge = $(`npAction-${visualPos}`);
-    const badgeText = oldBadge && oldBadge.classList.contains('visible') ? oldBadge.textContent : null;
-    const badgeClass = oldBadge ? oldBadge.className : '';
-
     el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}`;
     el.setAttribute('data-userid', player.userId);
     el.setAttribute('data-is-me', isMe);
@@ -2637,14 +2631,8 @@ function updateNameplates() {
       </div>
     `;
 
-    // Restore badge state after re-render
-    if (badgeText) {
-      const newBadge = $(`npAction-${visualPos}`);
-      if (newBadge) {
-        newBadge.textContent = badgeText;
-        newBadge.className = badgeClass;
-      }
-    }
+    // Re-apply active badge after re-render (badges are stored in activeBadges{})
+    applyBadge(visualPos);
   }
 }
 
@@ -2791,16 +2779,30 @@ function updatePot() {
 
 // ============================================================
 //  ACTION BADGE SYSTEM (Fold / Check / Call / Raise / etc.)
+//  Stores badge state separately so it survives nameplate re-renders.
 // ============================================================
-const badgeTimers = {};
+const activeBadges = {}; // { visualPos: { text, cls, expires } }
 function showBadge(visualPos, text, cssClass) {
+  const cls = cssClass || text.toLowerCase().replace(/[^a-z]/g, '');
+  activeBadges[visualPos] = { text, cls, expires: Date.now() + 1000 };
+  // Apply immediately to current DOM element
+  const b = $(`npAction-${visualPos}`);
+  if (b) {
+    b.textContent = text;
+    b.className = `np-action visible ${cls}`;
+  }
+}
+// Called by updateNameplates after re-render to apply/clear badges
+function applyBadge(visualPos) {
+  const badge = activeBadges[visualPos];
   const b = $(`npAction-${visualPos}`);
   if (!b) return;
-  if (badgeTimers[visualPos]) clearTimeout(badgeTimers[visualPos]);
-  b.textContent = text;
-  const cls = cssClass || text.toLowerCase().replace(/[^a-z]/g, '');
-  b.className = `np-action visible ${cls}`;
-  badgeTimers[visualPos] = setTimeout(() => b.classList.remove('visible'), 1000);
+  if (badge && Date.now() < badge.expires) {
+    b.textContent = badge.text;
+    b.className = `np-action visible ${badge.cls}`;
+  } else {
+    delete activeBadges[visualPos];
+  }
 }
 
 // ============================================================
