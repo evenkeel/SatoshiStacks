@@ -2421,13 +2421,13 @@ function setupCommonSocketHandlers() {
               showBadge(vp, 'CHECK', 'check');
             } else if (lower.includes('calls')) {
               const m = actionPart.match(/calls\s+([\d,]+)/i);
-              showBadge(vp, m ? `CALLS ${m[1]}` : 'CALL', 'call');
+              showBadge(vp, m ? `CALL ${m[1]}` : 'CALL', 'call');
             } else if (lower.includes('bets')) {
               const m = actionPart.match(/bets\s+([\d,]+)/i);
-              showBadge(vp, m ? `BETS ${m[1]}` : 'BET', 'bet');
+              showBadge(vp, m ? `BET ${m[1]}` : 'BET', 'bet');
             } else if (lower.includes('raises')) {
               const m = actionPart.match(/to\s+([\d,]+)/i);
-              showBadge(vp, m ? `RAISES ${m[1]}` : 'RAISE', 'raise');
+              showBadge(vp, m ? `RAISE TO ${m[1]}` : 'RAISE', 'raise');
             }
             break;
           }
@@ -2781,10 +2781,21 @@ function updatePot() {
 //  ACTION BADGE SYSTEM (Fold / Check / Call / Raise / etc.)
 //  Stores badge state separately so it survives nameplate re-renders.
 // ============================================================
-const activeBadges = {}; // { visualPos: { text, cls, expires } }
+const activeBadges = {}; // { visualPos: { text, cls, expires, timer } }
 function showBadge(visualPos, text, cssClass) {
   const cls = cssClass || text.toLowerCase().replace(/[^a-z]/g, '');
-  activeBadges[visualPos] = { text, cls, expires: Date.now() + 1000 };
+  // Clear any previous timer for this position
+  if (activeBadges[visualPos] && activeBadges[visualPos].timer) {
+    clearTimeout(activeBadges[visualPos].timer);
+  }
+  const duration = 1500; // 1.5s display time
+  // Schedule active removal after duration
+  const timer = setTimeout(() => {
+    delete activeBadges[visualPos];
+    const b = $(`npAction-${visualPos}`);
+    if (b) b.className = 'np-action'; // remove 'visible' → triggers opacity transition to 0
+  }, duration);
+  activeBadges[visualPos] = { text, cls, expires: Date.now() + duration, timer };
   // Apply immediately to current DOM element
   const b = $(`npAction-${visualPos}`);
   if (b) {
@@ -2802,6 +2813,7 @@ function applyBadge(visualPos) {
     b.className = `np-action visible ${badge.cls}`;
   } else {
     delete activeBadges[visualPos];
+    b.className = 'np-action';
   }
 }
 
