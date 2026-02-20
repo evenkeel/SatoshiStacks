@@ -914,10 +914,10 @@ transition: top 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
 }
 /* Vacuum animation — chips fly from pot directly to winner's nameplate */
 .chip-pile-item.vacuum-fly {
-  position: fixed !important;
-  transition: left var(--vac-dur, 0.3s) cubic-bezier(0.4, 0.0, 0.9, 0.5),
-              top var(--vac-dur, 0.3s) cubic-bezier(0.4, 0.0, 0.9, 0.5),
-              opacity calc(var(--vac-dur, 0.3s) * 0.4) ease calc(var(--vac-dur, 0.3s) * 0.6);
+  position: absolute !important;
+  transition: left var(--vac-dur, 0.5s) cubic-bezier(0.25, 0.1, 0.25, 1),
+              top var(--vac-dur, 0.5s) cubic-bezier(0.25, 0.1, 0.25, 1),
+              opacity calc(var(--vac-dur, 0.5s) * 0.35) ease calc(var(--vac-dur, 0.5s) * 0.65);
   z-index: 100 !important;
 }
 /* === BACKGROUND DECORATION — faint lightning bolts === */
@@ -2842,7 +2842,9 @@ function applyBadge(visualPos) {
 // ============================================================
 //  CHIP VACUUM ANIMATION — chips fly directly from the pot pile
 //  to the winner's nameplate like crumbs being vacuumed up.
-//  Duration scales with pot size (small pots = fast, max 2.5s).
+//  Fixed 2000ms duration. Uses table-relative coordinates
+//  (position:absolute inside .poker-table) to avoid the
+//  transform-containing-block issue with position:fixed.
 // ============================================================
 function animateChipsToWinner(winnerName) {
   if (!gameState) return;
@@ -2877,46 +2879,41 @@ function animateChipsToWinner(winnerName) {
   // Show badge
   showBadge(winnerVisualPos, 'Stacking');
 
-  // --- Calculate vacuum destination (center of winner's nameplate element) ---
+  // --- Calculate destination: center of winner's nameplate, in table-relative px ---
   const npEl = $(`nameplate-${winnerVisualPos}`);
   if (!npEl) { vacuumAnimating = false; return; }
+  const tableRect = table.getBoundingClientRect();
   const npRect = npEl.getBoundingClientRect();
-  const destX = npRect.left + npRect.width / 2;
-  const destY = npRect.top + npRect.height / 2;
+  const destX = (npRect.left + npRect.width / 2) - tableRect.left;
+  const destY = (npRect.top + npRect.height / 2) - tableRect.top;
 
-  // --- Timing: scale with pot size, clamp 0.6s – 2.5s ---
-  // Small pot (≤1000): ~0.6s total | Big pot (≥20000): 2.5s total
-  const pot = savedPotForAnimation || 1000;
-  const t = Math.min(1, Math.max(0, (pot - 1000) / 19000)); // 0–1 normalized
-  const totalSuckDuration = 600 + t * 1900; // 600ms – 2500ms
+  // --- Flat 2000ms timing ---
+  const TOTAL_DURATION = 2000;
+  const CHIP_FLIGHT = 500; // each chip's individual flight time
+  const flightSec = '0.50s';
 
-  // Per-chip flight time: 200ms–400ms depending on total duration
-  const chipFlightTime = 200 + t * 200;
-
-  // Collect chips and compute stagger
+  // Collect chips
   const chips = [...pile.querySelectorAll('.chip-pile-item')];
   if (chips.length === 0) { vacuumAnimating = false; return; }
 
-  // Stagger: spread chip departures across (totalDuration - chipFlightTime)
-  const staggerWindow = Math.max(0, totalSuckDuration - chipFlightTime);
+  // Stagger departures across (total - flight) so last chip arrives at 2000ms
+  const staggerWindow = Math.max(0, TOTAL_DURATION - CHIP_FLIGHT);
   const stagger = chips.length > 1 ? staggerWindow / (chips.length - 1) : 0;
 
-  // Allow overflow so chips can fly out of the container
-  potChipsEl.style.overflow = 'visible';
-
-  // Set CSS variable for flight duration on the container
-  const flightSec = (chipFlightTime / 1000).toFixed(2) + 's';
-
-  // --- Vacuum: each chip flies from its current position to the nameplate ---
+  // --- Vacuum: reparent each chip to the table, fly to nameplate ---
   chips.forEach((chip, i) => {
     setTimeout(() => {
-      // Snapshot screen position right before animating (earlier chips may have
-      // already switched to fixed, so we measure just-in-time)
+      // Snapshot chip's current screen position, convert to table-relative px
       const r = chip.getBoundingClientRect();
-      const startX = r.left + r.width / 2;
-      const startY = r.top + r.height / 2;
+      const startX = (r.left + r.width / 2) - tableRect.left;
+      const startY = (r.top + r.height / 2) - tableRect.top;
 
-      // Switch to fixed positioning at current screen location
+      // Reparent chip from .chip-pile to .poker-table so position:absolute
+      // is relative to the table (same coordinate space as nameplates)
+      chip.remove();
+      table.appendChild(chip);
+
+      // Place at starting position
       chip.style.setProperty('--vac-dur', flightSec);
       chip.style.left = startX + 'px';
       chip.style.top = startY + 'px';
@@ -2933,19 +2930,18 @@ function animateChipsToWinner(winnerName) {
   });
 
   // --- Cleanup after all chips have arrived ---
-  const cleanupDelay = totalSuckDuration + 100;
   setTimeout(() => {
+    // Remove reparented chips from the table
+    table.querySelectorAll('.chip-pile-item.vacuum-fly').forEach(c => c.remove());
+    // Reset pot container
     potChipsEl.classList.remove('visible');
     potChipsEl.innerHTML = '';
-    potChipsEl.style.top = '';
-    potChipsEl.style.left = '';
-    potChipsEl.style.transform = '';
     potChipsEl.style.overflow = '';
     renderedPotChipCount = 0;
     potPileRng = null;
     vacuumAnimating = false;
     savedPotForAnimation = 0;
-  }, cleanupDelay);
+  }, TOTAL_DURATION + 200);
 }
 
 // ============================================================
