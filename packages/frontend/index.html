@@ -150,7 +150,7 @@ transition: top 0.25s cubic-bezier(0.2, 0.6, 0.35, 1),
 /* Chip stacks — top center of felt, above community cards */
 .table-pot-chips {
 position: absolute;
-top: 14%;
+top: 12%;
 left: 50%;
 transform: translateX(-50%);
 z-index: 3;
@@ -161,7 +161,7 @@ display: flex;
 align-items: flex-end;
 justify-content: center;
 gap: 4px;
-max-height: 28%;
+max-height: 22%;
 max-width: 60%;
 overflow: hidden;
 }
@@ -423,12 +423,12 @@ transform: translate(-50%, -50%);
 }
 .player-bet.visible { opacity: 1; }
 .player-bet .chip-stack { justify-content: center; }
-.bet-pos-1 { top: 24%; left: 60%; }
-.bet-pos-2 { top: 50%; left: 68%; }
-.bet-pos-3 { top: 68%; left: 68%; }
-.bet-pos-4 { top: 68%; left: 32%; }
-.bet-pos-5 { top: 50%; left: 32%; }
-.bet-pos-6 { top: 24%; left: 40%; }
+.bet-pos-1 { top: 12%; left: 62%; }
+.bet-pos-2 { top: 60%; left: 84%; }
+.bet-pos-3 { top: 82%; left: 68%; }
+.bet-pos-4 { top: 82%; left: 32%; }
+.bet-pos-5 { top: 60%; left: 16%; }
+.bet-pos-6 { top: 12%; left: 38%; }
 /* Cards peeking from nameplate — overflow-hidden wrapper */
 .np-cards {
 position: absolute;
@@ -1784,6 +1784,8 @@ let preAction = null;        // Pre-action selection
 let currentHandLog = [];     // Accumulates hand-log lines for current hand
 let chipFlyTriggered = false; // Prevent multiple chip fly animations per hand
 let savedPotForAnimation = 0; // Captures pot total before server zeroes it, for chip fly
+let renderedPotChipCount = 0; // How many chips currently rendered in the pot pile DOM
+let potPileRng = null;        // Persistent PRNG function for stable chip pile layout
 let cachedHoleCards = null;    // Cache our hole cards so they survive state glitches
 let isObserver = false;       // True when watching without a seat
 let observerName = null;      // Random name assigned by server for observers
@@ -1833,12 +1835,12 @@ const NP_TARGETS = {
 
 // Bet position targets (where bet chips sit on felt), keyed by visual seat (1-6)
 const BET_TARGETS = {
-  1: { top: 24, left: 60 },
-  2: { top: 50, left: 68 },
-  3: { top: 68, left: 68 },
-  4: { top: 68, left: 32 },
-  5: { top: 50, left: 32 },
-  6: { top: 24, left: 40 },
+  1: { top: 12, left: 62 },
+  2: { top: 60, left: 84 },
+  3: { top: 82, left: 68 },
+  4: { top: 82, left: 32 },
+  5: { top: 60, left: 16 },
+  6: { top: 12, left: 38 },
 };
 
 // Avatar colors for each visual seat
@@ -1923,6 +1925,52 @@ function layoutChipPile(chips, chipSize, seed) {
   }
   html += '</div>';
   return html;
+}
+
+// Stable PRNG factory — returns a function that produces deterministic values 0–1
+function createPRNG(seed) {
+  let s = Math.abs(seed) || 1;
+  return function() {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+// Append new chips to an existing pile without touching existing DOM chips.
+// rng must be the same persistent PRNG that was used for all prior chips.
+function appendChipsToPile(newChips, container, totalCount, chipSize, rng) {
+  // Get or create the .chip-pile div
+  let pile = container.querySelector('.chip-pile');
+  const spreadX = Math.min(totalCount * 6, 120);
+  const spreadY = Math.min(totalCount * 2, 25);
+  if (!pile) {
+    pile = document.createElement('div');
+    pile.className = 'chip-pile';
+    container.appendChild(pile);
+  }
+  // Resize pile to accommodate total chip count
+  pile.style.width = (spreadX * 2 + chipSize) + 'px';
+  pile.style.height = (spreadY * 2 + chipSize + 20) + 'px';
+
+  const cx = spreadX + chipSize / 2;
+  const cy = spreadY + chipSize / 2;
+  const startIdx = totalCount - newChips.length;
+
+  for (let i = 0; i < newChips.length; i++) {
+    const globalIdx = startIdx + i;
+    const layer = globalIdx / Math.max(totalCount - 1, 1);
+    const tightness = 0.85 - layer * 0.55;
+    const angle = rng() * Math.PI * 2;
+    const dist = rng() * tightness;
+    const x = cx + Math.cos(angle) * dist * spreadX - chipSize / 2;
+    const y = cy + Math.sin(angle) * dist * spreadY - chipSize / 2;
+    const rot = Math.floor(rng() * 360);
+    const el = document.createElement('div');
+    el.className = 'chip-pile-item';
+    el.style.cssText = `left:${x}px;top:${y}px;z-index:${globalIdx};transform:rotate(${rot}deg)`;
+    el.innerHTML = renderChipSVG(newChips[i], chipSize);
+    pile.appendChild(el);
+  }
 }
 
 function renderChipPillIcon(amount, size) {
@@ -2674,15 +2722,42 @@ function updatePot() {
   const hasValue = totalWithBets > 0;
   $('tablePotLabel').classList.toggle('visible', hasValue);
 
-  // Pot chip pile visualization — render from server's accumulated potChips array
+  // Incremental pot chip pile — only append NEW chips, never re-render existing ones
   const chipsEl = $('tablePotChips');
-  if (chipsEl && potChips.length > 0) {
-    chipsEl.classList.add('visible');
-    chipsEl.innerHTML = layoutChipPile(potChips, 30, pot || 1);
-  } else if (chipsEl) {
+  if (!chipsEl) return;
+
+  const chipCount = potChips.length;
+
+  if (chipCount === 0) {
+    // No chips — clear everything
     chipsEl.classList.remove('visible');
     chipsEl.innerHTML = '';
+    renderedPotChipCount = 0;
+    potPileRng = null;
+    return;
   }
+
+  if (chipCount < renderedPotChipCount) {
+    // Chip count decreased — new hand started, full reset and re-render
+    chipsEl.innerHTML = '';
+    renderedPotChipCount = 0;
+    potPileRng = null;
+  }
+
+  if (chipCount > renderedPotChipCount) {
+    // New chips to add — create PRNG if needed (seeded from dealerSeat for hand stability)
+    if (!potPileRng) {
+      const dealerSeat = gameState.dealerSeat || 1;
+      potPileRng = createPRNG(dealerSeat + 1);
+      // Fast-forward PRNG past already-rendered chips (3 rng calls per chip)
+      for (let i = 0; i < renderedPotChipCount * 3; i++) potPileRng();
+    }
+    chipsEl.classList.add('visible');
+    const newChips = potChips.slice(renderedPotChipCount);
+    appendChipsToPile(newChips, chipsEl, chipCount, 30, potPileRng);
+    renderedPotChipCount = chipCount;
+  }
+  // If chipCount === renderedPotChipCount → nothing to do, chips stay put
 }
 
 // ============================================================
@@ -2727,7 +2802,7 @@ function animateChipsToWinner(winnerName) {
   // Use center of table as fallback if pot chips not visible
   const srcTopPct = (chipsRect.width > 0 && chipsRect.height > 0)
     ? ((chipsRect.top + chipsRect.height / 2 - tableRect.top) / tableRect.height) * 100
-    : 14; // default pot position
+    : 12; // default pot position
   const srcLeftPct = (chipsRect.width > 0 && chipsRect.height > 0)
     ? ((chipsRect.left + chipsRect.width / 2 - tableRect.left) / tableRect.width) * 100
     : 50; // center
@@ -2745,6 +2820,8 @@ function animateChipsToWinner(winnerName) {
   const potLabel = $('tablePotLabel');
   if (potLabel) potLabel.classList.remove('visible');
   if (potChipsEl) { potChipsEl.classList.remove('visible'); potChipsEl.innerHTML = ''; }
+  renderedPotChipCount = 0;
+  potPileRng = null;
 
   // Create flying chip container
   const container = document.createElement('div');
