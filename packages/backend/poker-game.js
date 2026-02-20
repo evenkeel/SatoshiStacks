@@ -743,7 +743,10 @@ class PokerGame {
         });
       });
 
-      winnerAmounts.forEach(({ player: w, amount, potName }) => {
+      // Emit winner logs sorted by amount descending so the biggest winner
+      // triggers the frontend chip animation (which fires on the first winner line)
+      const sortedWinners = [...winnerAmounts.values()].sort((a, b) => b.amount - a.amount);
+      sortedWinners.forEach(({ player: w, amount, potName }) => {
         const src = pots.length > 1 ? ` from ${potName}` : ' from pot';
         this.emitLog(`${w.username} collected ${amount}${src}`, 'winner');
       });
