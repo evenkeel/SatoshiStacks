@@ -1834,12 +1834,12 @@ const CHIP_DEFS = [
 
 // Nameplate target positions (% on poker table), keyed by visual seat (1-6)
 const NP_TARGETS = {
-  1: { top: 2,  left: 66 },
-  2: { top: 50, left: 90 },
-  3: { top: 98, left: 66 },
-  4: { top: 98, left: 34 },
-  5: { top: 50, left: 10 },
-  6: { top: 2,  left: 34 },
+  1: { top: 2,  left: 62 },
+  2: { top: 50, left: 84 },
+  3: { top: 98, left: 62 },
+  4: { top: 98, left: 38 },
+  5: { top: 50, left: 16 },
+  6: { top: 2,  left: 38 },
 };
 
 // Bet position targets (where bet chips sit on felt), keyed by visual seat (1-6)
@@ -2877,11 +2877,12 @@ function animateChipsToWinner(winnerName) {
   // Show badge
   showBadge(winnerVisualPos, 'Stacking');
 
-  // --- Calculate vacuum destination (center of winner's nameplate) ---
-  const dest = NP_TARGETS[winnerVisualPos];
-  const tableRect = table.getBoundingClientRect();
-  const destX = tableRect.left + (dest.left / 100) * tableRect.width;
-  const destY = tableRect.top + (dest.top / 100) * tableRect.height;
+  // --- Calculate vacuum destination (center of winner's nameplate element) ---
+  const npEl = $(`nameplate-${winnerVisualPos}`);
+  if (!npEl) { vacuumAnimating = false; return; }
+  const npRect = npEl.getBoundingClientRect();
+  const destX = npRect.left + npRect.width / 2;
+  const destY = npRect.top + npRect.height / 2;
 
   // --- Timing: scale with pot size, clamp 0.6s – 2.5s ---
   // Small pot (≤1000): ~0.6s total | Big pot (≥20000): 2.5s total
@@ -2908,12 +2909,13 @@ function animateChipsToWinner(winnerName) {
 
   // --- Vacuum: each chip flies from its current position to the nameplate ---
   chips.forEach((chip, i) => {
-    // Snapshot current screen position BEFORE switching to fixed
-    const r = chip.getBoundingClientRect();
-    const startX = r.left + r.width / 2;
-    const startY = r.top + r.height / 2;
-
     setTimeout(() => {
+      // Snapshot screen position right before animating (earlier chips may have
+      // already switched to fixed, so we measure just-in-time)
+      const r = chip.getBoundingClientRect();
+      const startX = r.left + r.width / 2;
+      const startY = r.top + r.height / 2;
+
       // Switch to fixed positioning at current screen location
       chip.style.setProperty('--vac-dur', flightSec);
       chip.style.left = startX + 'px';
