@@ -425,8 +425,8 @@ transform: translate(-50%, -50%);
 .player-bet .chip-stack { justify-content: center; }
 .bet-pos-1 { top: 12%; left: 62%; }
 .bet-pos-2 { top: 60%; left: 84%; }
-.bet-pos-3 { top: 82%; left: 68%; }
-.bet-pos-4 { top: 82%; left: 32%; }
+.bet-pos-3 { top: 72%; left: 60%; }
+.bet-pos-4 { top: 72%; left: 40%; }
 .bet-pos-5 { top: 60%; left: 16%; }
 .bet-pos-6 { top: 12%; left: 38%; }
 /* Cards peeking from nameplate — overflow-hidden wrapper */
@@ -911,6 +911,18 @@ transition: top 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             left 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             opacity 0.4s ease,
             transform 0.4s ease;
+}
+/* Vacuum animation — pot pile slides to winner then collapses */
+.table-pot-chips.vacuum-slide {
+  transition: top 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              left 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              transform 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.table-pot-chips.vacuum-collapse {
+  transition: transform 0.5s cubic-bezier(0.55, 0.0, 0.67, 0.14),
+              opacity 0.5s cubic-bezier(0.55, 0.0, 0.67, 0.14);
+  transform: translate(-50%, -50%) scale(0) !important;
+  opacity: 0 !important;
 }
 /* === BACKGROUND DECORATION — faint lightning bolts === */
 .bg-decor {
@@ -1786,6 +1798,7 @@ let chipFlyTriggered = false; // Prevent multiple chip fly animations per hand
 let savedPotForAnimation = 0; // Captures pot total before server zeroes it, for chip fly
 let renderedPotChipCount = 0; // How many chips currently rendered in the pot pile DOM
 let potPileRng = null;        // Persistent PRNG function for stable chip pile layout
+let vacuumAnimating = false;  // Guard: prevent updatePot from clearing DOM during vacuum animation
 let cachedHoleCards = null;    // Cache our hole cards so they survive state glitches
 let isObserver = false;       // True when watching without a seat
 let observerName = null;      // Random name assigned by server for observers
@@ -1837,8 +1850,8 @@ const NP_TARGETS = {
 const BET_TARGETS = {
   1: { top: 12, left: 62 },
   2: { top: 60, left: 84 },
-  3: { top: 82, left: 68 },
-  4: { top: 82, left: 32 },
+  3: { top: 72, left: 60 },
+  4: { top: 72, left: 40 },
   5: { top: 60, left: 16 },
   6: { top: 12, left: 38 },
 };
@@ -2386,6 +2399,7 @@ function setupCommonSocketHandlers() {
     if (type === 'header' && line.startsWith('Satoshi Stacks Hand')) {
       chipFlyTriggered = false;
       savedPotForAnimation = 0;
+      vacuumAnimating = false;
     }
     addPlayByPlay(line);
     currentHandLog.push(line);
@@ -2714,6 +2728,7 @@ function updateBets() {
 // ============================================================
 function updatePot() {
   if (!gameState) return;
+  if (vacuumAnimating) return; // Don't clear pot pile while vacuum animation is running
   const pot = gameState.pot || 0;
   const potChips = gameState.potChips || [];
   const totalWithBets = pot + (gameState.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
@@ -2775,9 +2790,9 @@ function showBadge(visualPos, text, cssClass) {
 }
 
 // ============================================================
-//  CHIP FLY ANIMATION — pot chips fly to winner
-//  Full chip lifecycle: pot pile → organized stacks → fly → linger → fade
-//  Every chip is always accounted for and visible on the table.
+//  CHIP VACUUM ANIMATION — pot pile slides to winner's nameplate
+//  then collapses/vacuums into it with "STACKING" badge.
+//  The existing pot pile DOM is reused (no re-creation).
 // ============================================================
 function animateChipsToWinner(winnerName) {
   if (!gameState) return;
@@ -2796,91 +2811,49 @@ function animateChipsToWinner(winnerName) {
   }
   if (!winnerVisualPos) return;
 
-  // Get pot chips position (source) as percentage of table
-  const tableRect = table.getBoundingClientRect();
-  const chipsRect = potChipsEl.getBoundingClientRect();
-  // Use center of table as fallback if pot chips not visible
-  const srcTopPct = (chipsRect.width > 0 && chipsRect.height > 0)
-    ? ((chipsRect.top + chipsRect.height / 2 - tableRect.top) / tableRect.height) * 100
-    : 12; // default pot position
-  const srcLeftPct = (chipsRect.width > 0 && chipsRect.height > 0)
-    ? ((chipsRect.left + chipsRect.width / 2 - tableRect.left) / tableRect.width) * 100
-    : 50; // center
+  // If pot pile has no visible content, nothing to animate
+  if (!potChipsEl.classList.contains('visible') || !potChipsEl.querySelector('.chip-pile')) {
+    return;
+  }
 
-  // Use saved pot amount (captured before server zeroes potChips on winner event)
-  const flyAmount = savedPotForAnimation || (gameState.pot || 0);
-  if (flyAmount <= 0) return;
+  // Lock the pot pile so updatePot() doesn't clear it mid-animation
+  vacuumAnimating = true;
 
-  const breakdown = getChipBreakdown(flyAmount);
-  const chipSize = 20;
-  const MAX_PER_STACK = 10;
-  const offset = chipSize * 0.2;
-
-  // Clear the pot display (chips are now "in flight")
+  // Hide pot label
   const potLabel = $('tablePotLabel');
   if (potLabel) potLabel.classList.remove('visible');
-  if (potChipsEl) { potChipsEl.classList.remove('visible'); potChipsEl.innerHTML = ''; }
-  renderedPotChipCount = 0;
-  potPileRng = null;
 
-  // Create flying chip container
-  const container = document.createElement('div');
-  container.className = 'chip-fly-container';
-  table.appendChild(container);
+  // --- Phase 1: Slide existing pot pile to winner's nameplate ---
+  const dest = NP_TARGETS[winnerVisualPos];
+  potChipsEl.classList.add('vacuum-slide');
 
-  // Build organized stacks from chip breakdown
-  const stacks = [];
-  for (const denom of breakdown) {
-    let remaining = Math.min(denom.count, 20); // cap to prevent too many
-    while (remaining > 0) {
-      const n = Math.min(remaining, MAX_PER_STACK);
-      stacks.push({ def: denom, count: n });
-      remaining -= n;
-    }
-  }
-
-  const stackGroup = document.createElement('div');
-  stackGroup.className = 'chip-fly-group';
-  stackGroup.style.cssText = `position:absolute;top:${srcTopPct}%;left:${srcLeftPct}%;transform:translate(-50%,-50%);display:flex;align-items:flex-end;gap:${chipSize * 0.3}px;`;
-
-  for (const stack of stacks) {
-    const colH = chipSize + (stack.count - 1) * offset;
-    const col = document.createElement('div');
-    col.style.cssText = `position:relative;width:${chipSize}px;height:${colH}px;`;
-    for (let j = 0; j < stack.count; j++) {
-      const chipEl = document.createElement('div');
-      chipEl.style.cssText = `position:absolute;left:0;top:${(stack.count - 1 - j) * offset}px;z-index:${j + 1};line-height:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));`;
-      chipEl.innerHTML = renderChipSVG(stack.def, chipSize);
-      col.appendChild(chipEl);
-    }
-    stackGroup.appendChild(col);
-  }
-  container.appendChild(stackGroup);
-
-  // Animate: fly from pot center to winner's bet position
-  const target = BET_TARGETS[winnerVisualPos];
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      stackGroup.style.top = target.top + '%';
-      stackGroup.style.left = target.left + '%';
+      potChipsEl.style.top = dest.top + '%';
+      potChipsEl.style.left = dest.left + '%';
+      potChipsEl.style.transform = 'translate(-50%, -50%)';
     });
   });
 
-  // Show "stacking" badge after chips arrive
+  // --- Phase 2: After slide completes, vacuum collapse into nameplate ---
   setTimeout(() => {
     showBadge(winnerVisualPos, 'Stacking');
-  }, 1500);
+    potChipsEl.classList.remove('vacuum-slide');
+    potChipsEl.classList.add('vacuum-collapse');
+  }, 1300);
 
-  // After flight (1400ms) + linger (2000ms), fade out and cleanup
+  // --- Phase 3: Cleanup after collapse finishes ---
   setTimeout(() => {
-    stackGroup.style.opacity = '0';
-    stackGroup.style.transform = 'translate(-50%,-50%) scale(0.4)';
-  }, 3400);
-
-  setTimeout(() => {
-    container.remove();
+    potChipsEl.classList.remove('vacuum-collapse', 'visible');
+    potChipsEl.innerHTML = '';
+    potChipsEl.style.top = '';
+    potChipsEl.style.left = '';
+    potChipsEl.style.transform = '';
+    renderedPotChipCount = 0;
+    potPileRng = null;
+    vacuumAnimating = false;
     savedPotForAnimation = 0;
-  }, 4000);
+  }, 2000);
 }
 
 // ============================================================
