@@ -116,6 +116,14 @@ server {
         access_log off;
     }
 
+    # ─── OG image for social sharing ────────────────────────────────────
+    location = /og-image.png {
+        root /opt;
+        expires 30d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
     # ─── Landing page (everything else) ───────────────────────────────────
     location / {
         root /opt;
