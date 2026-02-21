@@ -7,8 +7,22 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1e2730">
-<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-title" content="SatoshiStacks">
 <title>Satoshi Stacks</title>
+<script>
+// Inline manifest via blob URL (external file unreachable due to nginx proxy)
+(function(){
+  var m = {name:"Satoshi Stacks",short_name:"SatoshiStacks",
+    start_url:"/playmoney",scope:"/playmoney",
+    display:"fullscreen",orientation:"landscape",
+    background_color:"#1e2730",theme_color:"#1e2730"};
+  var b = new Blob([JSON.stringify(m)],{type:"application/json"});
+  var l = document.createElement("link");
+  l.rel = "manifest";
+  l.href = URL.createObjectURL(b);
+  document.head.appendChild(l);
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
