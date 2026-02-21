@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1e2730">
+<link rel="manifest" href="/manifest.json">
 <title>Satoshi Stacks</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1895,6 +1898,32 @@ const isMobileDevice = (() => {
 
 if (isMobileDevice) {
   document.body.classList.add('is-mobile');
+
+  // Request fullscreen on first tap (hides address bar)
+  let fullscreenRequested = false;
+  const requestFullscreen = () => {
+    if (fullscreenRequested) return;
+    fullscreenRequested = true;
+    const el = document.documentElement;
+    const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (rfs) {
+      rfs.call(el).catch(() => {});
+    }
+    document.removeEventListener('click', requestFullscreen);
+    document.removeEventListener('touchstart', requestFullscreen);
+  };
+  document.addEventListener('click', requestFullscreen, { once: true });
+  document.addEventListener('touchstart', requestFullscreen, { once: true });
+
+  // Re-enter fullscreen after exiting (e.g. keyboard dismiss)
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && !fullscreenRequested) return;
+    if (!document.fullscreenElement) {
+      fullscreenRequested = false;
+      document.addEventListener('click', requestFullscreen, { once: true });
+      document.addEventListener('touchstart', requestFullscreen, { once: true });
+    }
+  });
 }
 
 // ============================================================
