@@ -1938,7 +1938,7 @@ const isMobileDevice = (() => {
 if (isMobileDevice) {
   document.body.classList.add('is-mobile');
 
-  // Use dvh units for true visible height (accounts for Safari toolbar)
+  // Track true visible height (accounts for Safari toolbar)
   const setMobileHeight = () => {
     document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
   };
@@ -1954,15 +1954,6 @@ if (isMobileDevice) {
     }, { once: true });
   }
 
-  // iOS Safari: scroll to minimize the address bar
-  const isIOS = /iPhone|iPod/.test(navigator.userAgent);
-  if (isIOS) {
-    // Briefly allow scroll, scroll down to collapse toolbar, then lock again
-    document.addEventListener('touchstart', () => {
-      if (window.navigator.standalone) return; // Already in PWA mode
-      setTimeout(() => window.scrollTo(0, 1), 100);
-    }, { once: true });
-  }
 }
 
 // ============================================================
