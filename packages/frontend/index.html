@@ -64,6 +64,11 @@ background: #1e2730;
 touch-action: manipulation;
 user-select: none;
 }
+/* Mobile: use actual visible height (set by JS) to avoid address bar overlap */
+body.is-mobile, body.is-mobile .game-container {
+height: var(--app-height, 100%);
+height: 100dvh;
+}
 /* === LAYOUT === */
 .game-container {
 width: 100%;
@@ -1365,7 +1370,7 @@ transition: transform 0.2s;
   /* Table */
   body.is-mobile .poker-table {
     width: min(88vw, 680px);
-    height: 72vh;
+    height: 72dvh;
     transform: translate(-50%, -56%);
     box-shadow:
       inset 0 3px 8px rgba(0,0,0,0.25), inset 0 -2px 6px rgba(0,0,0,0.1),
@@ -1441,33 +1446,67 @@ transition: transform 0.2s;
   body.is-mobile .bet-slider { height: 10px; }
   body.is-mobile .bet-slider::-webkit-slider-thumb { width: 32px; height: 32px; }
   body.is-mobile .bet-amount-input { width: 60px; font-size: 13px; padding: 3px 4px; }
-  /* Chat: collapsed to icon by default */
+  /* Chat: hidden by default, center overlay when open */
   body.is-mobile .chat-box {
-    width: 240px; height: 160px; bottom: 0; left: 0;
-    border-radius: 0 12px 0 0; z-index: 55;
-    transform: translateX(-100%);
-    transition: transform 0.3s var(--ease);
-    border-width: 2px; display: flex !important;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    width: min(70vw, 420px);
+    height: min(60vh, 240px);
+    border-radius: 14px;
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.25s var(--ease), opacity 0.2s ease;
+    border-width: 2px;
+    display: flex !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
   }
-  body.is-mobile .chat-box.mobile-open { transform: translateX(0); }
-  body.is-mobile .chat-box .chat-tabs { padding: 2px; gap: 2px; }
-  body.is-mobile .chat-box .chat-tab { font-size: 9px; padding: 3px 0; }
-  body.is-mobile .chat-box .chat-msg { font-size: 10px; }
-  body.is-mobile .chat-box .chat-input { font-size: 10px; padding: 3px 8px; }
-  body.is-mobile .chat-box .chat-send-btn { font-size: 10px; padding: 3px 8px; }
-  body.is-mobile .chat-box .chat-input-area { padding: 3px 4px; gap: 3px; }
-  /* Chat toggle button */
+  body.is-mobile .chat-box.mobile-open {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Dim backdrop when chat is open */
+  body.is-mobile .mobile-chat-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 199;
+    display: none;
+  }
+  body.is-mobile .mobile-chat-backdrop.visible { display: block; }
+  body.is-mobile .chat-box .chat-tabs { padding: 2px 4px; gap: 2px; border-radius: 12px 12px 0 0; }
+  body.is-mobile .chat-box .chat-tab { font-size: 10px; padding: 4px 0; }
+  body.is-mobile .chat-box .chat-msg { font-size: 11px; }
+  body.is-mobile .chat-box .chat-input { font-size: 12px; padding: 4px 8px; }
+  body.is-mobile .chat-box .chat-send-btn { font-size: 11px; padding: 4px 10px; }
+  body.is-mobile .chat-box .chat-input-area { padding: 4px 6px; gap: 4px; }
+  body.is-mobile .chat-box .chat-collapse-btn { display: none; }
+  /* Chat toggle button — top-left corner, out of the way */
   body.is-mobile .mobile-chat-toggle {
-    position: fixed; bottom: 8px; left: calc(8px + env(safe-area-inset-left, 0px));
-    width: 36px; height: 36px; border-radius: 50%;
-    background: rgba(24, 36, 52, 0.85); border: 1.5px solid rgba(120, 100, 80, 0.4);
-    color: var(--cream); font-size: 16px;
+    position: fixed;
+    top: 6px;
+    left: calc(6px + env(safe-area-inset-left, 0px));
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(24, 36, 52, 0.75);
+    border: 1.5px solid rgba(120, 100, 80, 0.3);
+    color: var(--cream); font-size: 14px;
     display: flex; align-items: center; justify-content: center;
-    cursor: pointer; z-index: 56; backdrop-filter: blur(8px); transition: var(--transition);
+    cursor: pointer; z-index: 201;
+    backdrop-filter: blur(8px);
+    transition: var(--transition);
+    opacity: 0.7;
   }
   body.is-mobile .mobile-chat-toggle:active { transform: scale(0.9); }
   body.is-mobile .mobile-chat-toggle.has-unread {
-    border-color: var(--mustard); box-shadow: 0 0 8px rgba(232, 168, 56, 0.3);
+    opacity: 1;
+    border-color: var(--mustard);
+    box-shadow: 0 0 8px rgba(232, 168, 56, 0.4);
+  }
+  body.is-mobile .mobile-chat-toggle.chat-active {
+    opacity: 1;
+    background: rgba(60, 140, 132, 0.85);
+    border-color: rgba(60, 140, 132, 0.8);
   }
   /* Hide non-essential */
   body.is-mobile .pre-action-bar { display: none !important; }
@@ -1899,31 +1938,31 @@ const isMobileDevice = (() => {
 if (isMobileDevice) {
   document.body.classList.add('is-mobile');
 
-  // Request fullscreen on first tap (hides address bar)
-  let fullscreenRequested = false;
-  const requestFullscreen = () => {
-    if (fullscreenRequested) return;
-    fullscreenRequested = true;
-    const el = document.documentElement;
-    const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-    if (rfs) {
-      rfs.call(el).catch(() => {});
-    }
-    document.removeEventListener('click', requestFullscreen);
-    document.removeEventListener('touchstart', requestFullscreen);
+  // Use dvh units for true visible height (accounts for Safari toolbar)
+  const setMobileHeight = () => {
+    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
   };
-  document.addEventListener('click', requestFullscreen, { once: true });
-  document.addEventListener('touchstart', requestFullscreen, { once: true });
+  setMobileHeight();
+  window.addEventListener('resize', setMobileHeight);
 
-  // Re-enter fullscreen after exiting (e.g. keyboard dismiss)
-  document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement && !fullscreenRequested) return;
-    if (!document.fullscreenElement) {
-      fullscreenRequested = false;
-      document.addEventListener('click', requestFullscreen, { once: true });
-      document.addEventListener('touchstart', requestFullscreen, { once: true });
-    }
-  });
+  // Try Fullscreen API (works on Android Chrome, not iOS Safari)
+  const el = document.documentElement;
+  const rfs = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (rfs) {
+    document.addEventListener('click', () => {
+      if (!document.fullscreenElement) rfs.call(el).catch(() => {});
+    }, { once: true });
+  }
+
+  // iOS Safari: scroll to minimize the address bar
+  const isIOS = /iPhone|iPod/.test(navigator.userAgent);
+  if (isIOS) {
+    // Briefly allow scroll, scroll down to collapse toolbar, then lock again
+    document.addEventListener('touchstart', () => {
+      if (window.navigator.standalone) return; // Already in PWA mode
+      setTimeout(() => window.scrollTo(0, 1), 100);
+    }, { once: true });
+  }
 }
 
 // ============================================================
@@ -3731,6 +3770,14 @@ function initChat() {
 // ============================================================
 function initMobileChat() {
   if (!isMobileDevice) return;
+
+  // Create backdrop
+  const backdrop = document.createElement('div');
+  backdrop.className = 'mobile-chat-backdrop';
+  backdrop.id = 'mobileChatBackdrop';
+  document.body.appendChild(backdrop);
+
+  // Create toggle button
   const chatToggle = document.createElement('button');
   chatToggle.className = 'mobile-chat-toggle';
   chatToggle.id = 'mobileChatToggle';
@@ -3739,20 +3786,30 @@ function initMobileChat() {
   document.body.appendChild(chatToggle);
 
   const chatBox = document.getElementById('chatBox');
+
+  function openChat() {
+    chatBox.classList.add('mobile-open');
+    backdrop.classList.add('visible');
+    chatToggle.classList.add('chat-active');
+    chatToggle.classList.remove('has-unread');
+  }
+  function closeChat() {
+    chatBox.classList.remove('mobile-open');
+    backdrop.classList.remove('visible');
+    chatToggle.classList.remove('chat-active');
+  }
+
   chatToggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    chatBox.classList.toggle('mobile-open');
-    chatToggle.classList.remove('has-unread');
-  });
-
-  // Close chat when tapping outside
-  document.addEventListener('click', (e) => {
-    if (chatBox && !chatBox.contains(e.target) &&
-        !chatToggle.contains(e.target) &&
-        chatBox.classList.contains('mobile-open')) {
-      chatBox.classList.remove('mobile-open');
+    if (chatBox.classList.contains('mobile-open')) {
+      closeChat();
+    } else {
+      openChat();
     }
   });
+
+  // Close on backdrop tap
+  backdrop.addEventListener('click', closeChat);
 }
 
 function signalMobileUnread() {
