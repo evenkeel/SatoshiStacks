@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satoshi Stacks — Bitcoin Poker, Coming Soon</title>
+    <meta name="description" content="Satoshi Stacks — 24/7 6-max poker played with Bitcoin and Lightning Network. Coming soon.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Lilita+One&family=Fredoka:wght@400;500;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --orange: #F26522;
+            --pink: #E84B8A;
+            --yellow: #FFC72C;
+            --blue: #2D9CDB;
+            --green: #27AE60;
+            --purple: #8B5CF6;
+            --red: #EB5757;
+            --cream: #FFF5E1;
+            --teal: #1ABC9C;
+            --dark: #1A1A2E;
+            --o: #1A1A2E;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background: var(--cream);
+            color: var(--dark);
+        }
+
+        /* ── FULL-SCREEN CANVAS ── */
+        .page {
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* ── BACKGROUND SHAPES ── */
+        .bg {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .bg-dot {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0.08;
+        }
+
+        /* ── TITLE BLOCK ── */
+        .title-block {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+            padding-top: clamp(1.2rem, 3vh, 2.5rem);
+            flex-shrink: 0;
+        }
+        .title {
+            font-family: 'Lilita One', sans-serif;
+            font-size: clamp(3rem, 10vw, 6.5rem);
+            line-height: 0.92;
+            letter-spacing: 2px;
+        }
+        .t-satoshi {
+            display: block;
+            color: var(--orange);
+            -webkit-text-stroke: 3px var(--o);
+            paint-order: stroke fill;
+            text-shadow: 6px 6px 0 var(--o);
+        }
+        .t-stacks {
+            display: block;
+            color: var(--yellow);
+            -webkit-text-stroke: 3px var(--o);
+            paint-order: stroke fill;
+            text-shadow: 6px 6px 0 var(--o);
+            letter-spacing: 6px;
+        }
+        .tagline {
+            font-size: clamp(0.85rem, 2vw, 1.15rem);
+            font-weight: 600;
+            margin-top: clamp(0.3rem, 1vh, 0.7rem);
+            color: var(--dark);
+        }
+        .tag-pill {
+            display: inline-block;
+            background: var(--pink);
+            color: #fff;
+            padding: 1px 9px;
+            border-radius: 6px;
+            border: 2.5px solid var(--o);
+            font-size: 0.9em;
+        }
+
+        /* ── MIDDLE ZONE — Characters & Objects ── */
+        .scene {
+            position: relative;
+            z-index: 5;
+            flex: 1;
+            width: 100%;
+            max-width: 1200px;
+        }
+        .scene svg {
+            position: absolute;
+            pointer-events: none;
+        }
+        /* Each character/object placed via class */
+        .ch { animation: bob 4s ease-in-out infinite; }
+        @keyframes bob {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+
+        /* ── BOTTOM AREA ── */
+        .bottom {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-bottom: clamp(0.8rem, 2vh, 1.5rem);
+            flex-shrink: 0;
+        }
+
+        .coming-soon {
+            font-family: 'Lilita One', sans-serif;
+            font-size: clamp(1.4rem, 4vw, 2.4rem);
+            color: #fff;
+            background: var(--pink);
+            border: 4px solid var(--o);
+            border-radius: 14px;
+            padding: 8px 30px;
+            box-shadow: 5px 5px 0 var(--o);
+            transform: rotate(-2deg);
+            animation: pulse 2.8s ease-in-out infinite;
+            letter-spacing: 3px;
+            margin-bottom: clamp(0.6rem, 1.5vh, 1rem);
+        }
+        @keyframes pulse {
+            0%, 100% { transform: rotate(-2deg) scale(1); }
+            50% { transform: rotate(-2deg) scale(1.05); }
+        }
+
+        .signup {
+            width: 90%;
+            max-width: 420px;
+            margin-bottom: clamp(0.3rem, 0.8vh, 0.6rem);
+        }
+        .signup-label {
+            text-align: center;
+            font-weight: 600;
+            font-size: clamp(0.8rem, 1.6vw, 0.95rem);
+            margin-bottom: 6px;
+        }
+        .signup-form {
+            display: flex;
+            border: 3.5px solid var(--o);
+            border-radius: 50px;
+            overflow: hidden;
+            box-shadow: 4px 4px 0 var(--o);
+            background: #fff;
+        }
+        .signup-form input {
+            flex: 1;
+            border: none;
+            padding: 10px 16px;
+            font-family: 'Fredoka', sans-serif;
+            font-size: 0.9rem;
+            outline: none;
+            background: transparent;
+            min-width: 0;
+        }
+        .signup-form input::placeholder { color: #bbb; }
+        .signup-form button {
+            background: var(--orange);
+            color: #fff;
+            border: none;
+            border-left: 3.5px solid var(--o);
+            padding: 10px 22px;
+            font-family: 'Lilita One', sans-serif;
+            font-size: 0.9rem;
+            cursor: pointer;
+            letter-spacing: 1px;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        .signup-form button:hover { background: var(--red); }
+        .signup-msg {
+            text-align: center;
+            margin-top: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            min-height: 1.2em;
+        }
+        .signup-msg.success { color: var(--green); }
+
+        .footer {
+            font-size: 0.7rem;
+            color: #999;
+            margin-top: 2px;
+        }
+        .footer a { color: var(--orange); text-decoration: none; font-weight: 600; }
+        .footer a:hover { text-decoration: underline; }
+
+        /* ── SCREEN READER ONLY ── */
+        .sr-only {
+            position: absolute; width: 1px; height: 1px;
+            padding: 0; margin: -1px; overflow: hidden;
+            clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+        }
+
+        /* ── SKIP LINK ── */
+        .skip-link {
+            position: absolute; top: -100%; left: 50%; transform: translateX(-50%);
+            background: var(--o); color: #fff; padding: 8px 16px;
+            border-radius: 0 0 8px 8px; z-index: 9999;
+            font-weight: 600; text-decoration: none;
+        }
+        .skip-link:focus { top: 0; }
+
+        /* ── REDUCED MOTION ── */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* ── FOCUS STYLES ── */
+        :focus-visible {
+            outline: 3px solid var(--teal);
+            outline-offset: 2px;
+        }
+
+        /* ── RESPONSIVE — MOBILE ── */
+        @media (max-width: 600px) {
+            .title { font-size: clamp(2.6rem, 14vw, 4rem); }
+            .t-satoshi { -webkit-text-stroke: 2px var(--o); text-shadow: 4px 4px 0 var(--o); }
+            .t-stacks { -webkit-text-stroke: 2px var(--o); text-shadow: 4px 4px 0 var(--o); letter-spacing: 3px; }
+            .coming-soon { font-size: clamp(1.2rem, 5vw, 1.8rem); padding: 6px 20px; }
+            .signup-form { flex-direction: column; border-radius: 16px; }
+            .signup-form input { padding: 12px 16px; font-size: 1rem; text-align: center; }
+            .signup-form button { border-left: none; border-top: 3px solid var(--o); padding: 14px 20px; font-size: 1rem; }
+            .signup { width: 92%; max-width: 340px; }
+        }
+        @media (max-width: 380px) {
+            .title { font-size: clamp(2rem, 12vw, 2.8rem); }
+            .tagline { font-size: 0.75rem; }
+            .tag-pill { padding: 1px 6px; font-size: 0.8em; }
+            .signup { width: 94%; }
+            .coming-soon { font-size: 1.1rem; padding: 4px 14px; letter-spacing: 2px; }
+        }
+        @media (max-height: 600px) {
+            .title-block { padding-top: 0.5rem; }
+            .title { font-size: 2.5rem; }
+            .tagline { font-size: 0.75rem; margin-top: 0.2rem; }
+            .coming-soon { font-size: 1.1rem; padding: 5px 16px; margin-bottom: 0.4rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="page">
+    <a href="#signupForm" class="skip-link">Skip to signup</a>
+
+    <!-- BG DOTS -->
+    <div class="bg" id="bgDots" aria-hidden="true"></div>
+
+    <!-- ── TITLE ── -->
+    <header class="title-block" role="banner">
+        <h1 class="title">
+            <span class="t-satoshi">SATOSHI</span>
+            <span class="t-stacks">STACKS</span>
+        </h1>
+        <p class="tagline">
+            <span class="tag-pill">24/7</span> 6-Max Poker &middot;
+            <span class="tag-pill">Bitcoin</span> &amp; <span class="tag-pill">Lightning</span>
+        </p>
+    </header>
+
+    <!-- ── SCENE — Characters, cards, chips scattered ── -->
+    <div class="scene" id="scene" aria-hidden="true" role="presentation">
+
+        <!-- ===== CHARACTER: Orange Cat ===== -->
+        <svg class="ch" style="width:14%;left:3%;top:8%;animation-delay:0s" viewBox="0 0 120 150">
+            <rect x="28" y="80" width="64" height="55" rx="14" fill="var(--orange)" stroke="var(--o)" stroke-width="4"/>
+            <circle cx="60" cy="52" r="36" fill="var(--orange)" stroke="var(--o)" stroke-width="4"/>
+            <!-- ears -->
+            <polygon points="32,22 20,0 44,28" fill="var(--orange)" stroke="var(--o)" stroke-width="3.5"/>
+            <polygon points="88,22 100,0 76,28" fill="var(--orange)" stroke="var(--o)" stroke-width="3.5"/>
+            <polygon points="34,24 24,6 42,28" fill="var(--pink)" stroke="none"/>
+            <polygon points="86,24 96,6 78,28" fill="var(--pink)" stroke="none"/>
+            <!-- eyes -->
+            <circle cx="46" cy="46" r="7" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="74" cy="46" r="7" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="48" cy="48" r="3.5" fill="var(--o)"/>
+            <circle cx="76" cy="48" r="3.5" fill="var(--o)"/>
+            <!-- nose & mouth -->
+            <ellipse cx="60" cy="58" rx="4" ry="3" fill="var(--pink)" stroke="var(--o)" stroke-width="2"/>
+            <path d="M52,66 Q60,76 68,66" fill="none" stroke="var(--o)" stroke-width="2.5" stroke-linecap="round"/>
+            <!-- whiskers -->
+            <line x1="16" y1="52" x2="38" y2="56" stroke="var(--o)" stroke-width="2"/>
+            <line x1="16" y1="60" x2="38" y2="60" stroke="var(--o)" stroke-width="2"/>
+            <line x1="104" y1="52" x2="82" y2="56" stroke="var(--o)" stroke-width="2"/>
+            <line x1="104" y1="60" x2="82" y2="60" stroke="var(--o)" stroke-width="2"/>
+            <!-- arm + cards -->
+            <rect x="80" y="90" width="36" height="14" rx="7" fill="var(--orange)" stroke="var(--o)" stroke-width="3" transform="rotate(15,80,97)"/>
+            <g transform="translate(108,82) rotate(10)">
+                <rect width="22" height="32" rx="3" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+                <text x="4" y="13" font-size="10" font-weight="bold" fill="var(--red)" font-family="Fredoka">A</text>
+                <text x="9" y="28" font-size="14" fill="var(--red)">&#9829;</text>
+            </g>
+        </svg>
+
+        <!-- ===== CHARACTER: Blue Bird with sunglasses ===== -->
+        <svg class="ch" style="width:13%;right:4%;top:5%;animation-delay:-1.5s" viewBox="0 0 120 140">
+            <ellipse cx="60" cy="88" rx="30" ry="38" fill="var(--blue)" stroke="var(--o)" stroke-width="4"/>
+            <circle cx="60" cy="42" r="34" fill="var(--blue)" stroke="var(--o)" stroke-width="4"/>
+            <!-- beak -->
+            <polygon points="90,42 112,36 90,50" fill="var(--yellow)" stroke="var(--o)" stroke-width="3"/>
+            <!-- sunglasses -->
+            <rect x="36" y="30" width="22" height="14" rx="5" fill="var(--o)"/>
+            <rect x="62" y="30" width="22" height="14" rx="5" fill="var(--o)"/>
+            <line x1="58" y1="37" x2="62" y2="37" stroke="var(--o)" stroke-width="3"/>
+            <line x1="36" y1="37" x2="28" y2="34" stroke="var(--o)" stroke-width="2.5"/>
+            <!-- eye glint through glasses -->
+            <circle cx="50" cy="37" r="2" fill="rgba(255,255,255,0.4)"/>
+            <circle cx="76" cy="37" r="2" fill="rgba(255,255,255,0.4)"/>
+            <!-- tuft -->
+            <path d="M50,10 Q46,-4 56,12" fill="var(--blue)" stroke="var(--o)" stroke-width="3" stroke-linecap="round"/>
+            <path d="M58,10 Q60,-6 66,14" fill="var(--blue)" stroke="var(--o)" stroke-width="3" stroke-linecap="round"/>
+            <!-- wing -->
+            <ellipse cx="34" cy="86" rx="16" ry="24" fill="#1A8FC4" stroke="var(--o)" stroke-width="3" transform="rotate(-8,34,86)"/>
+            <!-- smile -->
+            <path d="M48,54 Q60,64 72,54" fill="none" stroke="var(--o)" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+
+        <!-- ===== CHARACTER: Pink Blob Guy ===== -->
+        <svg class="ch" style="width:11%;left:22%;bottom:8%;animation-delay:-0.8s" viewBox="0 0 100 120">
+            <ellipse cx="50" cy="58" rx="38" ry="42" fill="var(--pink)" stroke="var(--o)" stroke-width="4"/>
+            <!-- eyes (big!) -->
+            <circle cx="36" cy="44" r="10" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="64" cy="44" r="10" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="39" cy="46" r="5" fill="var(--o)"/>
+            <circle cx="67" cy="46" r="5" fill="var(--o)"/>
+            <!-- goofy grin -->
+            <path d="M32,72 Q50,92 68,72" fill="var(--o)" stroke="var(--o)" stroke-width="2"/>
+            <path d="M38,72 Q50,86 62,72" fill="#fff" stroke="none"/>
+            <!-- tongue -->
+            <ellipse cx="50" cy="80" rx="6" ry="5" fill="var(--red)" stroke="none"/>
+            <!-- feet -->
+            <ellipse cx="34" cy="98" rx="12" ry="7" fill="var(--pink)" stroke="var(--o)" stroke-width="3"/>
+            <ellipse cx="66" cy="98" rx="12" ry="7" fill="var(--pink)" stroke="var(--o)" stroke-width="3"/>
+            <!-- little arms up -->
+            <rect x="2" y="40" width="18" height="10" rx="5" fill="var(--pink)" stroke="var(--o)" stroke-width="2.5" transform="rotate(-30,11,45)"/>
+            <rect x="80" y="40" width="18" height="10" rx="5" fill="var(--pink)" stroke="var(--o)" stroke-width="2.5" transform="rotate(30,89,45)"/>
+        </svg>
+
+        <!-- ===== CHARACTER: Yellow Square Head w/ Hat ===== -->
+        <svg class="ch" style="width:12%;right:18%;bottom:5%;animation-delay:-2.2s" viewBox="0 0 110 160">
+            <!-- body -->
+            <rect x="24" y="85" width="62" height="52" rx="8" fill="var(--yellow)" stroke="var(--o)" stroke-width="4"/>
+            <!-- head -->
+            <rect x="16" y="30" width="78" height="58" rx="12" fill="var(--yellow)" stroke="var(--o)" stroke-width="4"/>
+            <!-- hat -->
+            <rect x="10" y="22" width="90" height="14" rx="5" fill="var(--purple)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="28" y="2" width="54" height="24" rx="6" fill="var(--purple)" stroke="var(--o)" stroke-width="3"/>
+            <!-- eyes (shifty) -->
+            <circle cx="40" cy="54" r="8" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="70" cy="54" r="8" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="36" cy="56" r="4" fill="var(--o)"/>
+            <circle cx="66" cy="56" r="4" fill="var(--o)"/>
+            <!-- suspicious eyebrows -->
+            <line x1="28" y1="42" x2="46" y2="46" stroke="var(--o)" stroke-width="3" stroke-linecap="round"/>
+            <line x1="82" y1="42" x2="64" y2="46" stroke="var(--o)" stroke-width="3" stroke-linecap="round"/>
+            <!-- flat mouth -->
+            <line x1="42" y1="72" x2="68" y2="72" stroke="var(--o)" stroke-width="3" stroke-linecap="round"/>
+            <!-- legs -->
+            <rect x="32" y="132" width="14" height="20" rx="6" fill="var(--yellow)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="62" y="132" width="14" height="20" rx="6" fill="var(--yellow)" stroke="var(--o)" stroke-width="3"/>
+        </svg>
+
+        <!-- ===== CHARACTER: Green Guy w/ Bowtie ===== -->
+        <svg class="ch" style="width:12%;left:42%;top:2%;animation-delay:-3s" viewBox="0 0 110 150">
+            <!-- body -->
+            <rect x="26" y="82" width="58" height="48" rx="10" fill="var(--green)" stroke="var(--o)" stroke-width="4"/>
+            <!-- head -->
+            <circle cx="55" cy="48" r="34" fill="var(--green)" stroke="var(--o)" stroke-width="4"/>
+            <!-- big round nose -->
+            <circle cx="55" cy="56" r="10" fill="#2ECC71" stroke="var(--o)" stroke-width="3"/>
+            <!-- eyes -->
+            <circle cx="40" cy="40" r="7" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="70" cy="40" r="7" fill="#fff" stroke="var(--o)" stroke-width="2.5"/>
+            <circle cx="42" cy="42" r="3.5" fill="var(--o)"/>
+            <circle cx="72" cy="42" r="3.5" fill="var(--o)"/>
+            <!-- smile -->
+            <path d="M42,66 Q55,78 68,66" fill="none" stroke="var(--o)" stroke-width="2.5" stroke-linecap="round"/>
+            <!-- bowtie -->
+            <polygon points="38,86 50,92 38,98" fill="var(--red)" stroke="var(--o)" stroke-width="2"/>
+            <polygon points="72,86 60,92 72,98" fill="var(--red)" stroke="var(--o)" stroke-width="2"/>
+            <circle cx="55" cy="92" r="4" fill="var(--yellow)" stroke="var(--o)" stroke-width="2"/>
+            <!-- arms out -->
+            <rect x="0" y="90" width="28" height="12" rx="6" fill="var(--green)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="82" y="90" width="28" height="12" rx="6" fill="var(--green)" stroke="var(--o)" stroke-width="3"/>
+        </svg>
+
+        <!-- ===== CHARACTER: Red Triangle Head ===== -->
+        <svg class="ch" style="width:10%;left:68%;top:12%;animation-delay:-0.4s" viewBox="0 0 100 140">
+            <!-- body -->
+            <rect x="24" y="72" width="52" height="44" rx="10" fill="var(--red)" stroke="var(--o)" stroke-width="4"/>
+            <!-- triangle head -->
+            <polygon points="50,6 14,66 86,66" fill="var(--red)" stroke="var(--o)" stroke-width="4" stroke-linejoin="round"/>
+            <!-- eye (cyclops!) -->
+            <circle cx="50" cy="46" r="12" fill="#fff" stroke="var(--o)" stroke-width="3"/>
+            <circle cx="52" cy="48" r="6" fill="var(--o)"/>
+            <circle cx="54" cy="46" r="2" fill="#fff"/>
+            <!-- mouth -->
+            <path d="M38,60 Q50,66 62,60" fill="none" stroke="var(--o)" stroke-width="2.5" stroke-linecap="round"/>
+            <!-- legs -->
+            <rect x="30" y="112" width="12" height="22" rx="5" fill="var(--red)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="58" y="112" width="12" height="22" rx="5" fill="var(--red)" stroke="var(--o)" stroke-width="3"/>
+        </svg>
+
+        <!-- ===== CHARACTER: Teal Worm/Snake ===== -->
+        <svg class="ch" style="width:14%;left:8%;top:50%;animation-delay:-2.8s" viewBox="0 0 140 90">
+            <path d="M20,60 Q20,20 50,20 Q80,20 80,50 Q80,80 110,80 Q130,80 130,60" fill="none" stroke="var(--teal)" stroke-width="22" stroke-linecap="round"/>
+            <path d="M20,60 Q20,20 50,20 Q80,20 80,50 Q80,80 110,80 Q130,80 130,60" fill="none" stroke="var(--o)" stroke-width="26" stroke-linecap="round" opacity="0"/>
+            <!-- outline via two strokes -->
+            <path d="M20,60 Q20,20 50,20 Q80,20 80,50 Q80,80 110,80 Q130,80 130,60" fill="none" stroke="var(--o)" stroke-width="26" stroke-linecap="round" style="paint-order:stroke;"/>
+            <path d="M20,60 Q20,20 50,20 Q80,20 80,50 Q80,80 110,80 Q130,80 130,60" fill="none" stroke="var(--teal)" stroke-width="20" stroke-linecap="round"/>
+            <!-- head at end -->
+            <circle cx="130" cy="60" r="14" fill="var(--teal)" stroke="var(--o)" stroke-width="3.5"/>
+            <circle cx="126" cy="56" r="4" fill="#fff" stroke="var(--o)" stroke-width="2"/>
+            <circle cx="127" cy="57" r="2" fill="var(--o)"/>
+            <circle cx="136" cy="56" r="4" fill="#fff" stroke="var(--o)" stroke-width="2"/>
+            <circle cx="137" cy="57" r="2" fill="var(--o)"/>
+            <path d="M124,66 Q130,72 136,66" fill="none" stroke="var(--o)" stroke-width="2" stroke-linecap="round"/>
+            <!-- tongue -->
+            <path d="M132,70 L135,78 L130,74" fill="var(--red)" stroke="var(--o)" stroke-width="1.5"/>
+        </svg>
+
+        <!-- ===== CHARACTER: Purple Moon Face ===== -->
+        <svg class="ch" style="width:9%;right:8%;top:50%;animation-delay:-1.2s" viewBox="0 0 90 100">
+            <circle cx="45" cy="42" r="34" fill="var(--purple)" stroke="var(--o)" stroke-width="4"/>
+            <!-- crescent cutout effect -->
+            <circle cx="62" cy="30" r="20" fill="var(--cream)" opacity="0.15"/>
+            <!-- sleepy eyes -->
+            <path d="M28,38 Q34,32 40,38" fill="none" stroke="var(--o)" stroke-width="3" stroke-linecap="round"/>
+            <path d="M50,38 Q56,32 62,38" fill="none" stroke="var(--o)" stroke-width="3" stroke-linecap="round"/>
+            <!-- small o mouth -->
+            <circle cx="45" cy="54" r="5" fill="var(--o)"/>
+            <circle cx="45" cy="54" r="3" fill="#442266"/>
+            <!-- stars around -->
+            <polygon points="78,14 80,20 86,20 81,24 83,30 78,26 73,30 75,24 70,20 76,20" fill="var(--yellow)" stroke="var(--o)" stroke-width="1.5" transform="scale(0.7) translate(30,-5)"/>
+            <polygon points="10,70 12,76 18,76 13,80 15,86 10,82 5,86 7,80 2,76 8,76" fill="var(--yellow)" stroke="var(--o)" stroke-width="1.5" transform="scale(0.6) translate(5,5)"/>
+        </svg>
+
+        <!-- ===== POKER CARDS scattered ===== -->
+        <!-- Card: Ace of Spades -->
+        <svg style="width:6%;left:36%;bottom:18%;transform:rotate(-12deg);position:absolute" viewBox="0 0 60 84">
+            <rect x="2" y="2" width="56" height="80" rx="6" fill="#fff" stroke="var(--o)" stroke-width="3.5"/>
+            <text x="10" y="20" font-size="16" font-weight="bold" fill="var(--o)" font-family="Fredoka">A</text>
+            <text x="28" y="58" font-size="28" fill="var(--o)" text-anchor="middle">&#9824;</text>
+        </svg>
+
+        <!-- Card: King of Hearts -->
+        <svg style="width:6%;right:32%;top:38%;transform:rotate(8deg);position:absolute" viewBox="0 0 60 84">
+            <rect x="2" y="2" width="56" height="80" rx="6" fill="#fff" stroke="var(--o)" stroke-width="3.5"/>
+            <text x="10" y="20" font-size="16" font-weight="bold" fill="var(--red)" font-family="Fredoka">K</text>
+            <text x="28" y="58" font-size="28" fill="var(--red)" text-anchor="middle">&#9829;</text>
+        </svg>
+
+        <!-- Card: 10 of Diamonds -->
+        <svg style="width:5.5%;left:55%;bottom:28%;transform:rotate(18deg);position:absolute" viewBox="0 0 60 84">
+            <rect x="2" y="2" width="56" height="80" rx="6" fill="#fff" stroke="var(--o)" stroke-width="3.5"/>
+            <text x="8" y="20" font-size="14" font-weight="bold" fill="var(--red)" font-family="Fredoka">10</text>
+            <text x="28" y="58" font-size="28" fill="var(--red)" text-anchor="middle">&#9830;</text>
+        </svg>
+
+        <!-- Card: back (face down) -->
+        <svg style="width:5%;left:80%;top:30%;transform:rotate(-22deg);position:absolute" viewBox="0 0 60 84">
+            <rect x="2" y="2" width="56" height="80" rx="6" fill="var(--orange)" stroke="var(--o)" stroke-width="3.5"/>
+            <rect x="8" y="8" width="44" height="68" rx="3" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-dasharray="4 3"/>
+            <text x="30" y="50" font-size="22" font-weight="bold" fill="var(--yellow)" text-anchor="middle" font-family="Fredoka">&#8383;</text>
+        </svg>
+
+        <!-- Card: back 2 -->
+        <svg style="width:4.5%;left:14%;bottom:30%;transform:rotate(25deg);position:absolute" viewBox="0 0 60 84">
+            <rect x="2" y="2" width="56" height="80" rx="6" fill="var(--pink)" stroke="var(--o)" stroke-width="3.5"/>
+            <rect x="8" y="8" width="44" height="68" rx="3" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="4 3"/>
+            <text x="30" y="50" font-size="22" font-weight="bold" fill="#fff" text-anchor="middle" font-family="Fredoka">&#8383;</text>
+        </svg>
+
+        <!-- ===== CHIP STACKS ===== -->
+        <!-- Stack 1 -->
+        <svg style="width:5%;left:30%;top:42%;position:absolute" viewBox="0 0 50 55">
+            <ellipse cx="25" cy="42" rx="20" ry="8" fill="var(--red)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="5" y="32" width="40" height="10" fill="var(--red)"/>
+            <ellipse cx="25" cy="32" rx="20" ry="8" fill="var(--orange)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="5" y="22" width="40" height="10" fill="var(--orange)"/>
+            <ellipse cx="25" cy="22" rx="20" ry="8" fill="var(--yellow)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="5" y="12" width="40" height="10" fill="var(--yellow)"/>
+            <ellipse cx="25" cy="12" rx="20" ry="8" fill="var(--green)" stroke="var(--o)" stroke-width="3"/>
+            <line x1="5" y1="12" x2="5" y2="42" stroke="var(--o)" stroke-width="3"/>
+            <line x1="45" y1="12" x2="45" y2="42" stroke="var(--o)" stroke-width="3"/>
+        </svg>
+
+        <!-- Stack 2 -->
+        <svg style="width:4%;right:28%;bottom:16%;position:absolute" viewBox="0 0 50 40">
+            <ellipse cx="25" cy="30" rx="20" ry="8" fill="var(--blue)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="5" y="20" width="40" height="10" fill="var(--blue)"/>
+            <ellipse cx="25" cy="20" rx="20" ry="8" fill="var(--purple)" stroke="var(--o)" stroke-width="3"/>
+            <rect x="5" y="10" width="40" height="10" fill="var(--purple)"/>
+            <ellipse cx="25" cy="10" rx="20" ry="8" fill="var(--pink)" stroke="var(--o)" stroke-width="3"/>
+            <line x1="5" y1="10" x2="5" y2="30" stroke="var(--o)" stroke-width="3"/>
+            <line x1="45" y1="10" x2="45" y2="30" stroke="var(--o)" stroke-width="3"/>
+        </svg>
+
+        <!-- Loose chips -->
+        <svg style="width:3%;left:48%;top:55%;position:absolute;transform:rotate(10deg)" viewBox="0 0 40 18">
+            <ellipse cx="20" cy="9" rx="18" ry="8" fill="var(--yellow)" stroke="var(--o)" stroke-width="2.5"/>
+            <text x="20" y="13" text-anchor="middle" font-size="10" font-weight="bold" fill="var(--o)" font-family="Fredoka">&#8383;</text>
+        </svg>
+        <svg style="width:2.5%;left:60%;top:60%;position:absolute;transform:rotate(-15deg)" viewBox="0 0 40 18">
+            <ellipse cx="20" cy="9" rx="18" ry="8" fill="var(--red)" stroke="var(--o)" stroke-width="2.5"/>
+        </svg>
+        <svg style="width:2.8%;left:85%;top:68%;position:absolute;transform:rotate(5deg)" viewBox="0 0 40 18">
+            <ellipse cx="20" cy="9" rx="18" ry="8" fill="var(--purple)" stroke="var(--o)" stroke-width="2.5"/>
+        </svg>
+
+        <!-- ===== LIGHTNING BOLTS ===== -->
+        <svg style="width:3.5%;left:18%;top:15%;position:absolute" viewBox="0 0 30 50">
+            <polygon points="16,0 4,22 14,22 8,50 26,18 16,18 22,0" fill="var(--yellow)" stroke="var(--o)" stroke-width="2.5" stroke-linejoin="round"/>
+        </svg>
+        <svg style="width:2.8%;right:16%;top:72%;position:absolute" viewBox="0 0 30 50">
+            <polygon points="16,0 4,22 14,22 8,50 26,18 16,18 22,0" fill="var(--yellow)" stroke="var(--o)" stroke-width="2.5" stroke-linejoin="round"/>
+        </svg>
+
+        <!-- ===== BITCOIN COINS ===== -->
+        <svg style="width:5%;left:72%;bottom:10%;position:absolute" viewBox="0 0 60 60">
+            <circle cx="30" cy="30" r="26" fill="var(--yellow)" stroke="var(--o)" stroke-width="4"/>
+            <text x="30" y="40" text-anchor="middle" font-size="30" font-weight="bold" fill="var(--o)" font-family="Fredoka">&#8383;</text>
+        </svg>
+        <svg style="width:3.5%;left:46%;bottom:5%;position:absolute" viewBox="0 0 60 60">
+            <circle cx="30" cy="30" r="26" fill="var(--yellow)" stroke="var(--o)" stroke-width="4"/>
+            <text x="30" y="40" text-anchor="middle" font-size="30" font-weight="bold" fill="var(--o)" font-family="Fredoka">&#8383;</text>
+        </svg>
+
+        <!-- ===== SMALL STAR SHAPES ===== -->
+        <svg style="width:2.5%;left:92%;top:20%;position:absolute" viewBox="0 0 30 30">
+            <polygon points="15,2 18,11 28,11 20,17 23,27 15,21 7,27 10,17 2,11 12,11" fill="var(--yellow)" stroke="var(--o)" stroke-width="2"/>
+        </svg>
+        <svg style="width:2%;left:5%;top:35%;position:absolute" viewBox="0 0 30 30">
+            <polygon points="15,2 18,11 28,11 20,17 23,27 15,21 7,27 10,17 2,11 12,11" fill="var(--pink)" stroke="var(--o)" stroke-width="2"/>
+        </svg>
+        <svg style="width:1.8%;left:60%;top:8%;position:absolute" viewBox="0 0 30 30">
+            <polygon points="15,2 18,11 28,11 20,17 23,27 15,21 7,27 10,17 2,11 12,11" fill="var(--orange)" stroke="var(--o)" stroke-width="2"/>
+        </svg>
+
+    </div>
+
+    <!-- ── BOTTOM ── -->
+    <main class="bottom" role="main">
+        <div class="coming-soon" aria-label="Coming soon">COMING SOON</div>
+        <div class="signup">
+            <p class="signup-label" id="signupLabel">Get notified when we launch</p>
+            <form class="signup-form" id="signupForm" aria-labelledby="signupLabel">
+                <label for="emailInput" class="sr-only">Email address</label>
+                <input type="email" placeholder="your@email.com" id="emailInput" required autocomplete="email" aria-label="Your email address" aria-describedby="signupMsg">
+                <button type="submit" aria-label="Subscribe for launch notification">NOTIFY ME</button>
+            </form>
+            <div class="signup-msg" id="signupMsg" aria-live="polite" role="status"></div>
+        </div>
+        <footer class="footer" role="contentinfo">&copy; 2026 Satoshi Stacks &middot; <a href="https://satoshistacks.com">satoshistacks.com</a></footer>
+    </main>
+
+</div>
+
+<script>
+    // BG dots
+    (function() {
+        const bg = document.getElementById('bgDots');
+        const colors = ['#F26522','#E84B8A','#FFC72C','#2D9CDB','#27AE60','#8B5CF6','#EB5757','#1ABC9C'];
+        for (let i = 0; i < 40; i++) {
+            const d = document.createElement('div');
+            d.className = 'bg-dot';
+            d.style.width = d.style.height = (6 + Math.random() * 18) + 'px';
+            d.style.left = Math.random() * 100 + '%';
+            d.style.top = Math.random() * 100 + '%';
+            d.style.background = colors[Math.floor(Math.random() * colors.length)];
+            bg.appendChild(d);
+        }
+    })();
+
+    // Signup → formsubmit.co → allen@satoshistacks.com
+    document.getElementById('signupForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const form = this;
+        const msg = document.getElementById('signupMsg');
+        const btn = form.querySelector('button');
+        const email = document.getElementById('emailInput').value;
+        btn.textContent = '...';
+        btn.disabled = true;
+        msg.textContent = '';
+        msg.className = 'signup-msg';
+
+        fetch('https://formsubmit.co/ajax/allen@satoshistacks.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                _subject: 'New Satoshi Stacks Waitlist Signup',
+                _template: 'table'
+            })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.success) {
+                msg.textContent = "You\u2019re on the list! \uD83C\uDFB0";
+                msg.className = 'signup-msg success';
+                form.reset();
+            } else {
+                msg.textContent = 'Something went wrong. Try again!';
+                msg.style.color = 'var(--red)';
+            }
+        })
+        .catch(function() {
+            msg.textContent = 'Network error. Please try again!';
+            msg.style.color = 'var(--red)';
+        })
+        .finally(function() {
+            btn.textContent = 'NOTIFY ME';
+            btn.disabled = false;
+        });
+    });
+
+    // Subtle parallax on characters (skip on touch devices and reduced motion)
+    if (!('ontouchstart' in window) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.addEventListener('mousemove', function(e) {
+            const chars = document.querySelectorAll('.ch');
+            const mx = (e.clientX / window.innerWidth - 0.5);
+            const my = (e.clientY / window.innerHeight - 0.5);
+            chars.forEach((c, i) => {
+                const s = ((i % 3) + 1) * 4;
+                c.style.transform = `translateY(${Math.sin(Date.now()/1000 + i) * 4}px) translate(${mx*s}px, ${my*s}px)`;
+            });
+        });
+    }
+</script>
+
+</body>
+</html>
