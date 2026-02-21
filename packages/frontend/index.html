@@ -1223,6 +1223,31 @@ z-index: 2;
 transition: transform 0.2s;
 }
 .chat-box.collapsed .chat-collapse-btn { transform: rotate(180deg); }
+/* === ROTATE PHONE OVERLAY === */
+.rotate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background: radial-gradient(ellipse at 50% 40%, #2a3640 0%, #1a2028 60%, #0f1418 100%);
+}
+.rotate-overlay.visible { display: flex; }
+.rotate-content { text-align: center; padding: 32px; }
+.rotate-text {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--cream);
+  margin-bottom: 8px;
+}
+.rotate-subtext {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-medium);
+  opacity: 0.7;
+}
 /* === RESPONSIVE === */
 @media (max-width: 768px) {
 .poker-table { width: 92vw; }
@@ -1332,6 +1357,141 @@ transition: transform 0.2s;
 .pre-action-bar { display: none !important; }
 .table-actions-bar { bottom: 8px; left: 8px; }
 }
+/* === MOBILE PHONE LANDSCAPE === */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Table */
+  body.is-mobile .poker-table {
+    width: min(88vw, 680px);
+    height: 72vh;
+    transform: translate(-50%, -56%);
+    box-shadow:
+      inset 0 3px 8px rgba(0,0,0,0.25), inset 0 -2px 6px rgba(0,0,0,0.1),
+      0 0 0 8px #6b5040, 0 -1px 0 8px #8a6b55, 0 0 0 11px #4a3628,
+      0 4px 0 11px #3a2a1e, 0 8px 24px rgba(0,0,0,0.5);
+  }
+  /* Avatars */
+  body.is-mobile .player-avatar-wrap { width: 52px; height: 52px; }
+  body.is-mobile .empty-avatar { width: 52px; height: 52px; }
+  body.is-mobile .empty-label { font-size: 8px; }
+  body.is-mobile .player-avatar .avatar-initial { font-size: 14px; border-width: 2px; }
+  /* Seat positions */
+  body.is-mobile .seat-1 { top: 6%;  left: 74%; }
+  body.is-mobile .seat-2 { top: 50%; left: 98%; }
+  body.is-mobile .seat-3 { top: 94%; left: 74%; }
+  body.is-mobile .seat-4 { top: 94%; left: 26%; }
+  body.is-mobile .seat-5 { top: 50%; left: 2%; }
+  body.is-mobile .seat-6 { top: 6%;  left: 26%; }
+  /* Nameplates */
+  body.is-mobile .player-nameplate { padding: 3px 8px 3px 5px; gap: 3px; border-width: 1px; }
+  body.is-mobile .player-nameplate .np-icon { width: 12px; height: 12px; }
+  body.is-mobile .player-nameplate .np-name { font-size: 9px; max-width: 50px; }
+  body.is-mobile .player-nameplate .np-amount { font-size: 10px; }
+  body.is-mobile .player-nameplate .np-divider { height: 10px; }
+  body.is-mobile .player-nameplate.hero { padding: 4px 10px 4px 6px; min-width: 100px; }
+  body.is-mobile .player-nameplate.hero .np-name { font-size: 10px; }
+  body.is-mobile .player-nameplate.hero .np-amount { font-size: 11px; }
+  /* Nameplate positions */
+  body.is-mobile .np-pos-1 { top: 2%;  left: 62%; }
+  body.is-mobile .np-pos-2 { top: 50%; left: 84%; }
+  body.is-mobile .np-pos-3 { top: 98%; left: 62%; }
+  body.is-mobile .np-pos-4 { top: 98%; left: 38%; }
+  body.is-mobile .np-pos-5 { top: 50%; left: 16%; }
+  body.is-mobile .np-pos-6 { top: 2%;  left: 38%; }
+  /* Cards on nameplates */
+  body.is-mobile .np-cards { height: 20px; gap: 1px; }
+  body.is-mobile .np-cards .card.small { width: 24px; height: 35px; }
+  /* Community cards */
+  body.is-mobile .card { width: clamp(42px, 6vw, 62px); height: clamp(61px, 8.7vw, 90px); border-radius: 5px; border-width: 1.5px; }
+  body.is-mobile .community-cards { gap: clamp(2px, 0.5vw, 6px); min-width: calc(5 * clamp(42px, 6vw, 62px) + 4 * clamp(2px, 0.5vw, 6px)); }
+  body.is-mobile .card-corner .card-rank { font-size: clamp(9px, 1vw, 12px); }
+  body.is-mobile .card-corner .card-suit { font-size: clamp(8px, 0.9vw, 11px); }
+  body.is-mobile .card-face-suit { font-size: clamp(18px, 3vw, 30px); }
+  body.is-mobile .card-face-letter { font-size: clamp(20px, 3.2vw, 34px); }
+  body.is-mobile .card.ace-card .card-center .card-pip { font-size: clamp(22px, 3.8vw, 38px); }
+  /* Pot & chips */
+  body.is-mobile .pot-label { font-size: clamp(9px, 1.1vw, 13px); padding: 2px 8px; }
+  body.is-mobile .chip-stack { gap: 1px; }
+  body.is-mobile .chip-stack-count { font-size: 7px; }
+  body.is-mobile .np-dealer { width: 16px; height: 16px; font-size: 7px; border-width: 1.5px; }
+  /* Bet positions */
+  body.is-mobile .bet-pos-1 { top: 14%; left: 62%; }
+  body.is-mobile .bet-pos-2 { top: 58%; left: 82%; }
+  body.is-mobile .bet-pos-3 { top: 70%; left: 58%; }
+  body.is-mobile .bet-pos-4 { top: 70%; left: 42%; }
+  body.is-mobile .bet-pos-5 { top: 58%; left: 18%; }
+  body.is-mobile .bet-pos-6 { top: 14%; left: 38%; }
+  /* Controls: full-width bottom, thumb-friendly */
+  body.is-mobile .controls-area {
+    width: 100vw; right: 0; left: 0; bottom: 0;
+    padding: 4px 12px;
+    padding-bottom: calc(4px + var(--sab));
+    padding-left: calc(12px + env(safe-area-inset-left, 0px));
+    padding-right: calc(12px + env(safe-area-inset-right, 0px));
+    background: linear-gradient(to top, rgba(30, 39, 48, 0.95), rgba(30, 39, 48, 0.85) 80%, transparent);
+  }
+  body.is-mobile .bet-controls { gap: 4px; }
+  body.is-mobile .action-buttons { gap: 6px; }
+  body.is-mobile .action-btn { padding: 10px 6px; font-size: 12px; border-radius: 14px; min-height: 40px; }
+  body.is-mobile .bet-presets { gap: 4px; justify-content: center; }
+  body.is-mobile .bet-preset { padding: 4px 8px; font-size: 9px; }
+  body.is-mobile .slider-row { gap: 6px; }
+  body.is-mobile .bet-slider { height: 10px; }
+  body.is-mobile .bet-slider::-webkit-slider-thumb { width: 32px; height: 32px; }
+  body.is-mobile .bet-amount-input { width: 60px; font-size: 13px; padding: 3px 4px; }
+  /* Chat: collapsed to icon by default */
+  body.is-mobile .chat-box {
+    width: 240px; height: 160px; bottom: 0; left: 0;
+    border-radius: 0 12px 0 0; z-index: 55;
+    transform: translateX(-100%);
+    transition: transform 0.3s var(--ease);
+    border-width: 2px; display: flex !important;
+  }
+  body.is-mobile .chat-box.mobile-open { transform: translateX(0); }
+  body.is-mobile .chat-box .chat-tabs { padding: 2px; gap: 2px; }
+  body.is-mobile .chat-box .chat-tab { font-size: 9px; padding: 3px 0; }
+  body.is-mobile .chat-box .chat-msg { font-size: 10px; }
+  body.is-mobile .chat-box .chat-input { font-size: 10px; padding: 3px 8px; }
+  body.is-mobile .chat-box .chat-send-btn { font-size: 10px; padding: 3px 8px; }
+  body.is-mobile .chat-box .chat-input-area { padding: 3px 4px; gap: 3px; }
+  /* Chat toggle button */
+  body.is-mobile .mobile-chat-toggle {
+    position: fixed; bottom: 8px; left: calc(8px + env(safe-area-inset-left, 0px));
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(24, 36, 52, 0.85); border: 1.5px solid rgba(120, 100, 80, 0.4);
+    color: var(--cream); font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 56; backdrop-filter: blur(8px); transition: var(--transition);
+  }
+  body.is-mobile .mobile-chat-toggle:active { transform: scale(0.9); }
+  body.is-mobile .mobile-chat-toggle.has-unread {
+    border-color: var(--mustard); box-shadow: 0 0 8px rgba(232, 168, 56, 0.3);
+  }
+  /* Hide non-essential */
+  body.is-mobile .pre-action-bar { display: none !important; }
+  body.is-mobile .table-actions-bar {
+    bottom: 4px; left: calc(50px + env(safe-area-inset-left, 0px));
+    flex-direction: row; gap: 4px;
+  }
+  body.is-mobile .table-action-btn { padding: 5px 10px; font-size: 9px; }
+  /* Toasts: center top */
+  body.is-mobile .toast-container { right: auto !important; left: 50% !important; transform: translateX(-50%); top: 8px !important; }
+  body.is-mobile .connection-status { font-size: 10px !important; padding: 4px 10px !important; }
+  body.is-mobile #sitBackInBtn { bottom: 60px !important; font-size: 13px !important; padding: 8px 20px !important; }
+  /* Dialogs */
+  body.is-mobile .buyin-card { padding: 16px 20px; max-width: 280px; }
+  body.is-mobile .buyin-title { font-size: 18px; }
+  body.is-mobile .buyin-amount { font-size: 28px; }
+  body.is-mobile .buyin-subtitle { font-size: 11px; margin-bottom: 12px; }
+  body.is-mobile .buyin-btn-sit { padding: 10px 20px; font-size: 13px; }
+  body.is-mobile .buyin-btn-cancel { padding: 10px 14px; font-size: 12px; }
+  body.is-mobile .login-card { padding: 20px 24px; max-width: 320px; }
+  body.is-mobile .login-title { font-size: 22px; }
+  body.is-mobile .login-subtitle { font-size: 12px; margin-bottom: 16px; }
+  body.is-mobile .login-btn { padding: 10px 24px; font-size: 14px; }
+  body.is-mobile .login-logo svg { width: 36px; height: 36px; }
+}
+/* Hide default chat toggle on non-mobile */
+.mobile-chat-toggle { display: none; }
 /* Toast animations */
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(100px); }
@@ -1698,6 +1858,18 @@ Connect with NOSTR
 </div>
 </div>
 </div>
+<!-- Rotate Phone Overlay (mobile portrait) -->
+<div class="rotate-overlay" id="rotateOverlay">
+  <div class="rotate-content">
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="margin-bottom:16px;">
+      <rect x="14" y="4" width="36" height="56" rx="6" stroke="var(--cream)" stroke-width="2.5" fill="none"/>
+      <path d="M56 40 A20 20 0 0 1 36 60" stroke="var(--mustard)" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M36 60 L40 54 M36 60 L30 58" stroke="var(--mustard)" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div class="rotate-text">Rotate your phone to landscape</div>
+    <div class="rotate-subtext">This game plays best in landscape mode</div>
+  </div>
+</div>
 <!-- Socket.IO Client -->
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -1709,6 +1881,21 @@ Connect with NOSTR
 // ============================================================
 const NUM_SEATS = 6;
 const myTableId = 'table-1';
+
+// ============================================================
+//  MOBILE DETECTION
+// ============================================================
+const isMobileDevice = (() => {
+  const ua = navigator.userAgent || '';
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const isMobileUA = /Android|iPhone|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(ua);
+  const isSmallScreen = Math.min(window.screen.width, window.screen.height) <= 500;
+  return isTouchDevice && (isMobileUA || isSmallScreen);
+})();
+
+if (isMobileDevice) {
+  document.body.classList.add('is-mobile');
+}
 
 // ============================================================
 //  SOUND EFFECTS (Web Audio API — no files needed)
@@ -2973,10 +3160,15 @@ function renderControls() {
   // Position controls
   const tableEl = $('pokerTable');
   if (tableEl) {
-    const tRect = tableEl.getBoundingClientRect();
-    const tableBottom = tRect.bottom + 22;
-    const availHeight = window.innerHeight - tableBottom;
-    ca.style.maxHeight = Math.max(availHeight, 60) + 'px';
+    if (isMobileDevice) {
+      // On mobile, controls overlay the bottom of the table
+      ca.style.maxHeight = '';
+    } else {
+      const tRect = tableEl.getBoundingClientRect();
+      const tableBottom = tRect.bottom + 22;
+      const availHeight = window.innerHeight - tableBottom;
+      ca.style.maxHeight = Math.max(availHeight, 60) + 'px';
+    }
   }
   ca.classList.add('visible');
 
@@ -3369,6 +3561,7 @@ function addChatMessage(author, text, isSystem) {
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
   while (el.children.length > 80) el.removeChild(el.firstChild);
+  if (!isSystem) signalMobileUnread();
 }
 
 function addPlayByPlay(text) {
@@ -3505,6 +3698,44 @@ function initChat() {
 }
 
 // ============================================================
+//  MOBILE CHAT TOGGLE
+// ============================================================
+function initMobileChat() {
+  if (!isMobileDevice) return;
+  const chatToggle = document.createElement('button');
+  chatToggle.className = 'mobile-chat-toggle';
+  chatToggle.id = 'mobileChatToggle';
+  chatToggle.innerHTML = '&#x1F4AC;';
+  chatToggle.title = 'Toggle chat';
+  document.body.appendChild(chatToggle);
+
+  const chatBox = document.getElementById('chatBox');
+  chatToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    chatBox.classList.toggle('mobile-open');
+    chatToggle.classList.remove('has-unread');
+  });
+
+  // Close chat when tapping outside
+  document.addEventListener('click', (e) => {
+    if (chatBox && !chatBox.contains(e.target) &&
+        !chatToggle.contains(e.target) &&
+        chatBox.classList.contains('mobile-open')) {
+      chatBox.classList.remove('mobile-open');
+    }
+  });
+}
+
+function signalMobileUnread() {
+  if (!isMobileDevice) return;
+  const chatBox = document.getElementById('chatBox');
+  const toggle = document.getElementById('mobileChatToggle');
+  if (toggle && chatBox && !chatBox.classList.contains('mobile-open')) {
+    toggle.classList.add('has-unread');
+  }
+}
+
+// ============================================================
 //  LIGHTNING BOLTS BACKGROUND
 // ============================================================
 const BOLT_PATHS = [
@@ -3567,14 +3798,29 @@ function scheduleBolt() {
 //  RESIZE / ORIENTATION HANDLERS
 // ============================================================
 let resizeTimer;
+
+function checkOrientation() {
+  if (!isMobileDevice) return;
+  const overlay = document.getElementById('rotateOverlay');
+  if (!overlay) return;
+  const isPortrait = window.innerHeight > window.innerWidth;
+  if (isPortrait) {
+    overlay.classList.add('visible');
+  } else {
+    overlay.classList.remove('visible');
+  }
+}
+
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    checkOrientation();
     if (gameState) render();
   }, 100);
 });
 window.addEventListener('orientationchange', () => {
   setTimeout(() => {
+    checkOrientation();
     if (gameState) render();
   }, 300);
 });
@@ -3993,6 +4239,8 @@ async function init() {
   initChat();
   initBuyinDialog();
   scheduleBolt();
+  checkOrientation();
+  initMobileChat();
 
   // Try to restore existing NOSTR session
   const hasSession = await tryRestoreSession();
