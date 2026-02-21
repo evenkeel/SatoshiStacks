@@ -10,8 +10,8 @@ const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
-const { verifyEvent } = require('nostr-tools/pure');
-const { npubEncode } = require('nostr-tools/nip19');
+const { verifyEvent, finalizeEvent, getPublicKey } = require('nostr-tools/pure');
+const { npubEncode, decode: nip19Decode } = require('nostr-tools/nip19');
 const PokerGame = require('./poker-game');
 const db = require('./database');
 
@@ -26,6 +26,22 @@ if (!process.env.ADMIN_TOKEN) {
   process.exit(1);
 }
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+
+// ==================== NOSTR SERVER IDENTITY ====================
+
+let serverSk, serverPk;
+if (process.env.NOSTR_SERVER_NSEC) {
+  try {
+    const { data: decoded } = nip19Decode(process.env.NOSTR_SERVER_NSEC);
+    serverSk = decoded;
+    serverPk = getPublicKey(serverSk);
+    console.log(`[Nostr] Server identity loaded: ${serverPk.slice(0, 8)}...`);
+  } catch (e) {
+    console.error('[Nostr] Invalid NOSTR_SERVER_NSEC:', e.message);
+  }
+} else {
+  console.log('[Nostr] No NOSTR_SERVER_NSEC set — badge/activity publishing disabled');
+}
 
 const io = new Server(server, {
   cors: {
@@ -670,6 +686,156 @@ const RELAYS = [
 ];
 
 /**
+ * Publish a signed Nostr event to all relays.
+ * Non-blocking, best-effort delivery.
+ */
+async function publishToRelays(event) {
+  const WebSocket = (await import('ws')).default;
+  let published = 0;
+  for (const url of RELAYS) {
+    try {
+      const ws = new WebSocket(url);
+      ws.on('open', () => {
+        ws.send(JSON.stringify(['EVENT', event]));
+        published++;
+      });
+      ws.on('error', () => {});
+      setTimeout(() => { try { ws.close(); } catch (e) {} }, 3000);
+    } catch (e) { /* ignore relay errors */ }
+  }
+  return published;
+}
+
+// ==================== NIP-58 BADGE SYSTEM ====================
+
+const BADGE_DEFINITIONS = [
+  { id: 'card-player', name: 'Card Player', description: 'Played 1000 hands on SatoshiStacks', icon: '🃏', d_tag: 'card-player' },
+  { id: 'royal-flush', name: 'Royal Flush', description: 'Hit a Royal Flush on SatoshiStacks', icon: '👑', d_tag: 'royal-flush' }
+];
+
+/**
+ * Check badge eligibility and award if earned.
+ * Called after each hand by poker-game.js via onBadgeCheck callback.
+ */
+function checkAndAwardBadges(userId, stats) {
+  if (!serverSk) return; // Can't publish without server key
+
+  const checks = [
+    { badgeId: 'card-player', condition: stats.handsPlayed >= 1000 },
+    { badgeId: 'royal-flush', condition: stats.handName && stats.handName.toLowerCase().includes('royal flush') }
+  ];
+
+  for (const { badgeId, condition } of checks) {
+    if (!condition) continue;
+    if (db.hasBadge(userId, badgeId)) continue;
+
+    const badge = BADGE_DEFINITIONS.find(b => b.id === badgeId);
+    if (!badge) continue;
+
+    try {
+      // Publish kind 8 badge award event to relays
+      const awardEvent = finalizeEvent({
+        kind: 8,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['a', `30009:${serverPk}:${badge.d_tag}`],
+          ['p', userId]
+        ],
+        content: ''
+      }, serverSk);
+
+      publishToRelays(awardEvent);
+
+      // Store in DB
+      db.awardBadge(userId, badgeId, awardEvent.id);
+
+      console.log(`[Nostr] Badge "${badge.name}" ${badge.icon} awarded to ${userId.slice(0, 8)}...`);
+
+      // Notify player via socket
+      const socketId = userSockets.get(userId);
+      if (socketId) {
+        io.to(socketId).emit('badge-awarded', {
+          badgeId: badge.id,
+          badgeName: badge.name,
+          badgeIcon: badge.icon
+        });
+      }
+
+      // Broadcast updated game state so nameplates show the badge
+      for (const [tableId, game] of games) {
+        if (game.players.some(p => p && p.userId === userId)) {
+          broadcastGameState(tableId);
+        }
+      }
+    } catch (e) {
+      console.error(`[Nostr] Failed to award badge "${badgeId}":`, e.message);
+    }
+  }
+}
+
+// ==================== NIP-53 LIVE ACTIVITIES ====================
+
+const liveActivityTimers = new Map(); // tableId -> setTimeout id
+
+/**
+ * Publish/update a kind 30311 Live Activity event for a table.
+ * Debounced to avoid spamming relays on rapid join/leave.
+ */
+function scheduleLiveActivityUpdate(tableId, immediate = false) {
+  if (!serverSk) return;
+
+  if (liveActivityTimers.has(tableId)) {
+    clearTimeout(liveActivityTimers.get(tableId));
+  }
+
+  const delay = immediate ? 0 : 10000; // 10s debounce unless immediate
+  const timer = setTimeout(() => {
+    liveActivityTimers.delete(tableId);
+    publishLiveActivity(tableId);
+  }, delay);
+
+  liveActivityTimers.set(tableId, timer);
+}
+
+function publishLiveActivity(tableId) {
+  if (!serverSk) return;
+
+  const game = games.get(tableId);
+  const seatedPlayers = game ? game.players.filter(p => p !== null) : [];
+  const isLive = seatedPlayers.length > 0;
+
+  try {
+    const tags = [
+      ['d', `satoshistacks-table-${tableId}`],
+      ['title', `SatoshiStacks Poker - Table ${tableId}`],
+      ['summary', isLive ? `${seatedPlayers.length} player${seatedPlayers.length !== 1 ? 's' : ''} • 25/50 blinds` : 'Table empty'],
+      ['streaming', 'https://satoshistacks.com'],
+      ['status', isLive ? 'live' : 'ended'],
+      ['t', 'poker'],
+      ['t', 'nostr'],
+      ['t', 'bitcoin']
+    ];
+
+    // Add p tags for each seated player
+    for (const p of seatedPlayers) {
+      tags.push(['p', p.userId]);
+    }
+
+    const activityEvent = finalizeEvent({
+      kind: 30311,
+      created_at: Math.floor(Date.now() / 1000),
+      tags,
+      content: ''
+    }, serverSk);
+
+    publishToRelays(activityEvent);
+    console.log(`[Nostr] Published live activity: table ${tableId} - ${isLive ? seatedPlayers.length + ' players' : 'ended'}`);
+  } catch (e) {
+    console.error(`[Nostr] Failed to publish live activity for ${tableId}:`, e.message);
+  }
+}
+
+/**
  * Fetch kind 0 (profile metadata) from NOSTR relays.
  * Updates DB with display name and picture if found.
  * Non-blocking — called after auth response is sent.
@@ -832,7 +998,14 @@ function ensureGameExists(tableId) {
     if (game.players.every(p => p === null)) {
       games.delete(tableId);
       console.log(`Table ${tableId} destroyed (empty after auto-kick)`);
+      // NIP-53: Publish "ended" live activity when table empties
+      scheduleLiveActivityUpdate(tableId, true);
     }
+  };
+
+  // NIP-58: Badge check callback after each hand
+  game.onBadgeCheck = (userId, stats) => {
+    checkAndAwardBadges(userId, stats);
   };
 
   games.set(tableId, game);
@@ -895,6 +1068,7 @@ io.on('connection', (socket) => {
     // Broadcast to all in the table room (players + observers)
     io.to(`table-${tableId}`).emit('chat-message', {
       sender: senderName,
+      senderId: user ? user.userId : null, // pubkey hex for mute filtering (NIP-51)
       text: trimmed,
       isObserver: !!observer,
       timestamp: Date.now()
@@ -1045,6 +1219,9 @@ io.on('connection', (socket) => {
       // Broadcast updated game state to all players at table
       broadcastGameState(tableId);
 
+      // NIP-53: Update live activity when player joins
+      scheduleLiveActivityUpdate(tableId);
+
     } catch (error) {
       socket.emit('error', { message: error.message });
     }
@@ -1099,13 +1276,17 @@ io.on('connection', (socket) => {
     if (game) {
       game.removePlayer(user.userId);
       socket.leave(`table-${user.tableId}`);
-      
+
       // Cleanup if table is empty
       if (game.players.every(p => p === null)) {
         games.delete(user.tableId);
         console.log(`Table ${user.tableId} destroyed (empty)`);
+        // NIP-53: Publish "ended" live activity
+        scheduleLiveActivityUpdate(user.tableId, true);
       } else {
         broadcastGameState(user.tableId);
+        // NIP-53: Update live activity when player leaves
+        scheduleLiveActivityUpdate(user.tableId);
       }
     }
 
@@ -1264,6 +1445,25 @@ function broadcastGameState(tableId) {
   const game = games.get(tableId);
   if (!game) return;
 
+  // Pre-fetch badges for all seated players (batch lookup)
+  const badgeMap = new Map();
+  for (const p of game.players) {
+    if (p) {
+      const badges = db.getPlayerBadges(p.userId);
+      badgeMap.set(p.userId, badges.map(b => b.badge_id));
+    }
+  }
+
+  // Helper: attach badges to game state
+  function addBadgesToState(state) {
+    for (const p of state.players) {
+      if (p) {
+        p.badges = badgeMap.get(p.userId) || [];
+      }
+    }
+    return state;
+  }
+
   // Send personalized state to each seated player
   game.players.forEach((player, idx) => {
     if (!player) return;
@@ -1271,11 +1471,11 @@ function broadcastGameState(tableId) {
     const socketId = userSockets.get(player.userId);
     if (!socketId) return;
 
-    io.to(socketId).emit('game-state', game.getGameState(player.userId));
+    io.to(socketId).emit('game-state', addBadgesToState(game.getGameState(player.userId)));
   });
 
   // Send observer/spectator state to all observers at this table
-  const observerState = game.getGameState(null);
+  const observerState = addBadgesToState(game.getGameState(null));
   for (const [socketId, obs] of observerSockets) {
     if (obs.tableId === tableId) {
       io.to(socketId).emit('game-state', observerState);
@@ -1287,6 +1487,55 @@ function broadcastGameState(tableId) {
 server.listen(PORT, () => {
   console.log(`🃏 SatoshiStacks server running on port ${PORT}`);
   console.log(`WebSocket ready for connections`);
+
+  // NIP-89: Publish App Handler at startup (makes SatoshiStacks discoverable)
+  if (serverSk) {
+    try {
+      const handlerEvent = finalizeEvent({
+        kind: 31990,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['d', 'satoshistacks'],
+          ['k', '30311'],
+          ['web', 'https://satoshistacks.com', 'nevent'],
+          ['name', 'SatoshiStacks'],
+          ['about', 'Play-money poker built on Nostr identity and Lightning'],
+          ['picture', 'https://satoshistacks.com/favicon.ico']
+        ],
+        content: ''
+      }, serverSk);
+      publishToRelays(handlerEvent);
+      console.log('[Nostr] Published NIP-89 app handler');
+    } catch (e) {
+      console.error('[Nostr] Failed to publish app handler:', e.message);
+    }
+
+    // NIP-58: Publish badge definitions (kind 30009)
+    const BADGE_DEFINITIONS = [
+      { id: 'card-player', name: 'Card Player', description: 'Played 1000 hands on SatoshiStacks', icon: '🃏' },
+      { id: 'royal-flush', name: 'Royal Flush', description: 'Hit a Royal Flush on SatoshiStacks', icon: '👑' }
+    ];
+    for (const badge of BADGE_DEFINITIONS) {
+      try {
+        const badgeDefEvent = finalizeEvent({
+          kind: 30009,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['d', badge.id],
+            ['name', badge.name],
+            ['description', badge.description],
+            ['image', `https://satoshistacks.com/badges/${badge.id}.png`],
+            ['thumb', `https://satoshistacks.com/badges/${badge.id}-thumb.png`]
+          ],
+          content: ''
+        }, serverSk);
+        publishToRelays(badgeDefEvent);
+      } catch (e) {
+        console.error(`[Nostr] Failed to publish badge definition "${badge.id}":`, e.message);
+      }
+    }
+    console.log('[Nostr] Published NIP-58 badge definitions');
+  }
 });
 
 // Graceful shutdown

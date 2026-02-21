@@ -1811,6 +1811,41 @@ transition: transform 0.2s;
 .login-back-btn:hover { opacity: 0.8; }
 /* Mobile QR adjustments */
 body.is-mobile .login-qr-container { padding: 8px; }
+
+/* NIP-47 NWC Settings Button */
+.nwc-btn {
+  background: linear-gradient(135deg, #2a2a3a, #1a1a2a);
+  border: 1px solid rgba(255,255,255,0.1); color: var(--text);
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  transition: all 0.2s;
+}
+.nwc-btn:hover { border-color: var(--mustard); color: var(--mustard); }
+.nwc-btn.connected {
+  border-color: #4caf50; color: #4caf50;
+  background: linear-gradient(135deg, #1a2a1a, #0a1a0a);
+}
+
+/* NIP-58 Badge icons on nameplates */
+.np-badges { font-size: 10px; margin-left: 2px; white-space: nowrap; line-height: 1; }
+
+/* NIP-51 Friend indicator on nameplates */
+.np-friend { font-size: 10px; margin-left: 1px; line-height: 1; }
+
+/* Badge toast animation */
+.badge-toast {
+  position: fixed; top: 20%; left: 50%; transform: translateX(-50%);
+  background: linear-gradient(135deg, #2a1a00, #1a0a00);
+  border: 2px solid var(--mustard); border-radius: 12px;
+  padding: 16px 28px; color: var(--mustard);
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: 18px; z-index: 10000;
+  animation: badgePopIn 0.4s ease-out, badgeFadeOut 0.4s 2.6s forwards;
+  box-shadow: 0 0 40px rgba(207,181,59,0.3);
+  text-align: center;
+}
+@keyframes badgePopIn { 0% { transform: translateX(-50%) scale(0.5); opacity: 0; } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
+@keyframes badgeFadeOut { 0% { opacity: 1; } 100% { opacity: 0; } }
 </style>
 </head>
 <body>
@@ -1903,6 +1938,10 @@ body.is-mobile .login-qr-container { padding: 8px; }
 <div class="setting-row">
 <span>Auto-Muck Losers</span>
 <div class="setting-toggle on" data-setting="autoMuck"></div>
+</div>
+<div class="setting-row nwc-row" id="nwcSettingRow" style="display:none">
+<span>⚡ Lightning Wallet</span>
+<button class="setting-btn nwc-btn" id="nwcConnectBtn" onclick="window.connectNWC()">Connect</button>
 </div>
 </div>
 <div class="chat-input-area" id="chatInputArea">
@@ -2120,6 +2159,13 @@ let cachedHoleCards = null;    // Cache our hole cards so they survive state gli
 let isObserver = false;       // True when watching without a seat
 let observerName = null;      // Random name assigned by server for observers
 let pendingSeat = null;       // Seat index clicked (0-5) while waiting for auth/buy-in
+
+// NIP-51: Follow/Mute list state
+let myFollowSet = new Set();  // pubkeys I follow
+let myMuteSet = new Set();    // pubkeys I've muted
+
+// Badge icon map
+const BADGE_ICONS = { 'card-player': '🃏', 'royal-flush': '👑' };
 
 const SUITS = ['h','d','c','s'];
 const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
@@ -2532,6 +2578,12 @@ function storeAuthSession(verifyData) {
   if (myNostrName) localStorage.setItem('ss_nostrName', myNostrName);
   if (myNostrPicture) localStorage.setItem('ss_nostrPicture', myNostrPicture);
   if (verifyData.profile.lud16) localStorage.setItem('ss_lud16', verifyData.profile.lud16);
+
+  // NIP-51: Fetch follow/mute lists in background
+  fetchFollowAndMuteLists(myPubkeyHex);
+
+  // NIP-47: Show wallet connect option in settings
+  showNWCRow();
 }
 
 // Challenge-response auth using a signer object (window.nostr or NIP-46 BunkerSigner)
@@ -2773,6 +2825,7 @@ function nostrLogout() {
   localStorage.removeItem('ss_nostrPicture');
   localStorage.removeItem('ss_lud16');
   localStorage.removeItem('ss_authMethod');
+  localStorage.removeItem('ss_nwcUri');
   mySessionToken = null;
   myPubkeyHex = null;
   myNpub = null;
@@ -2783,6 +2836,11 @@ function nostrLogout() {
   mySeat = null;
   gameState = null;
   cachedHoleCards = null;
+  // Clear NIP-51 follow/mute state
+  myFollowSet = new Set();
+  myMuteSet = new Set();
+  // Hide NWC row
+  showNWCRow();
   // Clean up NIP-46 state
   if (nip46Signer) {
     try { nip46Signer.close(); } catch (e) { /* ignore */ }
@@ -2802,6 +2860,93 @@ function nostrLogout() {
   connectAsObserver();
 }
 window.nostrLogout = nostrLogout;
+
+// ============================================================
+//  NIP-47: Nostr Wallet Connect
+// ============================================================
+function connectNWC() {
+  const existing = localStorage.getItem('ss_nwcUri');
+  if (existing) {
+    // Already connected — offer disconnect
+    if (confirm('Disconnect Lightning wallet?')) {
+      localStorage.removeItem('ss_nwcUri');
+      updateNWCButton();
+    }
+    return;
+  }
+  const uri = prompt('Paste your nostr+walletconnect:// URI from your wallet (Alby, Mutiny, etc.):');
+  if (!uri || !uri.startsWith('nostr+walletconnect://')) {
+    if (uri) showToast('Invalid NWC URI — must start with nostr+walletconnect://');
+    return;
+  }
+  localStorage.setItem('ss_nwcUri', uri);
+  updateNWCButton();
+  showToast('⚡ Lightning wallet connected!');
+}
+window.connectNWC = connectNWC;
+
+function updateNWCButton() {
+  const btn = $('nwcConnectBtn');
+  if (!btn) return;
+  const connected = !!localStorage.getItem('ss_nwcUri');
+  btn.textContent = connected ? 'Connected ⚡' : 'Connect';
+  btn.classList.toggle('connected', connected);
+}
+
+function showNWCRow() {
+  const row = $('nwcSettingRow');
+  if (row) row.style.display = myUserId ? '' : 'none';
+  updateNWCButton();
+}
+
+// ============================================================
+//  NIP-51: Follow/Mute List Fetching
+// ============================================================
+async function fetchFollowAndMuteLists(pubkeyHex) {
+  if (!pubkeyHex) return;
+  try {
+    await nip46Ready;
+    const NIP46 = window.NostrNIP46;
+    if (!NIP46 || !NIP46.SimplePool) return;
+
+    const pool = new NIP46.SimplePool();
+    const relays = ['wss://relay.damus.io', 'wss://relay.nostr.band', 'wss://nos.lol', 'wss://relay.primal.net'];
+
+    // Fetch kind 3 (follow list) and kind 10000 (mute list)
+    const events = await Promise.race([
+      pool.querySync(relays, { kinds: [3, 10000], authors: [pubkeyHex], limit: 2 }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+    ]);
+
+    for (const ev of events) {
+      const pubkeys = (ev.tags || []).filter(t => t[0] === 'p' && t[1]).map(t => t[1]);
+      if (ev.kind === 3) {
+        myFollowSet = new Set(pubkeys);
+        console.log(`[NIP-51] Loaded ${myFollowSet.size} follows`);
+      } else if (ev.kind === 10000) {
+        myMuteSet = new Set(pubkeys);
+        console.log(`[NIP-51] Loaded ${myMuteSet.size} mutes`);
+      }
+    }
+
+    pool.close(relays);
+    // Re-render nameplates to show friend indicators
+    if (gameState) render();
+  } catch (e) {
+    console.log(`[NIP-51] Failed to fetch lists: ${e.message}`);
+  }
+}
+
+// ============================================================
+//  NIP-58: Badge Toast
+// ============================================================
+function showBadgeToast(badgeName, badgeIcon) {
+  const div = document.createElement('div');
+  div.className = 'badge-toast';
+  div.innerHTML = `🏆 Badge Earned!<br>${badgeIcon} ${esc(badgeName)}`;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 3200);
+}
 
 async function tryRestoreSession(retries = 2) {
   if (!mySessionToken) return false;
@@ -2823,6 +2968,10 @@ async function tryRestoreSession(retries = 2) {
       myNostrPicture = data.profile.picture;
       myUserId = myPubkeyHex;
       myUsername = myNostrName || myNpub.slice(0, 12) + '...';
+      // NIP-51: Fetch follow/mute lists in background
+      fetchFollowAndMuteLists(myPubkeyHex);
+      // NIP-47: Show wallet connect option
+      showNWCRow();
       return true;
     } catch (err) {
       console.error(`[NOSTR] Session restore attempt ${attempt + 1} failed:`, err);
@@ -2992,10 +3141,18 @@ function setupCommonSocketHandlers() {
     handleTimeBankStart(playerIndex, timeBankMs);
   });
 
-  // Server-side chat messages
-  socket.on('chat-message', ({ sender, text, isObserver: fromObserver, timestamp }) => {
+  // Server-side chat messages (with NIP-51 mute filtering)
+  socket.on('chat-message', ({ sender, senderId, text, isObserver: fromObserver, timestamp }) => {
+    // NIP-51: Skip messages from muted users
+    if (senderId && myMuteSet.has(senderId)) return;
     const prefix = fromObserver ? `[${sender}]` : sender;
     addChatMessage(prefix, text);
+  });
+
+  // NIP-58: Badge awarded notification
+  socket.on('badge-awarded', ({ badgeId, badgeName, badgeIcon }) => {
+    showBadgeToast(badgeName, badgeIcon);
+    addChatMessage('System', `🏆 You earned the ${badgeIcon} ${badgeName} badge!`, true);
   });
 
   // Real-time hand log
@@ -3234,7 +3391,7 @@ function updateNameplates() {
       <div class="np-action" id="npAction-${visualPos}"></div>
       <div class="np-content">
         <div class="np-icon">${renderChipPillIcon(player.stack, 24)}</div>
-        <span class="np-name">${esc(truncName(player.nostrName || player.username))}</span>
+        <span class="np-name">${esc(truncName(player.nostrName || player.username))}</span>${myFollowSet.has(player.userId) && !isMe ? '<span class="np-friend" title="You follow this player">⭐</span>' : ''}${player.badges && player.badges.length ? `<span class="np-badges">${player.badges.map(b => BADGE_ICONS[b] || '').join('')}</span>` : ''}
         <div class="np-divider"></div>
         <div class="np-amount-wrap"><span class="np-amount">${fmt(player.stack)}</span></div>
       </div>

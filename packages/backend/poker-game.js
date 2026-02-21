@@ -907,6 +907,19 @@ class PokerGame {
             net_result: endStack - startStack,
             current_chips: endStack
           });
+
+          // NIP-58: Check badge eligibility after stats update
+          if (this.onBadgeCheck) {
+            const updatedPlayer = db.getPlayer(p.userId);
+            this.onBadgeCheck(p.userId, {
+              handsPlayed: updatedPlayer ? updatedPlayer.hands_played : 0,
+              handsWon: updatedPlayer ? updatedPlayer.hands_won : 0,
+              currentChips: endStack,
+              handName: p.hand ? p.hand.name : null,
+              potSize: playerData.reduce((sum, pd) => sum + pd.total_bet, 0),
+              wonAmount: won ? (endStack - (startStack - totalBet)) : 0
+            });
+          }
         }
       });
 

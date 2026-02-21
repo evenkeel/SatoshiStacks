@@ -150,6 +150,19 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_challenges_expires ON nostr_challenges(expires_at);
   `);
 
+  // Badge awards table (NIP-58)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS badge_awards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      badge_id TEXT NOT NULL,
+      awarded_at INTEGER DEFAULT (strftime('%s','now')),
+      nostr_event_id TEXT,
+      UNIQUE(user_id, badge_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_badge_awards_user ON badge_awards(user_id);
+  `);
+
   // Migration: Add NOSTR columns to players table (safe for existing DBs)
   const migrations = [
     `ALTER TABLE players ADD COLUMN auth_type TEXT DEFAULT 'nostr'`,
@@ -585,6 +598,43 @@ function cleanupAbuseLog() {
   }
 }
 
+// ==================== BADGE FUNCTIONS (NIP-58) ====================
+
+/**
+ * Award a badge to a player. Returns true if newly awarded, false if already had it.
+ */
+function awardBadge(userId, badgeId, nostrEventId) {
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO badge_awards (user_id, badge_id, nostr_event_id)
+      VALUES (?, ?, ?)
+    `);
+    stmt.run(userId, badgeId, nostrEventId || null);
+    console.log(`[Database] Badge "${badgeId}" awarded to ${userId.slice(0, 8)}...`);
+    return true;
+  } catch (e) {
+    if (e.message.includes('UNIQUE constraint')) return false; // Already has badge
+    console.error('[Database] Error awarding badge:', e);
+    return false;
+  }
+}
+
+/**
+ * Check if player already has a specific badge
+ */
+function hasBadge(userId, badgeId) {
+  const stmt = db.prepare('SELECT id FROM badge_awards WHERE user_id = ? AND badge_id = ?');
+  return stmt.get(userId, badgeId) !== undefined;
+}
+
+/**
+ * Get all badges for a player
+ */
+function getPlayerBadges(userId) {
+  const stmt = db.prepare('SELECT badge_id, awarded_at FROM badge_awards WHERE user_id = ? ORDER BY awarded_at');
+  return stmt.all(userId);
+}
+
 // Initialize on module load
 initDatabase();
 
@@ -624,4 +674,8 @@ module.exports = {
   setSessionToken,
   getPlayerBySession,
   cleanupExpiredChallenges,
+  // Badges (NIP-58)
+  awardBadge,
+  hasBadge,
+  getPlayerBadges,
 };
