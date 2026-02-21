@@ -2504,12 +2504,12 @@ function populateLoginMethods() {
   if (helpEl) {
     if (!isMobileDevice) {
       helpEl.innerHTML = hasExtension
-        ? 'Or scan with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://nsec.app" target="_blank" rel="noopener">nsec.app</a>, etc.'
-        : 'Use a signer like <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> or <a href="https://nsec.app" target="_blank" rel="noopener">nsec.app</a>';
+        ? 'Or scan with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> or any NIP-46 signer'
+        : 'Use a signer like <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> or <a href="https://nostrconnect.org" target="_blank" rel="noopener">Nostr Connect</a>';
     } else if (isAndroid) {
       helpEl.innerHTML = 'Get <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> from GitHub or Play Store';
     } else if (isIOS) {
-      helpEl.innerHTML = 'Or use <a href="https://nsec.app" target="_blank" rel="noopener">nsec.app</a> (web-based signer)';
+      helpEl.innerHTML = 'Use <a href="https://github.com/nickyray/nostrkeyring" target="_blank" rel="noopener">Nostr Keyring</a> or any NIP-46 signer';
     } else {
       helpEl.innerHTML = 'Requires a Nostr signer app or browser extension';
     }
