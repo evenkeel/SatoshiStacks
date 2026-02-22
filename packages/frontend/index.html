@@ -1790,27 +1790,37 @@ transition: transform 0.2s;
 .login-method-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .login-method-btn .btn-icon { width: 18px; height: 18px; flex-shrink: 0; }
 /* QR Code screen */
-.login-qr-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.login-qr-screen.hidden { display: none; }
-.login-qr-label { font-size: 14px; font-weight: 700; color: var(--cream); opacity: 0.8; margin: 0; }
-.login-qr-container {
-  background: white; padding: 12px; border-radius: var(--radius-md);
-  display: inline-block; line-height: 0;
+/* Bunker URL login screen */
+.login-bunker-screen { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 8px; }
+.login-bunker-screen.hidden { display: none; }
+.login-bunker-label { font-size: 15px; font-weight: 700; color: var(--cream); margin: 0; }
+.login-bunker-instructions {
+  font-size: 12px; color: var(--sage); margin: 0; text-align: center; line-height: 1.5;
 }
-.login-qr-container canvas, .login-qr-container img { display: block; }
-.login-qr-hint {
-  font-size: 12px; font-weight: 600; color: var(--sage); margin: 0;
-  animation: qrPulse 2s ease-in-out infinite;
+.login-bunker-instructions a { color: var(--mustard); text-decoration: underline; }
+.login-bunker-instructions code {
+  background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;
+  font-size: 11px; font-family: monospace;
 }
-@keyframes qrPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+.login-bunker-input {
+  width: 100%; max-width: 340px; padding: 10px 12px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius-md); color: var(--cream);
+  font-family: monospace; font-size: 12px; outline: none;
+  transition: border-color 0.2s;
+}
+.login-bunker-input:focus { border-color: var(--mustard); }
+.login-bunker-input::placeholder { color: rgba(255,255,255,0.25); font-family: monospace; font-size: 11px; }
+.login-bunker-submit { width: 100%; max-width: 340px; margin-top: 4px; }
+.login-bunker-hint {
+  font-size: 12px; font-weight: 600; color: var(--sage); margin: 0; min-height: 16px;
+}
 .login-back-btn {
   background: none; border: none; color: var(--teal-muted);
   font-family: inherit; font-size: 13px; font-weight: 700;
   cursor: pointer; text-decoration: underline; padding: 8px 16px;
 }
 .login-back-btn:hover { opacity: 0.8; }
-/* Mobile QR adjustments */
-body.is-mobile .login-qr-container { padding: 8px; }
 
 /* NIP-47 NWC Settings Button */
 .nwc-btn {
@@ -1962,11 +1972,20 @@ body.is-mobile .login-qr-container { padding: 8px; }
 <div class="login-methods" id="loginMethods">
   <!-- Dynamically populated by populateLoginMethods() -->
 </div>
-<!-- QR Code Screen (hidden by default) -->
-<div class="login-qr-screen hidden" id="loginQrScreen">
-  <p class="login-qr-label">Scan with your Nostr signer app</p>
-  <div class="login-qr-container" id="loginQrContainer"></div>
-  <p class="login-qr-hint" id="loginQrHint">Waiting for connection...</p>
+<!-- Bunker URL Screen (hidden by default) -->
+<div class="login-bunker-screen hidden" id="loginBunkerScreen">
+  <p class="login-bunker-label">Connect with Bunker URL</p>
+  <p class="login-bunker-instructions">
+    In your Nostr signer app (<a href="https://amber.nostr.dev" target="_blank" rel="noopener">Amber</a>,
+    <a href="https://nostrconnect.org" target="_blank" rel="noopener">Nostr Connect</a>, or similar),
+    find the <strong>"Connect App"</strong> or <strong>"Bunker URL"</strong> option.
+    Copy the <code>bunker://</code> URL and paste it below.
+  </p>
+  <input type="text" class="login-bunker-input" id="loginBunkerInput"
+    placeholder="bunker://pubkey?relay=wss://...&secret=..."
+    autocomplete="off" spellcheck="false">
+  <button class="login-method-btn primary login-bunker-submit" id="loginBunkerSubmit" onclick="submitBunkerLogin()">Connect</button>
+  <p class="login-bunker-hint" id="loginBunkerHint"></p>
   <button class="login-back-btn" id="loginBackBtn" onclick="loginGoBack()">Back</button>
 </div>
 <p class="login-help" id="loginHelp"></p>
@@ -1999,17 +2018,18 @@ body.is-mobile .login-qr-container { padding: 8px; }
   </div>
 </div>
 <!-- QR Code Library (for NIP-46 login) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- QRCode.js removed — bunker URL paste replaced QR code scanning -->
 <!-- NIP-46 (Nostr Connect) dependencies from nostr-tools -->
 <script type="module">
 import { generateSecretKey, getPublicKey } from 'https://esm.sh/nostr-tools@2.23.1/pure';
-import { BunkerSigner, createNostrConnectURI } from 'https://esm.sh/nostr-tools@2.23.1/nip46';
+import { BunkerSigner, createNostrConnectURI, parseBunkerInput } from 'https://esm.sh/nostr-tools@2.23.1/nip46';
 import { SimplePool } from 'https://esm.sh/nostr-tools@2.23.1/pool';
 window.NostrNIP46 = {
   generateSecretKey,
   getPublicKey,
   BunkerSigner,
   createNostrConnectURI,
+  parseBunkerInput,
   SimplePool,
   loaded: true
 };
@@ -2463,9 +2483,9 @@ function showLoginOverlay() {
   if (overlay) overlay.classList.remove('hidden');
   // Reset to method selection screen
   const methods = document.getElementById('loginMethods');
-  const qrScreen = document.getElementById('loginQrScreen');
+  const bunkerScreen = document.getElementById('loginBunkerScreen');
   if (methods) methods.classList.remove('hidden');
-  if (qrScreen) qrScreen.classList.add('hidden');
+  if (bunkerScreen) bunkerScreen.classList.add('hidden');
   // Cancel any pending NIP-46 connection
   if (nip46AbortController) {
     nip46AbortController.abort();
@@ -2501,7 +2521,8 @@ const LOGIN_ICONS = {
   extension: '<svg class="btn-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M6 10.5C6 8.5 8 6 10 6s4 2.5 4 4.5-2 4.5-4 4.5-4-2.5-4-4.5z" fill="currentColor" opacity="0.3"/><circle cx="10" cy="10" r="2.5" fill="currentColor"/></svg>',
   qrcode: '<svg class="btn-icon" viewBox="0 0 20 20" fill="currentColor"><rect x="2" y="2" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="11" y="2" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="2" y="11" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="4" y="4" width="3" height="3" rx="0.5"/><rect x="13" y="4" width="3" height="3" rx="0.5"/><rect x="4" y="13" width="3" height="3" rx="0.5"/><rect x="12" y="12" width="2" height="2"/><rect x="16" y="12" width="2" height="2"/><rect x="12" y="16" width="2" height="2"/><rect x="16" y="16" width="2" height="2"/><rect x="14" y="14" width="2" height="2"/></svg>',
   amber: '<svg class="btn-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M10 4v4l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/></svg>',
-  keyring: '<svg class="btn-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M10 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 14h2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 16h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
+  keyring: '<svg class="btn-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M10 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 14h2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 16h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  bunker: '<svg class="btn-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="8" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8V6a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="13" r="1.5" fill="currentColor"/></svg>'
 };
 
 function populateLoginMethods() {
@@ -2512,28 +2533,30 @@ function populateLoginMethods() {
   const hasExtension = !!window.nostr;
 
   if (!isMobileDevice) {
-    // DESKTOP: Extension + QR Code
+    // DESKTOP: Extension + Bunker URL
     if (hasExtension) {
       container.innerHTML =
         `<button class="login-method-btn primary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>` +
-        `<button class="login-method-btn secondary" onclick="startQRCodeLogin()">${LOGIN_ICONS.qrcode} Scan QR Code</button>`;
+        `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Connect with Bunker URL</button>`;
     } else {
       container.innerHTML =
-        `<button class="login-method-btn primary" onclick="startQRCodeLogin()">${LOGIN_ICONS.qrcode} Scan QR Code</button>` +
-        `<button class="login-method-btn secondary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>`;
+        `<button class="login-method-btn primary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>` +
+        `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Connect with Bunker URL</button>`;
     }
   } else if (isAndroid) {
-    // ANDROID: Amber deep link
+    // ANDROID: Amber deep link + Bunker URL fallback
     container.innerHTML =
-      `<button class="login-method-btn primary" onclick="startDeepLinkLogin('Amber')">${LOGIN_ICONS.amber} Sign in with Amber</button>`;
+      `<button class="login-method-btn primary" onclick="startDeepLinkLogin('Amber')">${LOGIN_ICONS.amber} Sign in with Amber</button>` +
+      `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Connect with Bunker URL</button>`;
     if (hasExtension) {
       container.innerHTML +=
         `<button class="login-method-btn secondary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>`;
     }
   } else if (isIOS) {
-    // iOS: Nostr Keyring deep link
+    // iOS: Nostr Keyring deep link + Bunker URL fallback
     container.innerHTML =
-      `<button class="login-method-btn primary" onclick="startDeepLinkLogin('Nostr Keyring')">${LOGIN_ICONS.keyring} Sign in with Nostr Keyring</button>`;
+      `<button class="login-method-btn primary" onclick="startDeepLinkLogin('Nostr Keyring')">${LOGIN_ICONS.keyring} Sign in with Nostr Keyring</button>` +
+      `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Connect with Bunker URL</button>`;
     if (hasExtension) {
       container.innerHTML +=
         `<button class="login-method-btn secondary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>`;
@@ -2542,7 +2565,7 @@ function populateLoginMethods() {
     // Fallback: show all
     container.innerHTML =
       `<button class="login-method-btn primary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>` +
-      `<button class="login-method-btn secondary" onclick="startQRCodeLogin()">${LOGIN_ICONS.qrcode} Scan QR Code</button>`;
+      `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Connect with Bunker URL</button>`;
   }
 
   // Update help text
@@ -2550,12 +2573,12 @@ function populateLoginMethods() {
   if (helpEl) {
     if (!isMobileDevice) {
       helpEl.innerHTML = hasExtension
-        ? 'Or scan with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> or any NIP-46 signer'
-        : 'Use a signer like <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> or <a href="https://nostrconnect.org" target="_blank" rel="noopener">Nostr Connect</a>';
+        ? 'Or connect via <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> or any NIP-46 signer'
+        : 'Install <a href="https://chromewebstore.google.com/detail/nos2x/kpgefcfmnafjgpblomihpgcdhlhnjjdn" target="_blank" rel="noopener">nos2x</a> or use a bunker URL from your signer app';
     } else if (isAndroid) {
       helpEl.innerHTML = 'Get <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a> from GitHub or Play Store';
     } else if (isIOS) {
-      helpEl.innerHTML = 'Use <a href="https://github.com/nickyray/nostrkeyring" target="_blank" rel="noopener">Nostr Keyring</a> or any NIP-46 signer';
+      helpEl.innerHTML = 'Use <a href="https://github.com/nickyray/nostrkeyring" target="_blank" rel="noopener">Nostr Keyring</a> or connect with a bunker URL';
     } else {
       helpEl.innerHTML = 'Requires a Nostr signer app or browser extension';
     }
@@ -2656,63 +2679,64 @@ async function handleNIP07Login() {
 window.handleNIP07Login = handleNIP07Login;
 
 // === NIP-46 QR Code Login (Desktop) ===
-async function startQRCodeLogin() {
+// === NIP-46 Bunker URL Login ===
+function showBunkerScreen() {
+  document.getElementById('loginMethods').classList.add('hidden');
+  document.getElementById('loginBunkerScreen').classList.remove('hidden');
+  document.getElementById('loginBunkerInput').value = '';
+  document.getElementById('loginBunkerHint').textContent = '';
+  setLoginStatus('', false);
+  // Focus the input after a tick
+  setTimeout(() => document.getElementById('loginBunkerInput')?.focus(), 100);
+}
+window.showBunkerScreen = showBunkerScreen;
+
+async function submitBunkerLogin() {
+  const input = document.getElementById('loginBunkerInput');
+  const hint = document.getElementById('loginBunkerHint');
+  const submitBtn = document.getElementById('loginBunkerSubmit');
+  const uri = (input?.value || '').trim();
+
+  if (!uri) {
+    hint.textContent = 'Please paste your bunker:// URL';
+    hint.style.color = '#e57373';
+    return;
+  }
+  if (!uri.startsWith('bunker://')) {
+    hint.textContent = 'URL must start with bunker://';
+    hint.style.color = '#e57373';
+    return;
+  }
+
   try {
+    submitBtn.disabled = true;
+    hint.style.color = 'var(--sage)';
+    hint.textContent = 'Connecting to signer...';
+    setLoginStatus('Connecting...', false);
+
     await nip46Ready;
-    const { generateSecretKey, getPublicKey, BunkerSigner, createNostrConnectURI, SimplePool } = window.NostrNIP46;
+    const { generateSecretKey, BunkerSigner, parseBunkerInput, SimplePool } = window.NostrNIP46;
 
-    // Switch to QR screen
-    document.getElementById('loginMethods').classList.add('hidden');
-    const qrScreen = document.getElementById('loginQrScreen');
-    qrScreen.classList.remove('hidden');
-    setLoginStatus('Generating connection code...', false);
+    // Parse the bunker:// URI
+    const bunkerProfile = await parseBunkerInput(uri);
+    if (!bunkerProfile || !bunkerProfile.pubkey || !bunkerProfile.relays?.length) {
+      throw new Error('Invalid bunker URL — could not parse pubkey or relay');
+    }
 
-    // Generate ephemeral keypair
+    // Generate ephemeral client keypair
     nip46ClientSk = generateSecretKey();
-    const clientPkHex = getPublicKey(nip46ClientSk);
-
-    // Generate random secret for anti-spoofing
-    const secret = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-
-    // Build nostrconnect:// URI
-    const connectionURI = createNostrConnectURI({
-      clientPubkey: clientPkHex,
-      relays: NIP46_RELAYS,
-      secret: secret,
-      name: 'Satoshi Stacks',
-      url: window.location.origin
-    });
-
-    // Render QR code
-    const qrContainer = document.getElementById('loginQrContainer');
-    qrContainer.innerHTML = '';
-    new QRCode(qrContainer, {
-      text: connectionURI,
-      width: 200,
-      height: 200,
-      colorDark: '#3d3228',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-
-    setLoginStatus('Scan this QR code with your signer app', false);
-    document.getElementById('loginQrHint').textContent = 'Waiting for connection...';
-
-    // Wait for signer to connect (2 minute timeout)
-    nip46AbortController = new AbortController();
     const pool = new SimplePool();
 
-    nip46Signer = await BunkerSigner.fromURI(
-      nip46ClientSk,
-      connectionURI,
-      { pool },
-      nip46AbortController.signal
-    );
+    // Connect to the signer (immediate — no waiting like QR)
+    nip46Signer = BunkerSigner.fromBunker(nip46ClientSk, bunkerProfile, { pool });
 
-    // Connected! Proceed with challenge-response auth
-    setLoginStatus('Connected! Authenticating...', false);
-    document.getElementById('loginQrHint').textContent = 'Connected! Authenticating...';
+    // NIP-46: Send connect request to the signer
+    hint.textContent = 'Requesting permission from signer...';
+    await nip46Signer.connect();
+
+    // Proceed with challenge-response auth
+    hint.textContent = 'Authenticating...';
+    setLoginStatus('Authenticating...', false);
 
     const verifyData = await performChallengeAuth(nip46Signer);
     storeAuthSession(verifyData);
@@ -2723,17 +2747,17 @@ async function startQRCodeLogin() {
     showBuyinDialog();
 
   } catch (err) {
-    if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-      setLoginStatus('Connection cancelled', true);
-    } else {
-      console.error('[NIP-46] QR login error:', err);
-      setLoginStatus(err.message || 'Connection failed', true);
-    }
+    console.error('[NIP-46] Bunker login error:', err);
+    hint.textContent = err.message || 'Connection failed';
+    hint.style.color = '#e57373';
+    setLoginStatus(err.message || 'Connection failed', true);
     nip46Signer = null;
     nip46ClientSk = null;
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
-window.startQRCodeLogin = startQRCodeLogin;
+window.submitBunkerLogin = submitBunkerLogin;
 
 // === NIP-46 Deep Link Login (Amber / Nostr Keyring) ===
 async function startDeepLinkLogin(appName) {
@@ -2803,7 +2827,7 @@ async function startDeepLinkLogin(appName) {
 }
 window.startDeepLinkLogin = startDeepLinkLogin;
 
-// Back button from QR screen
+// Back button from bunker screen
 function loginGoBack() {
   if (nip46AbortController) {
     nip46AbortController.abort();
@@ -2811,7 +2835,7 @@ function loginGoBack() {
   }
   nip46Signer = null;
   nip46ClientSk = null;
-  document.getElementById('loginQrScreen')?.classList.add('hidden');
+  document.getElementById('loginBunkerScreen')?.classList.add('hidden');
   document.getElementById('loginMethods')?.classList.remove('hidden');
   setLoginStatus('', false);
 }
