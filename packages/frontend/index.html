@@ -2622,7 +2622,7 @@ function populateLoginMethods() {
     if (!isMobileDevice) {
       helpEl.innerHTML = hasExtension
         ? 'Scan the QR code with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer'
-        : 'Use <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or install a <a href="https://chromewebstore.google.com/detail/nos2x/kpgefcfmnafjgpblomihpgcdhlhnjjdn" target="_blank" rel="noopener">browser extension</a>';
+        : 'Use <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or install <a href="https://chromewebstore.google.com/detail/nos2x/kpgefcfmnafjgpblomihpgmejjdanjjp" target="_blank" rel="noopener">nos2x</a>';
     } else if (isAndroid) {
       helpEl.innerHTML = 'Works with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer';
     } else if (isIOS) {
@@ -2706,7 +2706,7 @@ async function handleNIP07Login() {
 
   const hasNostr = await detectNostr();
   if (!hasNostr) {
-    setLoginStatus('No NOSTR extension found. Install nos2x, Alby, or another NIP-07 extension.');
+    setLoginStatus('No Nostr extension found. Install nos2x or another NIP-07 signer extension.');
     document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
     return;
   }
