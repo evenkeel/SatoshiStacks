@@ -200,9 +200,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           : config.MAX_BUYIN;
 
         let chips;
-        if (playerData.left_at && (Date.now() - playerData.left_at * 1000) < config.RATHOLE_WINDOW_MS && playerData.current_chips > 0) {
-          chips = Math.max(requestedBuyIn, playerData.current_chips);
-          console.log(`[Server] Anti-rathole: ${displayName} returning within 2hr with ${chips} chips (requested ${requestedBuyIn}, left with ${playerData.current_chips})`);
+        const recentDeparture = playerData.left_at
+          && (Date.now() - playerData.left_at * 1000) < config.RATHOLE_WINDOW_MS
+          && playerData.hands_played > 0;
+        if (recentDeparture && playerData.current_chips > requestedBuyIn) {
+          chips = playerData.current_chips;
+          console.log(`[Server] Anti-rathole: ${displayName} must return with ${chips} chips (requested ${requestedBuyIn}, left with ${playerData.current_chips})`);
         } else {
           chips = requestedBuyIn;
           console.log(`[Server] ${displayName} buying in for ${chips} playsats`);
