@@ -4,16 +4,19 @@
  */
 
 const { Router } = require('express');
+const crypto = require('crypto');
 const config = require('../config');
 const db = require('../database');
 const { validateBody, schemas } = require('../middleware/validate');
 
 const router = Router();
 
-// Admin auth middleware — applied to all routes in this router
+// Admin auth middleware — timing-safe token comparison
 router.use((req, res, next) => {
-  const token = req.headers['x-admin-token'];
-  if (token !== config.ADMIN_TOKEN) {
+  const token = req.headers['x-admin-token'] || '';
+  const expected = Buffer.from(config.ADMIN_TOKEN);
+  const received = Buffer.from(String(token));
+  if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
   next();
@@ -65,7 +68,7 @@ router.post('/unban', validateBody(schemas.adminUnban), (req, res) => {
  */
 router.get('/abuse-log', (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 100;
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
     const logs = db.db.prepare('SELECT * FROM abuse_log ORDER BY timestamp DESC LIMIT ?').all(limit);
     res.json(logs);
   } catch (error) {

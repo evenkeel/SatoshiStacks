@@ -6,6 +6,7 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const helmet = require('helmet');
 const { Server } = require('socket.io');
 
 const config = require('./config');
@@ -94,30 +95,28 @@ app.get('/.well-known/nostr.json', (req, res) => {
   }
 });
 
-// Security headers (helmet) — graceful fallback if not yet installed
-try {
-  const helmet = require('helmet');
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://esm.sh"],
-        scriptSrcAttr: ["'unsafe-inline'"],  // needed for onclick handlers in login buttons
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        connectSrc: ["'self'", "wss:", "ws:"],
-        imgSrc: ["'self'", "data:", "blob:", "https:"],
-      }
+// Security headers (helmet) — required dependency
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://esm.sh"],
+      scriptSrcAttr: ["'unsafe-inline'"],  // needed for onclick handlers in login buttons
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      manifestSrc: ["'self'", "blob:"],
     }
-  }));
-  console.log('[Server] Helmet security headers enabled');
-} catch (e) {
-  console.log('[Server] Helmet not installed — run `npm install` for security headers');
-}
+  }
+}));
+console.log('[Server] Helmet security headers enabled');
 
 // Static files & JSON parsing
-app.use(express.static(path.join(__dirname, '../../packages/frontend')));
-app.use(express.json());
+const frontendDir = path.join(__dirname, '../../packages/frontend');
+app.use(express.static(frontendDir));
+app.use('/playmoney', express.static(frontendDir));  // serve under /playmoney too (matches nginx prefix)
+app.use(express.json({ limit: '16kb' }));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -132,6 +131,12 @@ app.use('/api/auth', authRoutes);
 // Admin dashboard HTML
 app.get('/admin', (req, res) => {
   res.sendFile(__dirname + '/admin.html');
+});
+
+// Global error handler — prevents leaking stack traces to clients
+app.use((err, req, res, _next) => {
+  console.error('[Server] Unhandled route error:', err);
+  res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
 // Give route modules access to shared state
@@ -158,4 +163,9 @@ process.on('SIGTERM', () => {
     console.log('Server closed');
     process.exit(0);
   });
+});
+
+// Catch unhandled promise rejections (e.g. NOSTR relay failures)
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled promise rejection:', reason);
 });

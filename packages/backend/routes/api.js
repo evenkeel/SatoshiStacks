@@ -14,12 +14,12 @@ const router = Router();
 router.get('/hands/:userId', (req, res) => {
   try {
     const { userId } = req.params;
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const hands = db.getPlayerHands(userId, limit);
     res.json({ success: true, userId, count: hands.length, hands });
   } catch (error) {
     console.error('[API] Error fetching player hands:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -36,7 +36,7 @@ router.get('/hand/:handId', (req, res) => {
     res.json({ success: true, hand });
   } catch (error) {
     console.error('[API] Error fetching hand:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -53,7 +53,7 @@ router.get('/player/:userId', (req, res) => {
     res.json({ success: true, player });
   } catch (error) {
     console.error('[API] Error fetching player:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -66,7 +66,7 @@ router.get('/tables', (req, res) => {
     res.json({ success: true, count: tables.length, tables });
   } catch (error) {
     console.error('[API] Error fetching tables:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -83,7 +83,7 @@ router.get('/stats', (req, res) => {
     res.json({ success: true, stats });
   } catch (error) {
     console.error('[API] Error fetching stats:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

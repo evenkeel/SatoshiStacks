@@ -33,7 +33,7 @@ module.exports = {
 
   // Rate limiting
   AUTH_RATE_LIMIT: { maxRequests: 10, windowSec: 60 },
-  ACTION_RATE_LIMIT: { maxActions: 5, windowSec: 20 },
+  ACTION_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
   JOIN_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
 
   // Multi-table (toggled OFF — single Main Table focus)
