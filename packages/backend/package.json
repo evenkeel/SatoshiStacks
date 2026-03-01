@@ -22,7 +22,9 @@
     "nostr-tools": "^2.23.1",
     "socket.io": "^4.6.1",
     "socket.io-client": "^4.8.3",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "helmet": "^8.0.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

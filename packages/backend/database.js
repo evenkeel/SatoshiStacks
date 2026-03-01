@@ -17,8 +17,9 @@ const dbPath = path.join(dbDir, 'satoshistacks.db');
 const isdev = process.env.NODE_ENV !== 'production';
 const db = new Database(dbPath, isdev ? { verbose: console.log } : {});
 
-// Enable foreign keys
+// Enable foreign keys and WAL mode for better concurrent read/write performance
 db.pragma('foreign_keys = ON');
+db.pragma('journal_mode = WAL');
 
 /**
  * Initialize database schema
@@ -638,10 +639,26 @@ function getPlayerBadges(userId) {
 // Initialize on module load
 initDatabase();
 
-// Cleanup abuse log and expired challenges every hour
+/**
+ * Clean up expired session tokens (older than 24h expiry)
+ */
+function cleanupExpiredSessions() {
+  const now = Math.floor(Date.now() / 1000);
+  const stmt = db.prepare(`
+    UPDATE players SET session_token = NULL, session_expires = NULL
+    WHERE session_expires IS NOT NULL AND session_expires < ?
+  `);
+  const result = stmt.run(now);
+  if (result.changes > 0) {
+    console.log(`[Database] Cleaned up ${result.changes} expired session tokens`);
+  }
+}
+
+// Cleanup abuse log, expired challenges, and expired sessions every hour
 setInterval(() => {
   cleanupAbuseLog();
   cleanupExpiredChallenges();
+  cleanupExpiredSessions();
 }, 3600000);
 
 module.exports = {
@@ -674,6 +691,7 @@ module.exports = {
   setSessionToken,
   getPlayerBySession,
   cleanupExpiredChallenges,
+  cleanupExpiredSessions,
   // Badges (NIP-58)
   awardBadge,
   hasBadge,

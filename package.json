@@ -18,6 +18,9 @@
   ],
   "author": "Noah Rexrode",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
     "puppeteer": "^24.37.3"
   }
