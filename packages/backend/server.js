@@ -102,6 +102,7 @@ try {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://esm.sh"],
+        scriptSrcAttr: ["'unsafe-inline'"],  // needed for onclick handlers in login buttons
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         connectSrc: ["'self'", "wss:", "ws:"],
