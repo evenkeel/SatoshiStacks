@@ -195,6 +195,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         db.logAction(userId, clientIp, 'join-table');
 
         // Buy-in with anti-rathole rules
+        // Only enforced when player left with MORE than max buy-in (i.e. they won chips)
         let requestedBuyIn = typeof buyIn === 'number'
           ? Math.max(config.MIN_BUYIN, Math.min(config.MAX_BUYIN, Math.floor(buyIn)))
           : config.MAX_BUYIN;
@@ -202,10 +203,10 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         let chips;
         const recentDeparture = playerData.left_at
           && (Date.now() - playerData.left_at * 1000) < config.RATHOLE_WINDOW_MS
-          && playerData.hands_played > 0;
-        if (recentDeparture && playerData.current_chips > requestedBuyIn) {
+          && playerData.current_chips > config.MAX_BUYIN;
+        if (recentDeparture) {
           chips = playerData.current_chips;
-          console.log(`[Server] Anti-rathole: ${displayName} must return with ${chips} chips (requested ${requestedBuyIn}, left with ${playerData.current_chips})`);
+          console.log(`[Server] Anti-rathole: ${displayName} must return with ${chips} chips (left with ${playerData.current_chips}, max buy-in is ${config.MAX_BUYIN})`);
         } else {
           chips = requestedBuyIn;
           console.log(`[Server] ${displayName} buying in for ${chips} playsats`);

@@ -2607,20 +2607,15 @@ window.handleStandUp = function() {
   if (!socket) return;
   // Leave the table (backend removes player, persists chips)
   socket.emit('leave-table', { tableId: myTableId });
-  // Reset to observer mode
+  // Reset state
   mySeat = null;
   // Remember that player voluntarily stood up — prevents auto-rejoin on refresh
   sessionStorage.setItem('ss_stoodUp', '1');
-  // Re-register as observer to keep receiving game state
-  socket.emit('observe-table', { tableId: myTableId });
-  // Hide all seated-player UI
-  const bar = $('tableActionsBar');
-  if (bar) bar.classList.remove('visible');
-  $('sitBackInBtn').style.display = 'none';
-  const ctrl = document.querySelector('.controls-area');
-  if (ctrl) ctrl.classList.add('hidden');
-  const preBar = document.querySelector('.pre-action-bar');
-  if (preBar) preBar.classList.remove('visible');
+  // Disconnect player socket and reconnect as observer
+  // (the player socket's connect handler auto-rejoins, so we need a fresh socket)
+  socket.disconnect();
+  socket = null;
+  connectAsObserver();
 };
 
 // ============================================================
