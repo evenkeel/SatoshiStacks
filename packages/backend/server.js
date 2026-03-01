@@ -100,13 +100,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://esm.sh"],
-      scriptSrcAttr: ["'unsafe-inline'"],  // needed for onclick handlers in login buttons
+      scriptSrc: ["'self'", "https://cdnjs.cloudflare.com", "https://esm.sh"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       connectSrc: ["'self'", "wss:", "ws:"],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
-      manifestSrc: ["'self'", "blob:"],
     }
   }
 }));

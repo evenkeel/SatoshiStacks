@@ -6,6 +6,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Create db directory if it doesn't exist
 const dbDir = path.join(__dirname, 'db');
@@ -20,6 +21,10 @@ const db = new Database(dbPath, isdev ? { verbose: console.log } : {});
 // Enable foreign keys and WAL mode for better concurrent read/write performance
 db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
+
+// In-memory badge cache to avoid DB queries on every game state broadcast
+const badgeCache = new Map(); // userId -> { badges: [...], cachedAt: timestamp }
+const BADGE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Initialize database schema
@@ -554,10 +559,11 @@ function getAndUseChallenge(challengeId) {
  * Set session token for a player
  */
 function setSessionToken(userId, token, expiresAt) {
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   const stmt = db.prepare(`
     UPDATE players SET session_token = ?, session_expires = ? WHERE user_id = ?
   `);
-  stmt.run(token, expiresAt, userId);
+  stmt.run(hashedToken, expiresAt, userId);
 }
 
 /**
@@ -565,12 +571,13 @@ function setSessionToken(userId, token, expiresAt) {
  */
 function getPlayerBySession(token) {
   if (!token) return null;
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   const now = Math.floor(Date.now() / 1000);
   const stmt = db.prepare(`
     SELECT * FROM players
     WHERE session_token = ? AND session_expires > ?
   `);
-  return stmt.get(token, now);
+  return stmt.get(hashedToken, now);
 }
 
 /**
@@ -611,6 +618,7 @@ function awardBadge(userId, badgeId, nostrEventId) {
       VALUES (?, ?, ?)
     `);
     stmt.run(userId, badgeId, nostrEventId || null);
+    invalidateBadgeCache(userId);
     console.log(`[Database] Badge "${badgeId}" awarded to ${userId.slice(0, 8)}...`);
     return true;
   } catch (e) {
@@ -629,11 +637,25 @@ function hasBadge(userId, badgeId) {
 }
 
 /**
- * Get all badges for a player
+ * Get all badges for a player (cached — avoids DB hit on every broadcast)
  */
 function getPlayerBadges(userId) {
+  const cached = badgeCache.get(userId);
+  if (cached && (Date.now() - cached.cachedAt) < BADGE_CACHE_TTL) {
+    return cached.badges;
+  }
+
   const stmt = db.prepare('SELECT badge_id, awarded_at FROM badge_awards WHERE user_id = ? ORDER BY awarded_at');
-  return stmt.all(userId);
+  const badges = stmt.all(userId);
+  badgeCache.set(userId, { badges, cachedAt: Date.now() });
+  return badges;
+}
+
+/**
+ * Invalidate the badge cache for a specific user (call after awarding a badge)
+ */
+function invalidateBadgeCache(userId) {
+  badgeCache.delete(userId);
 }
 
 // Initialize on module load
@@ -696,4 +718,5 @@ module.exports = {
   awardBadge,
   hasBadge,
   getPlayerBadges,
+  invalidateBadgeCache,
 };

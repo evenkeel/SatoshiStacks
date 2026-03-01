@@ -1,9 +1,6 @@
 /**
  * Input validation middleware — lightweight, no external dependencies.
  * Validates request bodies/params before they reach route handlers.
- *
- * After `npm install zod`, you can optionally replace these with zod schemas.
- * For now, this provides type-checking and sanitization using plain JS.
  */
 
 /**

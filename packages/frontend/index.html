@@ -9,20 +9,7 @@
 <meta name="theme-color" content="#1e2730">
 <meta name="apple-mobile-web-app-title" content="SatoshiStacks">
 <title>Satoshi Stacks</title>
-<script>
-// Inline manifest via blob URL (external file unreachable due to nginx proxy)
-(function(){
-  var m = {name:"Satoshi Stacks",short_name:"SatoshiStacks",
-    start_url:"/playmoney",scope:"/playmoney",
-    display:"fullscreen",orientation:"landscape",
-    background_color:"#1e2730",theme_color:"#1e2730"};
-  var b = new Blob([JSON.stringify(m)],{type:"application/json"});
-  var l = document.createElement("link");
-  l.rel = "manifest";
-  l.href = URL.createObjectURL(b);
-  document.head.appendChild(l);
-})();
-</script>
+<link rel="manifest" href="/playmoney/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
@@ -75,13 +62,13 @@
   <span id="connectionText">Connected</span>
 </div>
 <!-- Sit Back In Button -->
-<div id="sitBackInBtn" style="position:fixed;bottom:120px;left:50%;transform:translateX(-50%);padding:12px 32px;border-radius:12px;font-size:16px;font-weight:800;background:var(--mustard);color:var(--text-dark);box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;display:none;cursor:pointer;border:2px solid var(--outline);" onclick="handleSitBackIn()">
+<div id="sitBackInBtn" style="position:fixed;bottom:120px;left:50%;transform:translateX(-50%);padding:12px 32px;border-radius:12px;font-size:16px;font-weight:800;background:var(--mustard);color:var(--text-dark);box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;display:none;cursor:pointer;border:2px solid var(--outline);" data-action="sit-back-in">
   Sit Back In
 </div>
 <!-- Table Actions (Sit Out / Stand Up) -->
 <div class="table-actions-bar" id="tableActionsBar">
-  <button class="table-action-btn" id="sitOutBtn" onclick="handleSitOut()">Sit Out Next Hand</button>
-  <button class="table-action-btn stand-up" id="standUpBtn" onclick="handleStandUp()">Stand Up</button>
+  <button class="table-action-btn" id="sitOutBtn" data-action="sit-out">Sit Out Next Hand</button>
+  <button class="table-action-btn stand-up" id="standUpBtn" data-action="stand-up">Stand Up</button>
 </div>
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer" style="position:fixed;top:60px;right:10px;z-index:1001;display:flex;flex-direction:column;gap:8px;"></div>
@@ -122,7 +109,7 @@
 </div>
 <div class="setting-row nwc-row" id="nwcSettingRow" style="display:none">
 <span>⚡ Lightning Wallet</span>
-<button class="setting-btn nwc-btn" id="nwcConnectBtn" onclick="window.connectNWC()">Connect</button>
+<button class="setting-btn nwc-btn" id="nwcConnectBtn" data-action="connect-nwc">Connect</button>
 </div>
 </div>
 <div class="chat-input-area" id="chatInputArea">
@@ -148,10 +135,10 @@
   <p class="login-qr-label">Scan with your Nostr signer app</p>
   <div class="login-qr-container" id="loginQrContainer"></div>
   <p class="login-qr-hint" id="loginQrHint">Waiting for connection...</p>
-  <button class="login-qr-copy" id="loginQrCopy" onclick="copyQRLink()">Copy connection link</button>
+  <button class="login-qr-copy" id="loginQrCopy" data-action="copy-qr-link">Copy connection link</button>
   <p class="login-qr-or">or</p>
-  <button class="login-qr-bunker-link" onclick="switchToBunkerFromQR()">Paste a bunker:// URL instead</button>
-  <button class="login-back-btn" onclick="loginGoBack()">Back</button>
+  <button class="login-qr-bunker-link" data-action="switch-to-bunker">Paste a bunker:// URL instead</button>
+  <button class="login-back-btn" data-action="login-go-back">Back</button>
 </div>
 <!-- Bunker URL Screen (hidden by default) -->
 <div class="login-bunker-screen hidden" id="loginBunkerScreen">
@@ -165,9 +152,9 @@
   <input type="text" class="login-bunker-input" id="loginBunkerInput"
     placeholder="bunker://pubkey?relay=wss://...&secret=..."
     autocomplete="off" spellcheck="false">
-  <button class="login-method-btn primary login-bunker-submit" id="loginBunkerSubmit" onclick="submitBunkerLogin()">Connect</button>
+  <button class="login-method-btn primary login-bunker-submit" id="loginBunkerSubmit" data-action="submit-bunker">Connect</button>
   <p class="login-bunker-hint" id="loginBunkerHint"></p>
-  <button class="login-back-btn" onclick="loginGoBack()">Back</button>
+  <button class="login-back-btn" data-action="login-go-back">Back</button>
 </div>
 <p class="login-help" id="loginHelp"></p>
 </div>
@@ -201,21 +188,7 @@
 <!-- QR Code Library (for NIP-46 login) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <!-- NIP-46 (Nostr Connect) dependencies from nostr-tools -->
-<script type="module">
-import { generateSecretKey, getPublicKey } from 'https://esm.sh/nostr-tools@2.23.1/pure';
-import { BunkerSigner, createNostrConnectURI, parseBunkerInput } from 'https://esm.sh/nostr-tools@2.23.1/nip46';
-import { SimplePool } from 'https://esm.sh/nostr-tools@2.23.1/pool';
-window.NostrNIP46 = {
-  generateSecretKey,
-  getPublicKey,
-  BunkerSigner,
-  createNostrConnectURI,
-  parseBunkerInput,
-  SimplePool,
-  loaded: true
-};
-window.dispatchEvent(new Event('nip46-ready'));
-</script>
+<script type="module" src="/playmoney/js/nip46-loader.js"></script>
 <!-- Socket.IO Client -->
 <script src="/socket.io/socket.io.js"></script>
 <script src="/playmoney/js/app.js"></script>

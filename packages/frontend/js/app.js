@@ -499,39 +499,39 @@ function populateLoginMethods() {
     // DESKTOP: Extension (if available) + QR Code + Bunker URL
     if (hasExtension) {
       container.innerHTML =
-        `<button class="login-method-btn primary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>` +
-        `<button class="login-method-btn secondary" onclick="startQRCodeLogin()">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-        `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
+        `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
+        `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
+        `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
     } else {
       container.innerHTML =
-        `<button class="login-method-btn primary" onclick="startQRCodeLogin()">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-        `<button class="login-method-btn secondary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>` +
-        `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
+        `<button class="login-method-btn primary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
+        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
+        `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
     }
   } else if (isAndroid) {
     // ANDROID: Deep link (Amber/Primal/any NIP-46 signer) + Bunker URL fallback
     container.innerHTML =
-      `<button class="login-method-btn primary" onclick="startDeepLinkLogin('Nostr')">${LOGIN_ICONS.amber} Sign in with Nostr</button>` +
-      `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
+      `<button class="login-method-btn primary" data-action="deep-link-login" data-provider="Nostr">${LOGIN_ICONS.amber} Sign in with Nostr</button>` +
+      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
     if (hasExtension) {
       container.innerHTML +=
-        `<button class="login-method-btn secondary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>`;
+        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>`;
     }
   } else if (isIOS) {
     // iOS: Deep link (Nostr Keyring/Primal/any NIP-46 signer) + Bunker URL fallback
     container.innerHTML =
-      `<button class="login-method-btn primary" onclick="startDeepLinkLogin('Nostr')">${LOGIN_ICONS.keyring} Sign in with Nostr</button>` +
-      `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
+      `<button class="login-method-btn primary" data-action="deep-link-login" data-provider="Nostr">${LOGIN_ICONS.keyring} Sign in with Nostr</button>` +
+      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
     if (hasExtension) {
       container.innerHTML +=
-        `<button class="login-method-btn secondary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>`;
+        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>`;
     }
   } else {
     // Fallback: show all options
     container.innerHTML =
-      `<button class="login-method-btn primary" onclick="handleNIP07Login()">${LOGIN_ICONS.extension} Browser Extension</button>` +
-      `<button class="login-method-btn secondary" onclick="startQRCodeLogin()">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-      `<button class="login-method-btn secondary" onclick="showBunkerScreen()">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
+      `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
+      `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
+      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
   }
 
   // Update help text
@@ -2757,7 +2757,7 @@ function showPlayerProfile(userId) {
     ? `<img src="${esc(safePic)}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--outline);">`
     : `<div style="width:64px;height:64px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:var(--text-dark);border:3px solid var(--outline);margin:0 auto;">${esc(initial)}</div>`;
 
-  // Sanitize userId for safe use in onclick (hex pubkey should only contain [0-9a-f])
+  // Sanitize userId (hex pubkey should only contain [0-9a-f])
   const safeUserId = player.userId.replace(/[^0-9a-f]/gi, '');
 
   popup.innerHTML = `
@@ -2766,11 +2766,11 @@ function showPlayerProfile(userId) {
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:monospace;">${esc(npubShort)}</div>
     <div style="font-size:14px;color:var(--warm-white);margin-bottom:16px;">Stack: ${player.stack.toLocaleString()}</div>
     <div style="display:flex;gap:8px;justify-content:center;">
-      <button onclick="window.open('https://njump.me/${safeUserId}','_blank');document.getElementById('playerProfilePopup').remove();"
+      <button data-action="view-nostr-profile" data-user-id="${safeUserId}"
         style="padding:8px 16px;border-radius:8px;border:2px solid var(--outline);background:var(--navy);color:var(--warm-white);font-weight:700;font-size:13px;cursor:pointer;">
         View on NOSTR
       </button>
-      <button onclick="document.getElementById('playerProfilePopup').remove();"
+      <button data-action="close-profile-popup"
         style="padding:8px 16px;border-radius:8px;border:2px solid var(--outline);background:var(--rust);color:var(--warm-white);font-weight:700;font-size:13px;cursor:pointer;">
         Close
       </button>
@@ -2909,5 +2909,39 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+
+// Event delegation for data-action buttons (eliminates inline onclick handlers)
+document.addEventListener('click', (e) => {
+  const actionEl = e.target.closest('[data-action]');
+  if (!actionEl) return;
+
+  const action = actionEl.dataset.action;
+  switch (action) {
+    case 'sit-back-in': handleSitBackIn(); break;
+    case 'sit-out': handleSitOut(); break;
+    case 'stand-up': handleStandUp(); break;
+    case 'connect-nwc': window.connectNWC(); break;
+    case 'copy-qr-link': copyQRLink(); break;
+    case 'switch-to-bunker': switchToBunkerFromQR(); break;
+    case 'login-go-back': loginGoBack(); break;
+    case 'submit-bunker': submitBunkerLogin(); break;
+    case 'nip07-login': handleNIP07Login(); break;
+    case 'start-qr-login': startQRCodeLogin(); break;
+    case 'show-bunker': showBunkerScreen(); break;
+    case 'deep-link-login': startDeepLinkLogin(actionEl.dataset.provider || 'Nostr'); break;
+    case 'view-nostr-profile': {
+      const uid = actionEl.dataset.userId;
+      if (uid) window.open('https://njump.me/' + uid, '_blank');
+      const popup = document.getElementById('playerProfilePopup');
+      if (popup) popup.remove();
+      break;
+    }
+    case 'close-profile-popup': {
+      const popup = document.getElementById('playerProfilePopup');
+      if (popup) popup.remove();
+      break;
+    }
+  }
+});
 
 })();
