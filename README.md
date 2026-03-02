@@ -132,12 +132,14 @@ Node.js, Express, Socket.IO, better-sqlite3, nostr-tools, vanilla JS frontend. N
 - [x] Server hardening (UFW, fail2ban, SSH lockdown, kernel hardening)
 - [x] Automated SQLite backups
 
+- [x] Player chat (real-time with NIP-51 mute filtering)
+- [x] Spectator mode (auto-connect, random names, chat, click-to-sit)
+- [x] NIP-46 bunker/QR login (mobile + desktop)
+
 **Next**
 - [ ] Improve GUI (big time)
 - [ ] Multi-client soak testing (50+ hands, edge cases)
 - [ ] Mobile layout polish
-- [ ] Player chat (currently play-by-play only)
-- [ ] Spectator mode
 
 **Lightning Integration**
 - [ ] Buy-in via Lightning invoice (sit down, pay, play)

@@ -23,8 +23,53 @@ function generateObserverName() {
  * @param {Map} socketUsers - socket.id -> { userId, tableId, seatIndex }
  * @param {Map} observerSockets - socket.id -> { observerName, tableId }
  * @param {Function} broadcastGameState - broadcasts state to all at a table
+ * @param {Map} waitlists - tableId -> [{ socketId, userId, observerName, offeredAt }]
  */
-function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState) {
+function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists) {
+
+  // ==================== WAITLIST HELPER ====================
+
+  function checkWaitlist(tableId) {
+    const game = games.get(tableId);
+    if (!game) return;
+    const wl = waitlists.get(tableId);
+    if (!wl || wl.length === 0) return;
+
+    // Count empty seats
+    const emptySeats = game.players.filter(p => p === null).length;
+    if (emptySeats === 0) return;
+
+    // Only offer to one person at a time (first in queue)
+    const first = wl[0];
+    if (first.offeredAt) return; // Already offered, waiting for response
+
+    first.offeredAt = Date.now();
+    io.to(first.socketId).emit('seat-available', { tableId, timeoutMs: 60000 });
+    console.log(`[Waitlist] Offering seat to ${first.observerName} at ${tableId}`);
+
+    // 60-second timeout — skip to next if no response
+    setTimeout(() => {
+      const currentWl = waitlists.get(tableId);
+      if (!currentWl || currentWl.length === 0) return;
+      if (currentWl[0].socketId === first.socketId && currentWl[0].offeredAt) {
+        console.log(`[Waitlist] ${first.observerName} timed out, moving to next`);
+        currentWl.shift();
+        broadcastGameState(tableId);
+        checkWaitlist(tableId); // Offer to next person
+      }
+    }, 60000);
+  }
+
+  function removeFromWaitlist(socketId, tableId) {
+    const wl = waitlists.get(tableId);
+    if (!wl) return;
+    const idx = wl.findIndex(w => w.socketId === socketId);
+    if (idx >= 0) {
+      const wasOffered = idx === 0 && wl[idx].offeredAt;
+      wl.splice(idx, 1);
+      if (wasOffered) checkWaitlist(tableId); // Offer to next
+    }
+  }
 
   function ensureGameExists(tableId) {
     if (games.has(tableId)) return;
@@ -34,6 +79,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     game.onStateChange = () => {
       console.log(`[Server] Broadcasting state for table ${tableId}`);
       broadcastGameState(tableId);
+      checkWaitlist(tableId);
     };
 
     game.onTimerStart = (playerIndex, baseMs, timeBankInfo) => {
@@ -106,19 +152,118 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== OBSERVE ====================
 
-    socket.on('observe-table', ({ tableId }) => {
-      const observerName = generateObserverName();
-      observerSockets.set(socket.id, { observerName, tableId });
+    socket.on('observe-table', ({ tableId, sessionToken }) => {
+      let observerName = generateObserverName();
+      let userId = null;
+      let nostrName = null;
+      let nostrPicture = null;
+
+      // Optional authentication for observers
+      if (sessionToken) {
+        const playerData = db.getPlayerBySession(sessionToken);
+        if (playerData) {
+          userId = playerData.pubkey_hex;
+          nostrName = playerData.nostr_name;
+          nostrPicture = playerData.nostr_picture;
+          observerName = nostrName || (playerData.npub ? playerData.npub.slice(0, 12) + '...' : observerName);
+          console.log(`[Observer] Authenticated: ${observerName} (${userId.slice(0, 8)}...)`);
+        }
+        // If session is invalid, silently fall back to anonymous observer
+      }
+
+      observerSockets.set(socket.id, { observerName, tableId, userId, nostrName, nostrPicture });
       socket.join(`table-${tableId}`);
       console.log(`Observer ${observerName} (${socket.id}) watching table ${tableId}`);
 
-      socket.emit('observer-joined', { observerName });
+      socket.emit('observer-joined', { observerName, userId, nostrName, nostrPicture });
       ensureGameExists(tableId);
 
-      const game = games.get(tableId);
-      if (game) {
-        socket.emit('game-state', game.getGameState(null));
+      // Broadcast updated observer count to all clients
+      broadcastGameState(tableId);
+    });
+
+    // Observer authenticates while already watching
+    socket.on('observer-authenticate', ({ sessionToken }) => {
+      const obs = observerSockets.get(socket.id);
+      if (!obs) return;
+
+      if (!sessionToken) return;
+
+      const playerData = db.getPlayerBySession(sessionToken);
+      if (!playerData) {
+        socket.emit('auth-error', { message: 'Session expired. Please log in again.' });
+        return;
       }
+
+      // Update observer entry with auth info
+      obs.userId = playerData.pubkey_hex;
+      obs.nostrName = playerData.nostr_name;
+      obs.nostrPicture = playerData.nostr_picture;
+      obs.observerName = playerData.nostr_name || (playerData.npub ? playerData.npub.slice(0, 12) + '...' : obs.observerName);
+
+      socket.emit('observer-authenticated', {
+        observerName: obs.observerName,
+        userId: obs.userId,
+        nostrName: obs.nostrName,
+        nostrPicture: obs.nostrPicture
+      });
+
+      console.log(`[Observer] ${obs.observerName} authenticated while observing ${obs.tableId}`);
+
+      // Update waitlist entry if applicable
+      const wl = waitlists.get(obs.tableId);
+      if (wl) {
+        const entry = wl.find(w => w.socketId === socket.id);
+        if (entry) {
+          entry.userId = obs.userId;
+          entry.observerName = obs.observerName;
+        }
+      }
+
+      broadcastGameState(obs.tableId);
+    });
+
+    // ==================== WAITLIST ====================
+
+    socket.on('join-waitlist', ({ tableId }) => {
+      const obs = observerSockets.get(socket.id);
+      if (!obs || obs.tableId !== tableId) return;
+
+      if (!waitlists.has(tableId)) waitlists.set(tableId, []);
+      const wl = waitlists.get(tableId);
+
+      // Prevent duplicate entries
+      if (wl.some(w => w.socketId === socket.id)) return;
+
+      wl.push({
+        socketId: socket.id,
+        userId: obs.userId || null,
+        observerName: obs.observerName,
+        offeredAt: null
+      });
+
+      console.log(`[Waitlist] ${obs.observerName} joined waitlist for ${tableId} (position ${wl.length})`);
+      broadcastGameState(tableId);
+    });
+
+    socket.on('leave-waitlist', ({ tableId }) => {
+      removeFromWaitlist(socket.id, tableId);
+      broadcastGameState(tableId);
+    });
+
+    socket.on('waitlist-accept', ({ tableId }) => {
+      const wl = waitlists.get(tableId);
+      if (!wl || wl.length === 0) return;
+
+      // Only the person who was offered can accept
+      if (wl[0].socketId !== socket.id || !wl[0].offeredAt) return;
+
+      // Remove from waitlist
+      wl.shift();
+
+      // Tell frontend to show buy-in dialog
+      socket.emit('seat-offer-accepted', { tableId });
+      broadcastGameState(tableId);
     });
 
     // ==================== CHAT ====================
@@ -146,7 +291,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
       io.to(`table-${tableId}`).emit('chat-message', {
         sender: senderName,
-        senderId: user ? user.userId : null,
+        senderId: user ? user.userId : (observer ? observer.userId || null : null),
         text: trimmed,
         isObserver: !!observer,
         timestamp: Date.now()
@@ -213,10 +358,11 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         }
         db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
 
-        // Clean up observer tracking
+        // Clean up observer + waitlist tracking
         if (observerSockets.has(socket.id)) {
           observerSockets.delete(socket.id);
         }
+        removeFromWaitlist(socket.id, tableId);
 
         // Handle reconnection
         const game0 = games.get(tableId);
@@ -316,18 +462,20 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         return;
       }
 
-      const game = games.get(user.tableId);
+      const leavingTableId = user.tableId;
+      const game = games.get(leavingTableId);
       if (game) {
         game.removePlayer(user.userId);
-        socket.leave(`table-${user.tableId}`);
+        socket.leave(`table-${leavingTableId}`);
 
         if (game.players.every(p => p === null)) {
-          games.delete(user.tableId);
-          console.log(`Table ${user.tableId} destroyed (empty)`);
-          nostr.scheduleLiveActivityUpdate(user.tableId, games, true);
+          games.delete(leavingTableId);
+          console.log(`Table ${leavingTableId} destroyed (empty)`);
+          nostr.scheduleLiveActivityUpdate(leavingTableId, games, true);
         } else {
-          broadcastGameState(user.tableId);
-          nostr.scheduleLiveActivityUpdate(user.tableId, games);
+          broadcastGameState(leavingTableId);
+          nostr.scheduleLiveActivityUpdate(leavingTableId, games);
+          checkWaitlist(leavingTableId);
         }
       }
 
@@ -398,7 +546,10 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       if (observerSockets.has(socket.id)) {
         const obs = observerSockets.get(socket.id);
         console.log(`Observer ${obs.observerName} disconnected from table ${obs.tableId}`);
+        removeFromWaitlist(socket.id, obs.tableId);
         observerSockets.delete(socket.id);
+        // Update observer count for remaining clients
+        if (games.has(obs.tableId)) broadcastGameState(obs.tableId);
       }
 
       const user = socketUsers.get(socket.id);

@@ -140,6 +140,14 @@ let isObserver = false;       // True when watching without a seat
 let observerName = null;      // Random name assigned by server for observers
 let pendingSeat = null;       // Seat index clicked (0-5) while waiting for auth/buy-in
 
+// Login intent: 'sit' (default) or 'observe' (sign in as observer without sitting)
+let loginIntent = 'sit';
+
+// Waitlist state
+let waitlistPosition = null;  // My position on the waitlist (1-based), null if not on it
+let seatOfferActive = false;  // True when we've been offered a seat
+let seatOfferTimer = null;    // Countdown interval for seat offer
+
 // NIP-51: Follow/Mute list state
 let myFollowSet = new Set();  // pubkeys I follow
 let myMuteSet = new Set();    // pubkeys I've muted
@@ -635,7 +643,13 @@ async function handleNIP07Login() {
     localStorage.setItem('ss_authMethod', 'nip07');
     setLoginStatus('Connected!', false);
     hideLoginOverlay();
-    showBuyinDialog();
+    if (loginIntent === 'observe') {
+      // Authenticate observer socket without sitting down
+      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
+      loginIntent = 'sit';
+    } else {
+      showBuyinDialog();
+    }
   } catch (err) {
     console.error('[NIP-07] Login error:', err);
     setLoginStatus(err.message || 'Login failed');
@@ -718,7 +732,13 @@ async function startQRCodeLogin() {
 
     setLoginStatus('Connected!', false);
     hideLoginOverlay();
-    showBuyinDialog();
+    if (loginIntent === 'observe') {
+      // Authenticate observer socket without sitting down
+      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
+      loginIntent = 'sit';
+    } else {
+      showBuyinDialog();
+    }
 
   } catch (err) {
     if (err.name === 'AbortError' || err.message?.includes('aborted')) {
@@ -848,7 +868,13 @@ async function submitBunkerLogin() {
 
     setLoginStatus('Connected!', false);
     hideLoginOverlay();
-    showBuyinDialog();
+    if (loginIntent === 'observe') {
+      // Authenticate observer socket without sitting down
+      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
+      loginIntent = 'sit';
+    } else {
+      showBuyinDialog();
+    }
 
   } catch (err) {
     console.error('[NIP-46] Bunker login error:', err);
@@ -915,7 +941,13 @@ async function startDeepLinkLogin(appName) {
 
     setLoginStatus('Connected!', false);
     hideLoginOverlay();
-    showBuyinDialog();
+    if (loginIntent === 'observe') {
+      // Authenticate observer socket without sitting down
+      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
+      loginIntent = 'sit';
+    } else {
+      showBuyinDialog();
+    }
 
   } catch (err) {
     if (err.name === 'AbortError' || err.message?.includes('aborted')) {
@@ -946,6 +978,20 @@ function loginGoBack() {
   setLoginStatus('', false);
 }
 window.loginGoBack = loginGoBack;
+
+// Cancel login entirely — dismiss overlay, clear pending seat, stay as observer
+function cancelLogin() {
+  if (nip46AbortController) {
+    nip46AbortController.abort();
+    nip46AbortController = null;
+  }
+  nip46Signer = null;
+  pendingSeat = null;
+  pendingBuyIn = null;
+  loginIntent = 'sit';
+  hideLoginOverlay();
+  resetLoginOverlay();
+}
 
 function nostrLogout() {
   localStorage.removeItem('ss_sessionToken');
@@ -1139,14 +1185,19 @@ function connectAsObserver() {
         buyIn: 10000
       });
     } else {
-      socket.emit('observe-table', { tableId: myTableId });
+      socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined });
     }
   });
 
-  socket.on('observer-joined', ({ observerName: name }) => {
+  socket.on('observer-joined', ({ observerName: name, userId, nostrName, nostrPicture }) => {
     observerName = name;
-    myUsername = name;
-    showToast(`Watching as ${name}`, 'info');
+    myUsername = nostrName || name;
+    if (userId) {
+      myUserId = userId;
+      showToast(`Watching as ${myUsername}`, 'info');
+    } else {
+      showToast(`Watching as ${name}`, 'info');
+    }
   });
 
   // Share common socket event handlers
@@ -1237,6 +1288,9 @@ function setupCommonSocketHandlers() {
   socket.on('game-state', (state) => {
     prevGameState = gameState;
     gameState = state;
+
+    // Extract waitlist position for this client
+    waitlistPosition = state.waitlistPosition || null;
 
     // Cache our hole cards so they survive transient state glitches
     if (myUserId) {
@@ -1363,6 +1417,30 @@ function setupCommonSocketHandlers() {
       showToast('Connection lost — reconnecting...', 'info');
     }
   });
+
+  // Observer authenticated while watching
+  socket.on('observer-authenticated', ({ observerName: name, userId, nostrName, nostrPicture }) => {
+    observerName = name;
+    myUsername = nostrName || name;
+    myUserId = userId;
+    showToast(`Signed in as ${myUsername}`, 'info');
+    // NIP-51: Fetch follow/mute lists now that we have a pubkey
+    if (userId) fetchFollowAndMuteLists(userId);
+    render();
+  });
+
+  // Waitlist: seat offered to us
+  socket.on('seat-available', ({ tableId, timeoutMs }) => {
+    seatOfferActive = true;
+    showSeatOfferPrompt(timeoutMs);
+  });
+
+  // Waitlist: we accepted, now show buy-in
+  socket.on('seat-offer-accepted', ({ tableId }) => {
+    seatOfferActive = false;
+    clearSeatOfferPrompt();
+    showBuyinDialog();
+  });
 }
 
 // ============================================================
@@ -1384,6 +1462,9 @@ function render() {
     if (ca) ca.classList.remove('visible');
     const preBar = document.querySelector('.pre-action-bar');
     if (preBar) preBar.classList.remove('visible');
+    updateSpectatorBadge();
+    updateWaitlistUI();
+    updateObserverAuthUI();
     return;
   }
 
@@ -1402,6 +1483,145 @@ function render() {
   renderPreActions();
   updateSitBackInButton();
   updateSitOutButton();
+  updateSpectatorBadge();
+}
+
+// ============================================================
+//  SPECTATOR COUNT BADGE
+// ============================================================
+function updateSpectatorBadge() {
+  const count = gameState?.observerCount || 0;
+  let badge = document.getElementById('spectatorBadge');
+  if (count <= 0) {
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'spectatorBadge';
+    badge.className = 'spectator-badge';
+    document.getElementById('pokerTable').appendChild(badge);
+  }
+  badge.style.display = '';
+  badge.textContent = `${count} watching`;
+}
+
+// ============================================================
+//  OBSERVER SIGN-IN BUTTON
+// ============================================================
+function updateObserverAuthUI() {
+  let btn = document.getElementById('observerSignInBtn');
+
+  // Only show for unauthenticated observers
+  if (mySeat || !isObserver || mySessionToken) {
+    if (btn) btn.style.display = 'none';
+    return;
+  }
+
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'observerSignInBtn';
+    btn.className = 'observer-sign-in-btn';
+    btn.textContent = 'Sign In';
+    btn.dataset.action = 'observer-sign-in';
+    document.getElementById('pokerTable').appendChild(btn);
+  }
+  btn.style.display = '';
+}
+
+// ============================================================
+//  WAITLIST UI
+// ============================================================
+function updateWaitlistUI() {
+  let container = document.getElementById('waitlistUI');
+
+  // Only show for observers (not seated players)
+  if (!gameState || mySeat) {
+    if (container) container.style.display = 'none';
+    return;
+  }
+
+  const isFull = gameState.players.every(p => p !== null);
+  const waitlistCount = gameState.waitlistCount || 0;
+
+  if (!isFull) {
+    // Table has open seats — no waitlist needed
+    if (container) container.style.display = 'none';
+    return;
+  }
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'waitlistUI';
+    container.className = 'waitlist-ui';
+    document.getElementById('pokerTable').appendChild(container);
+  }
+  container.style.display = '';
+
+  if (seatOfferActive) {
+    // Seat offer prompt is showing — hide the waitlist UI
+    container.style.display = 'none';
+    return;
+  }
+
+  if (waitlistPosition) {
+    container.innerHTML = `
+      <div class="waitlist-status">Waitlist: #${waitlistPosition} of ${waitlistCount}</div>
+      <button class="waitlist-btn leave-wl" data-action="leave-waitlist">Leave Waitlist</button>
+    `;
+  } else {
+    container.innerHTML = `
+      <div class="waitlist-status">Table is full (6/6)${waitlistCount > 0 ? ` \u2014 ${waitlistCount} waiting` : ''}</div>
+      <button class="waitlist-btn join-wl" data-action="join-waitlist">Join Waitlist</button>
+    `;
+  }
+}
+
+// ============================================================
+//  SEAT OFFER PROMPT (waitlist)
+// ============================================================
+function showSeatOfferPrompt(timeoutMs) {
+  let remaining = Math.ceil(timeoutMs / 1000);
+
+  let el = document.getElementById('seatOfferPrompt');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'seatOfferPrompt';
+    el.className = 'seat-offer-prompt';
+    document.body.appendChild(el);
+  }
+
+  function updatePrompt() {
+    el.innerHTML = `
+      <div class="seat-offer-title">A seat is available!</div>
+      <div class="seat-offer-timer">${remaining}s</div>
+      <button class="seat-offer-accept" data-action="waitlist-accept">Sit Down</button>
+      <button class="seat-offer-decline" data-action="waitlist-decline">Pass</button>
+    `;
+  }
+  updatePrompt();
+  el.style.display = 'flex';
+
+  SFX.yourTurn();
+
+  if (seatOfferTimer) clearInterval(seatOfferTimer);
+  seatOfferTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearSeatOfferPrompt();
+      seatOfferActive = false;
+      waitlistPosition = null;
+      render();
+      return;
+    }
+    updatePrompt();
+  }, 1000);
+}
+
+function clearSeatOfferPrompt() {
+  if (seatOfferTimer) { clearInterval(seatOfferTimer); seatOfferTimer = null; }
+  const el = document.getElementById('seatOfferPrompt');
+  if (el) el.style.display = 'none';
 }
 
 // ============================================================
@@ -2874,9 +3094,17 @@ function initBuyinDialog() {
  * After successful auth, shows buy-in dialog.
  */
 async function handleNostrLoginThenSit() {
+  loginIntent = 'sit';
   // Show the login overlay with method selection
   // pendingSeat is already set by the click handler
   // When any login method completes, showBuyinDialog() will run
+  showLoginOverlay();
+}
+
+// Sign in as observer (show Nostr profile without sitting down)
+function handleObserverSignIn() {
+  loginIntent = 'observe';
+  pendingSeat = null;
   showLoginOverlay();
 }
 
@@ -2926,6 +3154,24 @@ document.addEventListener('click', (e) => {
     case 'copy-qr-link': copyQRLink(); break;
     case 'switch-to-bunker': switchToBunkerFromQR(); break;
     case 'login-go-back': loginGoBack(); break;
+    case 'login-cancel': cancelLogin(); break;
+    case 'join-waitlist':
+      if (socket) socket.emit('join-waitlist', { tableId: myTableId });
+      break;
+    case 'leave-waitlist':
+      if (socket) socket.emit('leave-waitlist', { tableId: myTableId });
+      waitlistPosition = null;
+      break;
+    case 'waitlist-accept':
+      if (socket) socket.emit('waitlist-accept', { tableId: myTableId });
+      break;
+    case 'waitlist-decline':
+      if (socket) socket.emit('leave-waitlist', { tableId: myTableId });
+      clearSeatOfferPrompt();
+      seatOfferActive = false;
+      waitlistPosition = null;
+      break;
+    case 'observer-sign-in': handleObserverSignIn(); break;
     case 'submit-bunker': submitBunkerLogin(); break;
     case 'nip07-login': handleNIP07Login(); break;
     case 'start-qr-login': startQRCodeLogin(); break;

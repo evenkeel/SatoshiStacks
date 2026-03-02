@@ -1682,6 +1682,128 @@ transition: transform 0.2s;
 }
 .status-badge.badge-top { top: -8px; }
 .status-badge.badge-bottom { bottom: -8px; }
+/* === SPECTATOR BADGE === */
+.spectator-badge {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  background: rgba(40, 30, 22, 0.7);
+  color: var(--warm-white);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  z-index: 10;
+  pointer-events: none;
+  font-family: 'Nunito', sans-serif;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* === OBSERVER SIGN-IN BUTTON === */
+.observer-sign-in-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: rgba(40, 30, 22, 0.7);
+  color: var(--warm-white);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  z-index: 10;
+  font-family: 'Nunito', sans-serif;
+  transition: background 0.2s, border-color 0.2s;
+}
+.observer-sign-in-btn:hover {
+  background: rgba(60, 50, 38, 0.85);
+  border-color: var(--mustard);
+}
+
+/* === WAITLIST UI === */
+.waitlist-ui {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 10;
+}
+.waitlist-status {
+  color: var(--warm-white);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+.waitlist-btn {
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--outline);
+  font-weight: 700;
+  font-size: 12px;
+  font-family: 'Nunito', sans-serif;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.waitlist-btn:hover { opacity: 0.85; }
+.join-wl { background: var(--sage); color: var(--text-dark); }
+.leave-wl { background: var(--rust); color: var(--warm-white); }
+
+/* === SEAT OFFER PROMPT === */
+.seat-offer-prompt {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(145deg, rgba(42, 54, 64, 0.97), rgba(26, 32, 40, 0.98));
+  border: 3px solid var(--mustard);
+  border-radius: var(--radius-lg);
+  padding: 24px 32px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+}
+.seat-offer-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--warm-white);
+}
+.seat-offer-timer {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--mustard);
+}
+.seat-offer-accept {
+  background: var(--sage);
+  color: var(--text-dark);
+  padding: 10px 24px;
+  border-radius: var(--radius-sm);
+  font-weight: 800;
+  font-size: 14px;
+  font-family: 'Nunito', sans-serif;
+  border: 2px solid var(--outline);
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.seat-offer-accept:hover { opacity: 0.85; }
+.seat-offer-decline {
+  background: transparent;
+  color: rgba(255,255,255,0.5);
+  padding: 6px 16px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 12px;
+  font-family: 'Nunito', sans-serif;
+  cursor: pointer;
+}
+.seat-offer-decline:hover { color: rgba(255,255,255,0.8); }
+
 /* === NOSTR LOGIN OVERLAY === */
 .nostr-login-overlay {
   position: fixed;
@@ -1694,6 +1816,7 @@ transition: transform 0.2s;
 }
 .nostr-login-overlay.hidden { display: none; }
 .login-card {
+  position: relative;
   text-align: center;
   padding: 48px 40px;
   border-radius: var(--radius-xl);
@@ -1703,6 +1826,20 @@ transition: transform 0.2s;
   max-width: 380px;
   width: 90vw;
 }
+.login-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.4);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.2s;
+}
+.login-close-btn:hover { color: rgba(255,255,255,0.8); }
 .login-logo { margin-bottom: 16px; }
 .login-title {
   font-size: 28px;

@@ -36,12 +36,23 @@ const games = new Map();           // tableId -> PokerGame
 const userSockets = new Map();     // userId -> socket.id
 const socketUsers = new Map();     // socket.id -> { userId, tableId, seatIndex }
 const observerSockets = new Map(); // socket.id -> { observerName, tableId }
+const waitlists = new Map();       // tableId -> [{ socketId, userId, observerName, offeredAt }]
 
 // ==================== BROADCAST HELPER ====================
 
 function broadcastGameState(tableId) {
   const game = games.get(tableId);
   if (!game) return;
+
+  // Count observers for this table
+  let observerCount = 0;
+  for (const [, obs] of observerSockets) {
+    if (obs.tableId === tableId) observerCount++;
+  }
+
+  // Waitlist info
+  const waitlist = waitlists.get(tableId) || [];
+  const waitlistCount = waitlist.length;
 
   // Pre-fetch badges for all seated players
   const badgeMap = new Map();
@@ -58,6 +69,8 @@ function broadcastGameState(tableId) {
         p.badges = badgeMap.get(p.userId) || [];
       }
     }
+    state.observerCount = observerCount;
+    state.waitlistCount = waitlistCount;
     return state;
   }
 
@@ -69,11 +82,18 @@ function broadcastGameState(tableId) {
     io.to(socketId).emit('game-state', addBadgesToState(game.getGameState(player.userId)));
   });
 
-  // Send observer/spectator state
-  const observerState = addBadgesToState(game.getGameState(null));
+  // Send observer/spectator state (personalized with waitlist position)
+  const baseObserverState = addBadgesToState(game.getGameState(null));
   for (const [socketId, obs] of observerSockets) {
     if (obs.tableId === tableId) {
-      io.to(socketId).emit('game-state', observerState);
+      const wlIdx = waitlist.findIndex(w => w.socketId === socketId);
+      if (wlIdx >= 0) {
+        // Clone and add personal waitlist position
+        const personalState = { ...baseObserverState, waitlistPosition: wlIdx + 1 };
+        io.to(socketId).emit('game-state', personalState);
+      } else {
+        io.to(socketId).emit('game-state', baseObserverState);
+      }
     }
   }
 }
@@ -144,7 +164,7 @@ authRoutes.setContext(sharedContext);
 
 // ==================== WEBSOCKET HANDLERS ====================
 
-socketHandlers.setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState);
+socketHandlers.setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists);
 
 // ==================== START ====================
 
