@@ -2828,7 +2828,7 @@ window.handleSitOut = function() {
 window.handleStandUp = function() {
   if (!socket) return;
   mySeat = null;
-  sessionStorage.setItem('ss_stoodUp', '1');
+  localStorage.setItem('ss_stoodUp', '1');
 
   let left = false;
   function finishStandUp() {
@@ -3075,7 +3075,7 @@ function initBuyinDialog() {
       } else {
         // Sit-down mode — join table with chosen buy-in
         pendingBuyIn = amount;
-        sessionStorage.removeItem('ss_stoodUp');
+        localStorage.removeItem('ss_stoodUp');
         hideBuyinDialog();
         connectToServer();
       }
@@ -3125,7 +3125,7 @@ async function init() {
   if (hasSession) {
     hideLoginOverlay();
     // If player voluntarily stood up, reconnect as observer — don't auto-rejoin
-    if (sessionStorage.getItem('ss_stoodUp')) {
+    if (localStorage.getItem('ss_stoodUp')) {
       connectAsObserver();
     } else {
       connectToServer();
