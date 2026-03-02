@@ -1330,7 +1330,9 @@ function setupCommonSocketHandlers() {
   socket.on('chat-message', ({ sender, senderId, text, isObserver: fromObserver, timestamp }) => {
     // NIP-51: Skip messages from muted users
     if (senderId && myMuteSet.has(senderId)) return;
-    const prefix = fromObserver ? `[${sender}]` : sender;
+    const prefix = fromObserver
+      ? (senderId ? `${sender} [observer]` : `[${sender}]`)
+      : sender;
     addChatMessage(prefix, text);
   });
 
