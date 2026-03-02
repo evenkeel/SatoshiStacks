@@ -1505,30 +1505,26 @@ function updateSpectatorBadge() {
     document.body.appendChild(badge);
   }
   badge.style.display = '';
+  // Build content: "N watching" + optional sign-in link
   badge.textContent = `${count} watching`;
+  // Append sign-in button inline if unauthenticated observer
+  if (isObserver && !mySeat && !mySessionToken) {
+    const signInLink = document.createElement('span');
+    signInLink.id = 'observerSignInBtn';
+    signInLink.className = 'observer-sign-in-link';
+    signInLink.textContent = 'sign into chat';
+    signInLink.dataset.action = 'observer-sign-in';
+    badge.appendChild(document.createTextNode(' · '));
+    badge.appendChild(signInLink);
+  }
 }
 
 // ============================================================
-//  OBSERVER SIGN-IN BUTTON
+//  OBSERVER SIGN-IN (now inline in spectator badge)
 // ============================================================
 function updateObserverAuthUI() {
-  let btn = document.getElementById('observerSignInBtn');
-
-  // Only show for unauthenticated observers
-  if (mySeat || !isObserver || mySessionToken) {
-    if (btn) btn.style.display = 'none';
-    return;
-  }
-
-  if (!btn) {
-    btn = document.createElement('button');
-    btn.id = 'observerSignInBtn';
-    btn.className = 'observer-sign-in-btn';
-    btn.textContent = 'Sign In';
-    btn.dataset.action = 'observer-sign-in';
-    document.getElementById('pokerTable').appendChild(btn);
-  }
-  btn.style.display = '';
+  // Sign-in link is now rendered inline by updateSpectatorBadge()
+  // This function is kept as a no-op so existing call sites don't break
 }
 
 // ============================================================
