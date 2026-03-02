@@ -58,6 +58,9 @@ class PokerGame {
     this.currentHandLog = [];
     this.histSbIdx = -1;
     this.histBbIdx = -1;
+
+    // Action deduplication (Blocker 2)
+    this.processedActionIds = new Set();
   }
 
   // ==================== HAND HISTORY LOGGING ====================
@@ -346,6 +349,9 @@ class PokerGame {
       });
     }
 
+    // Clear action dedup set for new hand
+    this.processedActionIds = new Set();
+
     // Start preflop action
     // Heads-up: dealer/SB acts first preflop
     // Multi-way: player after BB acts first preflop
@@ -357,6 +363,9 @@ class PokerGame {
 
     // Start action timer for first player
     this.startActionTimer();
+
+    // Snapshot for crash recovery (after blinds posted, before first action)
+    this.saveSnapshot();
   }
 
   /**
@@ -526,6 +535,9 @@ class PokerGame {
       // Start timer for next player
       this.startActionTimer();
     }
+
+    // Snapshot for crash recovery (after every valid action)
+    this.saveSnapshot();
 
     return { valid: true };
   }
@@ -868,7 +880,9 @@ class PokerGame {
   }
 
   /**
-   * Save completed hand to database
+   * Save completed hand to database using atomic settlement.
+   * Single transaction: hand record + player records + chip updates + snapshot cleanup.
+   * Returns handId for Nostr publishing.
    */
   saveHandToDatabase(startTime, winners) {
     try {
@@ -876,15 +890,16 @@ class PokerGame {
       const completedAt = Math.floor(Date.now() / 1000);
       const startedAt = Math.floor(startTime / 1000);
 
-      // Collect player data
+      // Collect player data and build settlement updates
       const playerData = [];
+      const playerUpdates = [];
       this.players.forEach((p, idx) => {
         if (p && p.participatedThisHand) {
           const won = winners.includes(p);
           const endStack = p.stack;
           const startStack = p.startingStack || STARTING_STACK;
           const totalBet = p.totalInvested || 0;
-          
+
           playerData.push({
             user_id: p.userId,
             username: p.username,
@@ -899,31 +914,19 @@ class PokerGame {
             won_amount: won ? (endStack - (startStack - totalBet)) : 0
           });
 
-          // Update player stats
-          db.upsertPlayer(p.userId, p.username);
-          db.updatePlayerStats(p.userId, {
-            hands_played: 1,
+          // Build atomic update entry (replaces separate upsertPlayer + updatePlayerStats calls)
+          playerUpdates.push({
+            user_id: p.userId,
+            username: p.username,
             hands_won: won ? 1 : 0,
             net_result: endStack - startStack,
             current_chips: endStack
           });
-
-          // NIP-58: Check badge eligibility after stats update
-          if (this.onBadgeCheck) {
-            const updatedPlayer = db.getPlayer(p.userId);
-            this.onBadgeCheck(p.userId, {
-              handsPlayed: updatedPlayer ? updatedPlayer.hands_played : 0,
-              handsWon: updatedPlayer ? updatedPlayer.hands_won : 0,
-              currentChips: endStack,
-              handName: p.hand ? p.hand.name : null,
-              potSize: playerData.reduce((sum, pd) => sum + pd.total_bet, 0),
-              wonAmount: won ? (endStack - (startStack - totalBet)) : 0
-            });
-          }
         }
       });
 
-      // Save hand
+      // Build hand record
+      const handHistoryText = this.generateHandHistoryText();
       const handData = {
         hand_id: handId,
         table_id: this.tableId,
@@ -935,16 +938,49 @@ class PokerGame {
         pot_total: playerData.reduce((sum, p) => sum + p.total_bet, 0),
         rake: 0,
         community_cards: this.communityCards,
-        hand_history: this.generateHandHistoryText(),
+        hand_history: handHistoryText,
         players: playerData
       };
 
-      db.saveHand(handData);
-      console.log(`[Database] Saved hand ${handId}`);
+      // Atomic settlement — single transaction for everything
+      const result = db.settleHand(handData, playerUpdates);
+      if (!result.success) {
+        console.error(`[Database] Settlement failed for hand ${handId}: ${result.error}`);
+        return null;
+      }
+
+      // NIP-58: Check badge eligibility AFTER atomic settlement
+      // (reads from DB to get accurate cumulative stats)
+      this.players.forEach((p, idx) => {
+        if (p && p.participatedThisHand && this.onBadgeCheck) {
+          const won = winners.includes(p);
+          const endStack = p.stack;
+          const startStack = p.startingStack || STARTING_STACK;
+          const totalBet = p.totalInvested || 0;
+          const updatedPlayer = db.getPlayer(p.userId);
+          this.onBadgeCheck(p.userId, {
+            handsPlayed: updatedPlayer ? updatedPlayer.hands_played : 0,
+            handsWon: updatedPlayer ? updatedPlayer.hands_won : 0,
+            currentChips: endStack,
+            handName: p.hand ? p.hand.name : null,
+            potSize: playerData.reduce((sum, pd) => sum + pd.total_bet, 0),
+            wonAmount: won ? (endStack - (startStack - totalBet)) : 0
+          });
+        }
+      });
+
+      // Publish hand history to Nostr (fire-and-forget — failure doesn't affect game)
+      if (this.onPublishHandHistory) {
+        const playerPubkeys = playerData.map(p => p.user_id);
+        this.onPublishHandHistory(handHistoryText, handId, this.tableId, playerPubkeys);
+      }
+
+      return handId;
 
     } catch (error) {
       console.error('[Database] Error saving hand:', error);
       // Don't crash the game on DB errors
+      return null;
     }
   }
 
@@ -1490,6 +1526,144 @@ class PokerGame {
     }
 
     return { success: true, chips: buyIn };
+  }
+
+  // ==================== STATE SERIALIZATION (Crash Recovery) ====================
+
+  /**
+   * Serialize full game state for crash recovery snapshot.
+   * Captures everything needed to reconstruct a hand in progress.
+   */
+  serializeState() {
+    return {
+      tableId: this.tableId,
+      players: this.players.map(p => {
+        if (!p) return null;
+        return {
+          userId: p.userId,
+          username: p.username,
+          nostrName: p.nostrName,
+          nostrPicture: p.nostrPicture,
+          lud16: p.lud16,
+          stack: p.stack,
+          holeCards: p.holeCards,
+          folded: p.folded,
+          allIn: p.allIn,
+          currentBet: p.currentBet,
+          totalInvested: p.totalInvested,
+          seatIndex: p.seatIndex,
+          sittingOut: p.sittingOut,
+          disconnected: p.disconnected,
+          participatedThisHand: p.participatedThisHand,
+          startingStack: p.startingStack,
+          actions: p.actions,
+          _foldPhase: p._foldPhase,
+          _hasBet: p._hasBet,
+          _histShare: p._histShare,
+          wonPot: p.wonPot,
+          _pendingRemoval: p._pendingRemoval || false,
+          timeBankPreflop: p.timeBankPreflop,
+          timeBankPostflop: p.timeBankPostflop,
+          handsDealtCount: p.handsDealtCount,
+          sittingOutNextHand: p.sittingOutNextHand,
+          busted: p.busted || false
+        };
+      }),
+      deck: [...this.deck],
+      communityCards: [...this.communityCards],
+      pot: this.pot,
+      potChips: this.potChips.map(c => ({ ...c })),
+      dealerSeat: this.dealerSeat,
+      currentPlayerIndex: this.currentPlayerIndex,
+      phase: this.phase,
+      lastRaise: this.lastRaise,
+      actedThisRound: [...this.actedThisRound],
+      handInProgress: this.handInProgress,
+      handCount: this.handCount,
+      handStartedAt: this.handStartedAt,
+      lastAggressor: this.lastAggressor,
+      currentHandLog: [...this.currentHandLog],
+      histSbIdx: this.histSbIdx,
+      histBbIdx: this.histBbIdx,
+      processedActionIds: [...(this.processedActionIds || [])],
+    };
+  }
+
+  /**
+   * Reconstruct a PokerGame from a serialized snapshot.
+   * Restores all hand state so the game can resume after server restart.
+   * Note: callbacks (onStateChange, onTimerStart, etc.) must be re-wired by the caller.
+   */
+  static deserializeState(snapshot) {
+    const game = new PokerGame(snapshot.tableId);
+
+    // Restore players
+    game.players = snapshot.players.map(p => {
+      if (!p) return null;
+      return {
+        userId: p.userId,
+        username: p.username,
+        nostrName: p.nostrName,
+        nostrPicture: p.nostrPicture,
+        lud16: p.lud16,
+        stack: p.stack,
+        holeCards: p.holeCards || [],
+        folded: p.folded,
+        allIn: p.allIn,
+        currentBet: p.currentBet,
+        totalInvested: p.totalInvested,
+        seatIndex: p.seatIndex,
+        sittingOut: p.sittingOut,
+        disconnected: p.disconnected,
+        participatedThisHand: p.participatedThisHand,
+        startingStack: p.startingStack,
+        actions: p.actions || [],
+        _foldPhase: p._foldPhase,
+        _hasBet: p._hasBet,
+        _histShare: p._histShare,
+        wonPot: p.wonPot || false,
+        _pendingRemoval: p._pendingRemoval || false,
+        timeBankPreflop: p.timeBankPreflop || DEFAULT_TIME_BANK_MS,
+        timeBankPostflop: p.timeBankPostflop || DEFAULT_TIME_BANK_MS,
+        handsDealtCount: p.handsDealtCount || 0,
+        sittingOutNextHand: p.sittingOutNextHand || false,
+        busted: p.busted || false
+      };
+    });
+
+    game.deck = snapshot.deck || [];
+    game.communityCards = snapshot.communityCards || [];
+    game.pot = snapshot.pot || 0;
+    game.potChips = (snapshot.potChips || []).map(c => ({ ...c }));
+    game.dealerSeat = snapshot.dealerSeat;
+    game.currentPlayerIndex = snapshot.currentPlayerIndex;
+    game.phase = snapshot.phase;
+    game.lastRaise = snapshot.lastRaise;
+    game.actedThisRound = snapshot.actedThisRound || [];
+    game.handInProgress = snapshot.handInProgress;
+    game.handCount = snapshot.handCount || 0;
+    game.handStartedAt = snapshot.handStartedAt || Date.now();
+    game.lastAggressor = snapshot.lastAggressor;
+    game.currentHandLog = snapshot.currentHandLog || [];
+    game.histSbIdx = snapshot.histSbIdx;
+    game.histBbIdx = snapshot.histBbIdx;
+    game.processedActionIds = new Set(snapshot.processedActionIds || []);
+
+    return game;
+  }
+
+  /**
+   * Persist current state as a snapshot for crash recovery.
+   * Called after every mutation (action, blind post, phase advance).
+   */
+  saveSnapshot() {
+    if (!this.handInProgress) return;
+    const handId = `${this.tableId}-${this.handStartedAt}`;
+    try {
+      db.saveHandSnapshot(this.tableId, handId, this.serializeState());
+    } catch (error) {
+      console.error(`[PokerGame ${this.tableId}] Failed to save snapshot:`, error);
+    }
   }
 }
 

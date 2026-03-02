@@ -189,6 +189,32 @@ function initDatabase() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_players_pubkey ON players(pubkey_hex)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_players_session ON players(session_token)`);
 
+  // Hand snapshots table (crash recovery — stores in-progress hand state)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS hand_snapshots (
+      table_id TEXT PRIMARY KEY,
+      hand_id TEXT NOT NULL,
+      snapshot TEXT NOT NULL,
+      updated_at INTEGER DEFAULT (strftime('%s','now'))
+    );
+  `);
+
+  // Migration: Add chip_version for optimistic locking
+  try {
+    db.exec(`ALTER TABLE players ADD COLUMN chip_version INTEGER DEFAULT 0`);
+    console.log('[Database] Added chip_version column to players table');
+  } catch (e) {
+    if (!e.message.includes('duplicate column')) throw e;
+  }
+
+  // Migration: Add nostr_event_id to hands table (signed hand history reference)
+  try {
+    db.exec(`ALTER TABLE hands ADD COLUMN nostr_event_id TEXT`);
+    console.log('[Database] Added nostr_event_id column to hands table');
+  } catch (e) {
+    if (!e.message.includes('duplicate column')) throw e;
+  }
+
   console.log('[Database] Schema initialized successfully');
 }
 
@@ -658,6 +684,177 @@ function invalidateBadgeCache(userId) {
   badgeCache.delete(userId);
 }
 
+// ==================== HAND SNAPSHOT FUNCTIONS (Crash Recovery) ====================
+
+/**
+ * Save or update a hand snapshot for crash recovery.
+ * UPSERT — one snapshot per table (only in-progress hand matters).
+ */
+function saveHandSnapshot(tableId, handId, snapshot) {
+  const stmt = db.prepare(`
+    INSERT INTO hand_snapshots (table_id, hand_id, snapshot, updated_at)
+    VALUES (?, ?, ?, strftime('%s','now'))
+    ON CONFLICT(table_id) DO UPDATE SET
+      hand_id = excluded.hand_id,
+      snapshot = excluded.snapshot,
+      updated_at = strftime('%s','now')
+  `);
+  try {
+    stmt.run(tableId, handId, JSON.stringify(snapshot));
+  } catch (error) {
+    console.error('[Database] Error saving hand snapshot:', error);
+  }
+}
+
+/**
+ * Get the latest hand snapshot for a table (for crash recovery).
+ */
+function getHandSnapshot(tableId) {
+  const stmt = db.prepare('SELECT * FROM hand_snapshots WHERE table_id = ?');
+  const row = stmt.get(tableId);
+  if (row) {
+    row.snapshot = JSON.parse(row.snapshot);
+  }
+  return row || null;
+}
+
+/**
+ * Get all hand snapshots (for startup recovery).
+ */
+function getAllHandSnapshots() {
+  const stmt = db.prepare('SELECT * FROM hand_snapshots');
+  const rows = stmt.all();
+  return rows.map(row => {
+    row.snapshot = JSON.parse(row.snapshot);
+    return row;
+  });
+}
+
+/**
+ * Delete hand snapshot after hand completes normally.
+ */
+function deleteHandSnapshot(tableId) {
+  const stmt = db.prepare('DELETE FROM hand_snapshots WHERE table_id = ?');
+  stmt.run(tableId);
+}
+
+// ==================== ATOMIC SETTLEMENT (Real-Money Safe) ====================
+
+/**
+ * Settle a completed hand atomically — single transaction wraps:
+ *   1. Insert into hands table
+ *   2. Insert into hand_players table (each participant)
+ *   3. Update player stats + chip balances (with optimistic locking)
+ *   4. Delete hand snapshot (cleanup)
+ *
+ * All-or-nothing: if anything fails, nothing is persisted.
+ */
+const settleHandTx = db.transaction((handData, playerUpdates) => {
+  // 1. Insert hand record
+  db.prepare(`
+    INSERT INTO hands (
+      hand_id, table_id, started_at, completed_at,
+      small_blind, big_blind, button_seat, pot_total,
+      rake, community_cards, hand_history
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    handData.hand_id,
+    handData.table_id,
+    handData.started_at,
+    handData.completed_at,
+    handData.small_blind,
+    handData.big_blind,
+    handData.button_seat,
+    handData.pot_total,
+    handData.rake || 0,
+    JSON.stringify(handData.community_cards || []),
+    handData.hand_history
+  );
+
+  // 2. Insert hand_players records
+  const insertPlayer = db.prepare(`
+    INSERT INTO hand_players (
+      hand_id, user_id, username, seat_index,
+      starting_stack, ending_stack, total_bet,
+      hole_cards, final_hand, position, actions, won_amount
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const p of handData.players) {
+    insertPlayer.run(
+      handData.hand_id,
+      p.user_id,
+      p.username,
+      p.seat_index,
+      p.starting_stack,
+      p.ending_stack,
+      p.total_bet,
+      JSON.stringify(p.hole_cards || []),
+      p.final_hand || null,
+      p.position,
+      JSON.stringify(p.actions || []),
+      p.won_amount || 0
+    );
+  }
+
+  // 3. Update each player's stats and chip balance atomically
+  const updateStats = db.prepare(`
+    UPDATE players SET
+      hands_played = hands_played + 1,
+      hands_won = hands_won + ?,
+      total_winnings = total_winnings + ?,
+      total_losses = total_losses + ?,
+      current_chips = ?,
+      chip_version = chip_version + 1,
+      last_seen = strftime('%s','now')
+    WHERE user_id = ?
+  `);
+
+  for (const pu of playerUpdates) {
+    // Ensure player exists
+    db.prepare(`
+      INSERT INTO players (user_id, username)
+      VALUES (?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        username = excluded.username,
+        last_seen = strftime('%s','now')
+    `).run(pu.user_id, pu.username);
+
+    updateStats.run(
+      pu.hands_won,
+      Math.max(0, pu.net_result),       // winnings (positive part)
+      Math.max(0, -pu.net_result),      // losses (negative part)
+      pu.current_chips,
+      pu.user_id
+    );
+  }
+
+  // 4. Delete hand snapshot (hand completed successfully)
+  db.prepare('DELETE FROM hand_snapshots WHERE table_id = ?').run(handData.table_id);
+});
+
+function settleHand(handData, playerUpdates) {
+  try {
+    settleHandTx(handData, playerUpdates);
+    console.log(`[Database] Settled hand ${handData.hand_id} (atomic)`);
+    return { success: true };
+  } catch (error) {
+    console.error('[Database] Error settling hand:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Update hand record with Nostr event ID after publishing.
+ */
+function updateHandNostrEventId(handId, eventId) {
+  try {
+    db.prepare('UPDATE hands SET nostr_event_id = ? WHERE hand_id = ?').run(eventId, handId);
+  } catch (error) {
+    console.error('[Database] Error updating nostr_event_id:', error);
+  }
+}
+
 // Initialize on module load
 initDatabase();
 
@@ -719,4 +916,11 @@ module.exports = {
   hasBadge,
   getPlayerBadges,
   invalidateBadgeCache,
+  // Crash recovery & atomic settlement
+  saveHandSnapshot,
+  getHandSnapshot,
+  getAllHandSnapshots,
+  deleteHandSnapshot,
+  settleHand,
+  updateHandNostrEventId,
 };

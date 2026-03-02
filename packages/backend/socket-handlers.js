@@ -143,6 +143,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       nostr.checkAndAwardBadges(userId, stats, { userSockets, io, games, broadcastGameState });
     };
 
+    game.onPublishHandHistory = (text, handId, tableId, playerPubkeys) => {
+      nostr.publishHandHistory(text, handId, tableId, playerPubkeys).catch(e => {
+        console.error(`[Nostr] Failed to publish hand history: ${e.message}`);
+      });
+    };
+
     games.set(tableId, game);
     console.log(`[Server] Created game for table ${tableId}`);
   }
@@ -422,7 +428,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== ACTION ====================
 
-    socket.on('action', ({ tableId, action, amount }) => {
+    socket.on('action', ({ tableId, action, amount, actionId }) => {
       const user = socketUsers.get(socket.id);
       if (!user) {
         socket.emit('error', { message: 'Not authenticated' });
@@ -442,11 +448,25 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         return;
       }
 
+      // Deduplication guard: if actionId was already processed, silently re-broadcast
+      // current state (idempotent) instead of processing again
+      if (actionId && game.processedActionIds && game.processedActionIds.has(actionId)) {
+        console.log(`[Server] Duplicate action ${actionId} from ${user.userId.slice(0, 8)}... — ignoring`);
+        broadcastGameState(tableId);
+        return;
+      }
+
       const result = game.processAction(user.userId, action, amount);
       if (!result.valid) {
         socket.emit('error', { message: result.error });
         return;
       }
+
+      // Record actionId to prevent duplicate processing
+      if (actionId && game.processedActionIds) {
+        game.processedActionIds.add(actionId);
+      }
+
       broadcastGameState(tableId);
     });
 

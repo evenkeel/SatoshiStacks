@@ -12,6 +12,7 @@ const { Server } = require('socket.io');
 const config = require('./config');
 const db = require('./database');
 const nostr = require('./services/nostr');
+const PokerGame = require('./poker-game');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
@@ -161,6 +162,86 @@ app.use((err, req, res, _next) => {
 adminRoutes.setGames(games);
 const sharedContext = { games, userSockets, io, broadcastGameState };
 authRoutes.setContext(sharedContext);
+
+// ==================== CRASH RECOVERY ====================
+// Restore in-progress hands from snapshots (survives server restart)
+
+(function recoverInProgressHands() {
+  try {
+    const snapshots = db.getAllHandSnapshots();
+    if (snapshots.length === 0) {
+      console.log('[Recovery] No in-progress hands to recover');
+      return;
+    }
+
+    for (const { table_id, hand_id, snapshot } of snapshots) {
+      try {
+        const game = PokerGame.deserializeState(snapshot);
+
+        // Re-wire callbacks (same as ensureGameExists in socket-handlers)
+        game.onStateChange = () => {
+          broadcastGameState(table_id);
+        };
+        game.onTimerStart = (playerIndex, baseMs, timeBankInfo) => {
+          io.to(`table-${table_id}`).emit('action-timer-start', {
+            playerIndex,
+            timeoutMs: baseMs,
+            timeBankMs: timeBankInfo ? timeBankInfo.timeBankMs : 0,
+            isPreflop: timeBankInfo ? timeBankInfo.isPreflop : true
+          });
+        };
+        game.onTimeBankStart = (playerIndex, timeBankMs) => {
+          io.to(`table-${table_id}`).emit('time-bank-start', { playerIndex, timeBankMs });
+        };
+        game.onHandLog = (line, type) => {
+          io.to(`table-${table_id}`).emit('hand-log', { line, type });
+        };
+        game.onDealCards = (userId, line) => {
+          const socketId = userSockets.get(userId);
+          if (socketId) io.to(socketId).emit('hand-log', { line, type: 'deal' });
+        };
+        game.onHandComplete = (userId, historyText) => {
+          const socketId = userSockets.get(userId);
+          if (socketId) io.to(socketId).emit('hand-complete', { history: historyText });
+        };
+        game.onPlayerLeaving = (userId, stack) => {
+          try { db.updatePlayerLeftAt(userId, stack); } catch (e) {}
+        };
+        game.onTableMaybeEmpty = () => {
+          if (game.players.every(p => p === null)) {
+            games.delete(table_id);
+            nostr.scheduleLiveActivityUpdate(table_id, games, true);
+          }
+        };
+        game.onBadgeCheck = (userId, stats) => {
+          nostr.checkAndAwardBadges(userId, stats, { userSockets, io, games, broadcastGameState });
+        };
+        game.onPublishHandHistory = (text, handId, tableId, playerPubkeys) => {
+          nostr.publishHandHistory(text, handId, tableId, playerPubkeys).catch(e => {
+            console.error(`[Nostr] Failed to publish hand history: ${e.message}`);
+          });
+        };
+
+        games.set(table_id, game);
+
+        // Restart action timer for current player if hand is in progress
+        if (game.handInProgress && game.currentPlayerIndex >= 0) {
+          game.startActionTimer();
+        }
+
+        console.log(`[Recovery] Restored hand ${hand_id} on table ${table_id} (phase: ${game.phase}, players: ${game.players.filter(p => p).length})`);
+      } catch (e) {
+        console.error(`[Recovery] Failed to restore hand on table ${table_id}:`, e.message);
+        // Delete corrupted snapshot so it doesn't block future startups
+        db.deleteHandSnapshot(table_id);
+      }
+    }
+
+    console.log(`[Recovery] Recovered ${snapshots.length} in-progress hand(s)`);
+  } catch (e) {
+    console.error('[Recovery] Crash recovery failed:', e.message);
+  }
+})();
 
 // ==================== WEBSOCKET HANDLERS ====================
 

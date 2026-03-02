@@ -2264,10 +2264,13 @@ function sendAction(action, amount) {
   if (!socket) return;
   // Immediately clear the timer/lifebar on the frontend — don't wait for server round-trip
   clearTimer();
+  // Generate unique actionId for deduplication (prevents double-submit)
+  const actionId = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2));
   socket.emit('action', {
     tableId: myTableId,
     action: action,
-    amount: amount || 0
+    amount: amount || 0,
+    actionId: actionId
   });
 }
 

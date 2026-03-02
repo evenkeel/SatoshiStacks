@@ -242,6 +242,55 @@ async function fetchNostrProfile(pubkeyHex, { games, userSockets, io, broadcastG
   });
 }
 
+// ==================== HAND HISTORY PUBLISHING (Kind 1) ====================
+
+/**
+ * Publish a completed hand history as a signed kind 1 (regular note) event.
+ * Visible in Nostr feeds, tagged with player pubkeys so they can find it.
+ * Fire-and-forget: returns event ID on success, null on failure.
+ */
+async function publishHandHistory(handHistoryText, handId, tableId, playerPubkeys) {
+  if (!serverSk) {
+    console.log('[Nostr] No server key — skipping hand history publish');
+    return null;
+  }
+
+  try {
+    const tags = [
+      ['t', 'poker'],
+      ['t', 'satoshistacks'],
+      ['t', 'hand-history'],
+      ['d', handId],
+      ['subject', `Hand #${handId}`],
+    ];
+
+    // Tag each player so they can find their hand histories
+    for (const pubkey of playerPubkeys) {
+      if (pubkey) {
+        tags.push(['p', pubkey]);
+      }
+    }
+
+    const event = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags,
+      content: handHistoryText
+    }, serverSk);
+
+    const published = await publishToRelays(event);
+    console.log(`[Nostr] Published hand history ${handId} (event ${event.id.slice(0, 8)}...) to ${published} relay(s)`);
+
+    // Store event ID in database for reference
+    db.updateHandNostrEventId(handId, event.id);
+
+    return event.id;
+  } catch (e) {
+    console.error(`[Nostr] Failed to publish hand history ${handId}:`, e.message);
+    return null;
+  }
+}
+
 // ==================== STARTUP PUBLISHING ====================
 
 function publishStartupEvents() {
@@ -299,4 +348,5 @@ module.exports = {
   scheduleLiveActivityUpdate,
   fetchNostrProfile,
   publishStartupEvents,
+  publishHandHistory,
 };
