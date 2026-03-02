@@ -306,9 +306,15 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== LEAVE TABLE ====================
 
-    socket.on('leave-table', () => {
+    socket.on('leave-table', (...args) => {
+      // Support optional ack callback (last arg if it's a function)
+      const ack = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+
       const user = socketUsers.get(socket.id);
-      if (!user) return;
+      if (!user) {
+        if (ack) ack({ ok: true });
+        return;
+      }
 
       const game = games.get(user.tableId);
       if (game) {
@@ -327,6 +333,8 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
       userSockets.delete(user.userId);
       socketUsers.delete(socket.id);
+
+      if (ack) ack({ ok: true });
     });
 
     // ==================== SIT OUT / SIT BACK IN ====================

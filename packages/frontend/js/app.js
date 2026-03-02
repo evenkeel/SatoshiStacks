@@ -2605,17 +2605,24 @@ window.handleSitOut = function() {
 // ============================================================
 window.handleStandUp = function() {
   if (!socket) return;
-  // Leave the table (backend removes player, persists chips)
-  socket.emit('leave-table', { tableId: myTableId });
-  // Reset state
   mySeat = null;
-  // Remember that player voluntarily stood up — prevents auto-rejoin on refresh
   sessionStorage.setItem('ss_stoodUp', '1');
-  // Disconnect player socket and reconnect as observer
-  // (the player socket's connect handler auto-rejoins, so we need a fresh socket)
-  socket.disconnect();
-  socket = null;
-  connectAsObserver();
+
+  let left = false;
+  function finishStandUp() {
+    if (left) return;
+    left = true;
+    if (socket) {
+      socket.disconnect();
+      socket = null;
+    }
+    connectAsObserver();
+  }
+
+  // Wait for server ack before disconnecting so leave-table is actually processed
+  socket.emit('leave-table', { tableId: myTableId }, finishStandUp);
+  // Fallback: if ack never arrives (network issue), disconnect after 2s
+  setTimeout(finishStandUp, 2000);
 };
 
 // ============================================================
