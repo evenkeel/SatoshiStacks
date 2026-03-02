@@ -1502,7 +1502,7 @@ function updateSpectatorBadge() {
     badge = document.createElement('div');
     badge.id = 'spectatorBadge';
     badge.className = 'spectator-badge';
-    document.getElementById('pokerTable').appendChild(badge);
+    document.body.appendChild(badge);
   }
   badge.style.display = '';
   badge.textContent = `${count} watching`;

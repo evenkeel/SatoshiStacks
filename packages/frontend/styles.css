@@ -1684,19 +1684,20 @@ transition: transform 0.2s;
 .status-badge.badge-bottom { bottom: -8px; }
 /* === SPECTATOR BADGE === */
 .spectator-badge {
-  position: absolute;
-  top: 6px;
-  left: 8px;
-  background: rgba(40, 30, 22, 0.7);
+  position: fixed;
+  bottom: clamp(150px, 24vh, 240px);
+  left: 4px;
+  background: rgba(40, 30, 22, 0.8);
   color: var(--warm-white);
   font-size: 11px;
   font-weight: 700;
   padding: 3px 10px;
-  border-radius: 12px;
-  z-index: 10;
+  border-radius: 10px;
+  z-index: 51;
   pointer-events: none;
   font-family: 'Nunito', sans-serif;
   border: 1px solid rgba(255,255,255,0.1);
+  margin-bottom: 4px;
 }
 
 /* === OBSERVER SIGN-IN BUTTON === */
