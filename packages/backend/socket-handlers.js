@@ -272,6 +272,41 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       broadcastGameState(tableId);
     });
 
+    // ==================== STAKE INTEREST LIST ====================
+
+    socket.on('get-interests', () => {
+      // Identify user from seated players or authenticated observers
+      const user = socketUsers.get(socket.id);
+      const obs = observerSockets.get(socket.id);
+      const userId = user ? user.userId : (obs ? obs.userId : null);
+
+      const counts = db.getStakeInterestCounts();
+      const myInterests = userId ? db.getUserInterests(userId) : [];
+      socket.emit('interests-update', { counts, myInterests });
+    });
+
+    socket.on('toggle-interest', ({ stakeLevel }) => {
+      // Identify authenticated user
+      const user = socketUsers.get(socket.id);
+      const obs = observerSockets.get(socket.id);
+      const userId = user ? user.userId : (obs ? obs.userId : null);
+
+      if (!userId) {
+        socket.emit('error', { message: 'Sign in to express interest' });
+        return;
+      }
+
+      const result = db.toggleStakeInterest(userId, stakeLevel);
+      if (result.error) {
+        socket.emit('error', { message: result.error });
+        return;
+      }
+
+      // Broadcast updated counts to ALL connected clients
+      const counts = db.getStakeInterestCounts();
+      io.emit('interests-update', { counts });
+    });
+
     // ==================== CHAT ====================
 
     socket.on('chat-message', ({ text }) => {

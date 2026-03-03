@@ -1009,14 +1009,17 @@ function nostrLogout() {
   myNostrPicture = null;
   myUserId = null;
   myUsername = 'Anon';
+  myStakeInterests = new Set();
   mySeat = null;
   gameState = null;
   cachedHoleCards = null;
   // Clear NIP-51 follow/mute state
   myFollowSet = new Set();
   myMuteSet = new Set();
-  // Hide NWC row
+  // Hide NWC row + interest list
   showNWCRow();
+  const interestEl = document.getElementById('interestList');
+  if (interestEl) interestEl.classList.add('hidden');
   // Clean up NIP-46 state
   if (nip46Signer) {
     try { nip46Signer.close(); } catch (e) { /* ignore */ }
@@ -1195,6 +1198,8 @@ function connectAsObserver() {
     if (userId) {
       myUserId = userId;
       showToast(`Watching as ${myUsername}`, 'info');
+      // Authenticated observer — request interest list
+      socket.emit('get-interests');
     } else {
       showToast(`Watching as ${name}`, 'info');
     }
@@ -1260,6 +1265,8 @@ function setupCommonSocketHandlers() {
     // Close buy-in dialog if open
     hideBuyinDialog();
     showToast(`Playing as ${myUsername}`, 'info');
+    // Request interest list data
+    socket.emit('get-interests');
     render();
   });
 
@@ -1334,6 +1341,11 @@ function setupCommonSocketHandlers() {
       ? (senderId ? `${sender} [observer]` : `[${sender}]`)
       : sender;
     addChatMessage(prefix, text);
+  });
+
+  // Interest list updates (future stakes)
+  socket.on('interests-update', ({ counts, myInterests }) => {
+    renderInterestList(counts, myInterests);
   });
 
   // NIP-58: Badge awarded notification
@@ -1428,6 +1440,8 @@ function setupCommonSocketHandlers() {
     showToast(`Signed in as ${myUsername}`, 'info');
     // NIP-51: Fetch follow/mute lists now that we have a pubkey
     if (userId) fetchFollowAndMuteLists(userId);
+    // Request interest list data now that we're authenticated
+    socket.emit('get-interests');
     render();
   });
 
@@ -1525,6 +1539,45 @@ function updateSpectatorBadge() {
 function updateObserverAuthUI() {
   // Sign-in link is now rendered inline by updateSpectatorBadge()
   // This function is kept as a no-op so existing call sites don't break
+}
+
+// ============================================================
+//  INTEREST LIST (future stakes)
+// ============================================================
+const STAKE_LABELS = {
+  '250/500': '250 / 500',
+  '500/1000': '500 / 1K',
+  '5000/10000': '🐋 Whale Room'
+};
+let myStakeInterests = new Set(); // Track locally which stakes I've toggled
+
+function renderInterestList(counts, myInterests) {
+  const el = document.getElementById('interestList');
+  if (!el) return;
+
+  // Only show for authenticated users
+  if (!mySessionToken) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+
+  // If server sent our interests, update the local set
+  if (myInterests !== undefined) {
+    myStakeInterests = new Set(myInterests || []);
+  }
+
+  el.innerHTML =
+    '<div class="interest-list-title">Coming Soon</div>' +
+    Object.entries(STAKE_LABELS).map(([level, label]) => {
+      const count = (counts && counts[level]) || 0;
+      const active = myStakeInterests.has(level);
+      const whale = level === '5000/10000' ? ' whale' : '';
+      return `<div class="interest-row${active ? ' active' : ''}${whale}" data-action="toggle-interest" data-stake="${level}">
+        <span class="interest-label">${label}</span>
+        <span class="interest-count">${count} interested</span>
+      </div>`;
+    }).join('');
 }
 
 // ============================================================
@@ -3171,6 +3224,19 @@ document.addEventListener('click', (e) => {
       clearSeatOfferPrompt();
       seatOfferActive = false;
       waitlistPosition = null;
+      break;
+    case 'toggle-interest':
+      if (socket && actionEl.dataset.stake) {
+        const stake = actionEl.dataset.stake;
+        // Optimistic toggle for instant feedback
+        if (myStakeInterests.has(stake)) {
+          myStakeInterests.delete(stake);
+        } else {
+          myStakeInterests.add(stake);
+        }
+        actionEl.classList.toggle('active');
+        socket.emit('toggle-interest', { stakeLevel: stake });
+      }
       break;
     case 'observer-sign-in': handleObserverSignIn(); break;
     case 'submit-bunker': submitBunkerLogin(); break;
