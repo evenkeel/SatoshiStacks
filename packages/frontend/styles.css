@@ -70,10 +70,10 @@ flex-direction: column;
   pointer-events: none;
 }
 .corner-logo img {
-  width: clamp(100px, 14vw, 160px);
+  width: clamp(200px, 28vw, 320px);
   height: auto;
   opacity: 0.85;
-  filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
 }
 /* === MIDDLE ROW: table fills most of screen === */
 .middle-row {
