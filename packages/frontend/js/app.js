@@ -1547,7 +1547,7 @@ function updateObserverAuthUI() {
 const STAKE_LABELS = {
   '250/500': '250 / 500',
   '500/1000': '500 / 1K',
-  '5000/10000': '🐋 Whale Room'
+  '5000/10000': '🐋 5K / 10K'
 };
 let myStakeInterests = new Set(); // Track locally which stakes I've toggled
 
