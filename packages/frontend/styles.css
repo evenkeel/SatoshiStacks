@@ -64,13 +64,13 @@ flex-direction: column;
 /* === CORNER LOGO === */
 .corner-logo {
   position: fixed;
-  top: 10px;
-  left: 12px;
+  top: 0;
+  left: 0;
   z-index: 50;
   pointer-events: none;
 }
 .corner-logo img {
-  width: clamp(200px, 28vw, 320px);
+  width: clamp(280px, 36vw, 440px);
   height: auto;
   opacity: 0.85;
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
