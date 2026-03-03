@@ -5,7 +5,24 @@
 //  CONFIGURATION & CONSTANTS
 // ============================================================
 const NUM_SEATS = 6;
-const myTableId = 'table-1';
+
+// ============================================================
+//  TABLE CONFIGURATION — derive from URL
+// ============================================================
+const TABLE_CONFIGS = {
+  pond:  { id: 'pond',  name: 'The Pond',  emoji: '🐟', smallBlind: 50,   bigBlind: 100,   minBuyin: 2000,    maxBuyin: 10000,   mode: 'open',     minPlayers: 2 },
+  reef:  { id: 'reef',  name: 'The Reef',  emoji: '🦀', smallBlind: 250,  bigBlind: 500,   minBuyin: 10000,   maxBuyin: 50000,   mode: 'interest', minPlayers: 4 },
+  deep:  { id: 'deep',  name: 'The Deep',  emoji: '🦈', smallBlind: 500,  bigBlind: 1000,  minBuyin: 20000,   maxBuyin: 100000,  mode: 'interest', minPlayers: 4 },
+  abyss: { id: 'abyss', name: 'The Abyss', emoji: '🐋', smallBlind: 5000, bigBlind: 10000, minBuyin: 200000,  maxBuyin: 1000000, mode: 'interest', minPlayers: 4 },
+};
+
+function getTableIdFromPath() {
+  const path = window.location.pathname.replace(/\/$/, '').split('/').pop();
+  return TABLE_CONFIGS[path] ? path : 'pond';
+}
+
+const myTableId = getTableIdFromPath();
+const myTableConfig = TABLE_CONFIGS[myTableId];
 
 // ============================================================
 //  MOBILE DETECTION
@@ -176,15 +193,18 @@ function truncName(name) {
 
 // Chip denominations — sorted high-to-low for greedy breakdown
 const CHIP_DEFS = [
-  { value: 10000, label: '10K', fill: '#B55239', text: '#F8F3EA' },
-  { value: 5000,  label: '5K',  fill: '#2F3E5C', text: '#F8F3EA' },
-  { value: 1000,  label: '1K',  fill: '#5A3D5C', text: '#F8F3EA' },
-  { value: 500,   label: '500', fill: '#C46E3F', text: '#F8F3EA' },
-  { value: 100,   label: '100', fill: '#3C8C84', text: '#F8F3EA' },
-  { value: 50,    label: '50',  fill: '#D4A017', text: '#F8F3EA' },
-  { value: 10,    label: '10',  fill: '#9FB8A5', text: '#F8F3EA' },
-  { value: 5,     label: '5',   fill: '#8B7355', text: '#F8F3EA' },
-  { value: 1,     label: '1',   fill: '#F3EBD9', text: '#F3EBD9' },
+  { value: 100000, label: '100K', fill: '#1B1B2F', text: '#F8F3EA' },
+  { value: 50000,  label: '50K',  fill: '#4A0E4E', text: '#F8F3EA' },
+  { value: 25000,  label: '25K',  fill: '#162447', text: '#F8F3EA' },
+  { value: 10000,  label: '10K',  fill: '#B55239', text: '#F8F3EA' },
+  { value: 5000,   label: '5K',   fill: '#2F3E5C', text: '#F8F3EA' },
+  { value: 1000,   label: '1K',   fill: '#5A3D5C', text: '#F8F3EA' },
+  { value: 500,    label: '500',  fill: '#C46E3F', text: '#F8F3EA' },
+  { value: 100,    label: '100',  fill: '#3C8C84', text: '#F8F3EA' },
+  { value: 50,     label: '50',   fill: '#D4A017', text: '#F8F3EA' },
+  { value: 10,     label: '10',   fill: '#9FB8A5', text: '#F8F3EA' },
+  { value: 5,      label: '5',    fill: '#8B7355', text: '#F8F3EA' },
+  { value: 1,      label: '1',    fill: '#F3EBD9', text: '#F3EBD9' },
 ];
 
 // Nameplate target positions (% on poker table), keyed by visual seat (1-6)
@@ -1009,7 +1029,7 @@ function nostrLogout() {
   myNostrPicture = null;
   myUserId = null;
   myUsername = 'Anon';
-  myStakeInterests = new Set();
+  myTableInterested = false;
   mySeat = null;
   gameState = null;
   cachedHoleCards = null;
@@ -1018,8 +1038,7 @@ function nostrLogout() {
   myMuteSet = new Set();
   // Hide NWC row + interest list
   showNWCRow();
-  const interestEl = document.getElementById('interestList');
-  if (interestEl) interestEl.classList.add('hidden');
+  updateTableInterestOverlay();
   // Clean up NIP-46 state
   if (nip46Signer) {
     try { nip46Signer.close(); } catch (e) { /* ignore */ }
@@ -1185,7 +1204,7 @@ function connectAsObserver() {
       socket.emit('join-table', {
         tableId: myTableId,
         sessionToken: mySessionToken,
-        buyIn: 10000
+        buyIn: myTableConfig.maxBuyin
       });
     } else {
       socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined });
@@ -1198,8 +1217,6 @@ function connectAsObserver() {
     if (userId) {
       myUserId = userId;
       showToast(`Watching as ${myUsername}`, 'info');
-      // Authenticated observer — request interest list
-      socket.emit('get-interests');
     } else {
       showToast(`Watching as ${name}`, 'info');
     }
@@ -1266,7 +1283,6 @@ function setupCommonSocketHandlers() {
     hideBuyinDialog();
     showToast(`Playing as ${myUsername}`, 'info');
     // Request interest list data
-    socket.emit('get-interests');
     render();
   });
 
@@ -1343,9 +1359,53 @@ function setupCommonSocketHandlers() {
     addChatMessage(prefix, text);
   });
 
-  // Interest list updates (future stakes)
-  socket.on('interests-update', ({ counts, myInterests }) => {
-    renderInterestList(counts, myInterests);
+  // Table navigator status (all tables)
+  socket.on('tables-status', ({ tables }) => {
+    cachedTablesStatus = tables || {};
+    renderTableNavigator();
+  });
+
+  // Table interest updates (for interest-mode tables)
+  socket.on('table-interest-update', ({ tableId, interestCount, interestNeeded, players, countdown }) => {
+    if (tableId !== myTableId) return;
+    tableInterestCount = interestCount;
+    tableInterestNeeded = interestNeeded;
+    tableInterestPlayers = players || [];
+    // Check if we are in the interest list
+    const obs = observerName; // our name
+    myTableInterested = tableInterestPlayers.some(n => n === myUsername || n === myNostrName || n === observerName);
+    if (countdown !== null && countdown !== undefined) {
+      tableInterestCountdownSec = countdown;
+    }
+    updateTableInterestOverlay();
+  });
+
+  // Table interest countdown
+  socket.on('table-interest-countdown', ({ tableId, seconds }) => {
+    if (tableId !== myTableId) return;
+    if (seconds === null || seconds === undefined) {
+      // Countdown cancelled
+      tableInterestCountdownSec = null;
+      if (interestCountdownInterval) {
+        clearInterval(interestCountdownInterval);
+        interestCountdownInterval = null;
+      }
+      updateTableInterestOverlay();
+      return;
+    }
+    tableInterestCountdownSec = seconds;
+    updateTableInterestOverlay();
+    // Tick down locally
+    if (interestCountdownInterval) clearInterval(interestCountdownInterval);
+    interestCountdownInterval = setInterval(() => {
+      if (tableInterestCountdownSec !== null && tableInterestCountdownSec > 0) {
+        tableInterestCountdownSec--;
+        updateTableInterestOverlay();
+      } else {
+        clearInterval(interestCountdownInterval);
+        interestCountdownInterval = null;
+      }
+    }, 1000);
   });
 
   // NIP-58: Badge awarded notification
@@ -1441,7 +1501,6 @@ function setupCommonSocketHandlers() {
     // NIP-51: Fetch follow/mute lists now that we have a pubkey
     if (userId) fetchFollowAndMuteLists(userId);
     // Request interest list data now that we're authenticated
-    socket.emit('get-interests');
     render();
   });
 
@@ -1481,6 +1540,7 @@ function render() {
     updateSpectatorBadge();
     updateWaitlistUI();
     updateObserverAuthUI();
+    updateTableInterestOverlay();
     return;
   }
 
@@ -1542,42 +1602,98 @@ function updateObserverAuthUI() {
 }
 
 // ============================================================
-//  INTEREST LIST (future stakes)
+//  TABLE NAVIGATOR (top-right widget showing all tables)
 // ============================================================
-const STAKE_LABELS = {
-  '250/500': '250 / 500',
-  '500/1000': '500 / 1K',
-  '5000/10000': '🐋 5K / 10K'
-};
-let myStakeInterests = new Set(); // Track locally which stakes I've toggled
+let cachedTablesStatus = {}; // { tableId: { playerCount, interestCount, handInProgress } }
 
-function renderInterestList(counts, myInterests) {
+function renderTableNavigator() {
   const el = document.getElementById('interestList');
   if (!el) return;
-
-  // Only show for authenticated users
-  if (!mySessionToken) {
-    el.classList.add('hidden');
-    return;
-  }
   el.classList.remove('hidden');
 
-  // If server sent our interests, update the local set
-  if (myInterests !== undefined) {
-    myStakeInterests = new Set(myInterests || []);
+  el.innerHTML =
+    '<div class="interest-list-title">Tables</div>' +
+    Object.values(TABLE_CONFIGS).map(tc => {
+      const status = cachedTablesStatus[tc.id] || {};
+      const isCurrent = tc.id === myTableId;
+      const playerCount = status.playerCount || 0;
+      const interestCount = status.interestCount || 0;
+
+      let statusText;
+      if (status.handInProgress || playerCount > 0) {
+        statusText = `${playerCount} playing`;
+      } else if (tc.mode === 'interest') {
+        statusText = interestCount > 0 ? `${interestCount}/${tc.minPlayers}` : 'empty';
+      } else {
+        statusText = 'empty';
+      }
+
+      return `<a href="${tc.route}" class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
+        <span class="interest-label">${tc.emoji} ${tc.name}</span>
+        <span class="interest-count">${statusText}</span>
+      </a>`;
+    }).join('');
+}
+
+// ============================================================
+//  TABLE INTEREST OVERLAY (for interest-mode tables)
+// ============================================================
+let myTableInterested = false;
+let tableInterestCount = 0;
+let tableInterestNeeded = 4;
+let tableInterestPlayers = [];
+let tableInterestCountdownSec = null;
+let interestCountdownInterval = null;
+
+function updateTableInterestOverlay() {
+  const overlay = document.getElementById('tableInterestOverlay');
+  if (!overlay) return;
+
+  // Only show on interest-mode tables when no game is active
+  if (myTableConfig.mode !== 'interest') {
+    overlay.classList.add('hidden');
+    return;
   }
 
-  el.innerHTML =
-    '<div class="interest-list-title">Interest List</div>' +
-    Object.entries(STAKE_LABELS).map(([level, label]) => {
-      const count = (counts && counts[level]) || 0;
-      const active = myStakeInterests.has(level);
-      const whale = level === '5000/10000' ? ' whale' : '';
-      return `<div class="interest-row${active ? ' active' : ''}${whale}" data-action="toggle-interest" data-stake="${level}">
-        <span class="interest-label">${label}</span>
-        <span class="interest-count">${count} interested</span>
-      </div>`;
-    }).join('');
+  // If there's an active game with players, hide the interest overlay
+  if (gameState && gameState.players && gameState.players.some(p => p !== null)) {
+    overlay.classList.add('hidden');
+    return;
+  }
+
+  overlay.classList.remove('hidden');
+
+  // Countdown active?
+  if (tableInterestCountdownSec !== null && tableInterestCountdownSec > 0) {
+    overlay.innerHTML = `
+      <div class="table-interest-panel">
+        <div class="interest-emoji">${myTableConfig.emoji}</div>
+        <div class="interest-table-name">${myTableConfig.name}</div>
+        <div class="interest-blinds">${myTableConfig.smallBlind.toLocaleString()} / ${myTableConfig.bigBlind.toLocaleString()} Blinds</div>
+        <div class="interest-countdown">⚡ Game starting in ${tableInterestCountdownSec}...</div>
+      </div>
+    `;
+    return;
+  }
+
+  const authRequired = !mySessionToken;
+  const btnAction = authRequired ? 'interest-sign-in' : (myTableInterested ? 'leave-table-interest' : 'join-table-interest');
+  const btnText = authRequired ? 'Sign In to Join' : (myTableInterested ? 'Leave Interest List' : 'Join Interest List');
+
+  const playersList = tableInterestPlayers.length > 0
+    ? `<div class="interest-waiting">Waiting: ${tableInterestPlayers.join(' · ')}</div>`
+    : '';
+
+  overlay.innerHTML = `
+    <div class="table-interest-panel">
+      <div class="interest-emoji">${myTableConfig.emoji}</div>
+      <div class="interest-table-name">${myTableConfig.name}</div>
+      <div class="interest-blinds">${myTableConfig.smallBlind.toLocaleString()} / ${myTableConfig.bigBlind.toLocaleString()} Blinds</div>
+      <div class="interest-progress">${tableInterestCount} / ${tableInterestNeeded} players interested</div>
+      ${playersList}
+      <button class="interest-join-btn${myTableInterested ? ' active' : ''}" data-action="${btnAction}">${btnText}</button>
+    </div>
+  `;
 }
 
 // ============================================================
@@ -3089,9 +3205,12 @@ function showBuyinDialog() {
     if (title) title.textContent = 'Choose your buy-in';
   }
 
-  // Reset to default 10K
-  slider.value = 10000;
-  if (display) display.textContent = '10,000';
+  // Set slider range from table config
+  slider.min = myTableConfig.minBuyin;
+  slider.max = myTableConfig.maxBuyin;
+  slider.step = Math.max(500, Math.floor(myTableConfig.minBuyin / 2));
+  slider.value = myTableConfig.maxBuyin;
+  if (display) display.textContent = myTableConfig.maxBuyin.toLocaleString();
 
   overlay.classList.remove('hidden');
 }
@@ -3116,7 +3235,7 @@ function initBuyinDialog() {
 
   if (sitBtn) {
     sitBtn.addEventListener('click', () => {
-      const amount = parseInt(slider?.value || 10000);
+      const amount = parseInt(slider?.value || myTableConfig.maxBuyin);
 
       if (buyinMode === 'rebuy') {
         // Rebuy mode — emit rebuy with chosen amount
@@ -3166,11 +3285,16 @@ function handleObserverSignIn() {
 //  INIT
 // ============================================================
 async function init() {
+  // Set page title from table config
+  document.title = `${myTableConfig.emoji} ${myTableConfig.name} – Satoshi Stacks`;
+
   initChat();
   initBuyinDialog();
   scheduleBolt();
   checkOrientation();
   initMobileChat();
+  renderTableNavigator();
+  updateTableInterestOverlay();
 
   // Try to restore existing NOSTR session
   const hasSession = await tryRestoreSession();
@@ -3225,18 +3349,19 @@ document.addEventListener('click', (e) => {
       seatOfferActive = false;
       waitlistPosition = null;
       break;
-    case 'toggle-interest':
-      if (socket && actionEl.dataset.stake) {
-        const stake = actionEl.dataset.stake;
-        // Optimistic toggle for instant feedback
-        if (myStakeInterests.has(stake)) {
-          myStakeInterests.delete(stake);
-        } else {
-          myStakeInterests.add(stake);
-        }
-        actionEl.classList.toggle('active');
-        socket.emit('toggle-interest', { stakeLevel: stake });
-      }
+    case 'join-table-interest':
+      if (socket) socket.emit('join-table-interest', { tableId: myTableId });
+      myTableInterested = true;
+      updateTableInterestOverlay();
+      break;
+    case 'leave-table-interest':
+      if (socket) socket.emit('leave-table-interest', { tableId: myTableId });
+      myTableInterested = false;
+      updateTableInterestOverlay();
+      break;
+    case 'interest-sign-in':
+      loginIntent = 'observe';
+      showLoginOverlay();
       break;
     case 'observer-sign-in': handleObserverSignIn(); break;
     case 'submit-bunker': submitBunkerLogin(); break;

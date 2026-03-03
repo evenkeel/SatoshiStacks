@@ -6,9 +6,6 @@
 const { createDeck, shuffleSecure, evaluateHand } = require('../shared');
 const db = require('./database');
 
-const STARTING_STACK = 10000;
-const SMALL_BLIND = 50;
-const BIG_BLIND = 100;
 const NUM_SEATS = 6;
 const BASE_ACTION_MS = 15000;     // 15-second base action timer
 const DEFAULT_TIME_BANK_MS = 15000; // 15s initial time bank per pool
@@ -20,21 +17,28 @@ const BUST_KICK_MS = 60000;       // 60 seconds (busted players must rebuy or ge
 
 // Chip denominations — sorted high-to-low for greedy breakdown
 const CHIP_DEFS = [
-  { value: 10000, label: '10K', fill: '#B55239', text: '#F8F3EA' },
-  { value: 5000,  label: '5K',  fill: '#2F3E5C', text: '#F8F3EA' },
-  { value: 1000,  label: '1K',  fill: '#5A3D5C', text: '#F8F3EA' },
-  { value: 500,   label: '500', fill: '#C46E3F', text: '#F8F3EA' },
-  { value: 100,   label: '100', fill: '#3C8C84', text: '#F8F3EA' },
-  { value: 50,    label: '50',  fill: '#D4A017', text: '#F8F3EA' },
-  { value: 10,    label: '10',  fill: '#9FB8A5', text: '#F8F3EA' },
-  { value: 5,     label: '5',   fill: '#8B7355', text: '#F8F3EA' },
-  { value: 1,     label: '1',   fill: '#F3EBD9', text: '#F3EBD9' },
+  { value: 100000, label: '100K', fill: '#1B1B2F', text: '#F8F3EA' },
+  { value: 50000,  label: '50K',  fill: '#4A0E4E', text: '#F8F3EA' },
+  { value: 25000,  label: '25K',  fill: '#162447', text: '#F8F3EA' },
+  { value: 10000,  label: '10K',  fill: '#B55239', text: '#F8F3EA' },
+  { value: 5000,   label: '5K',   fill: '#2F3E5C', text: '#F8F3EA' },
+  { value: 1000,   label: '1K',   fill: '#5A3D5C', text: '#F8F3EA' },
+  { value: 500,    label: '500',  fill: '#C46E3F', text: '#F8F3EA' },
+  { value: 100,    label: '100',  fill: '#3C8C84', text: '#F8F3EA' },
+  { value: 50,     label: '50',   fill: '#D4A017', text: '#F8F3EA' },
+  { value: 10,     label: '10',   fill: '#9FB8A5', text: '#F8F3EA' },
+  { value: 5,      label: '5',    fill: '#8B7355', text: '#F8F3EA' },
+  { value: 1,      label: '1',    fill: '#F3EBD9', text: '#F3EBD9' },
 ];
 
 
 class PokerGame {
-  constructor(tableId) {
+  constructor(tableId, options = {}) {
     this.tableId = tableId;
+    this.smallBlind = options.smallBlind || 50;
+    this.bigBlind = options.bigBlind || 100;
+    this.minBuyin = options.minBuyin || 2000;
+    this.maxBuyin = options.maxBuyin || 10000;
     this.players = new Array(NUM_SEATS).fill(null);
     this.deck = [];
     this.communityCards = [];
@@ -42,7 +46,7 @@ class PokerGame {
     this.dealerSeat = 0;
     this.currentPlayerIndex = -1;
     this.phase = 'idle'; // idle, preflop, flop, turn, river, showdown
-    this.lastRaise = BIG_BLIND;
+    this.lastRaise = this.bigBlind;
     this.actedThisRound = [];
     this.handInProgress = false;
     this.handCount = 0;
@@ -129,7 +133,7 @@ class PokerGame {
       nostrName: opts.nostrName || null,
       nostrPicture: opts.nostrPicture || null,
       lud16: opts.lud16 || null,
-      stack: opts.initialStack || STARTING_STACK,
+      stack: opts.initialStack || this.maxBuyin,
       holeCards: [],
       folded: joinedMidHand,            // folded if joining mid-hand
       allIn: false,
@@ -254,7 +258,7 @@ class PokerGame {
     this.communityCards = [];
     this.phase = 'preflop';
     this.actedThisRound = [];
-    this.lastRaise = BIG_BLIND;
+    this.lastRaise = this.bigBlind;
     this.lastAggressor = -1;
     this.currentHandLog = [];
 
@@ -319,14 +323,14 @@ class PokerGame {
     }
     this.histSbIdx = sbSeat;
     this.histBbIdx = bbSeat;
-    this.placeBet(sbSeat, SMALL_BLIND);
-    this.placeBet(bbSeat, BIG_BLIND);
+    this.placeBet(sbSeat, this.smallBlind);
+    this.placeBet(bbSeat, this.bigBlind);
 
     // === HAND HISTORY: Log hand start ===
     const now = new Date();
     const yr = now.getFullYear(), mo = String(now.getMonth()+1).padStart(2,'0'), dy = String(now.getDate()).padStart(2,'0');
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0'), ss = String(now.getSeconds()).padStart(2,'0');
-    this.emitLog(`Satoshi Stacks Hand #${this.handCount}: Hold'em No Limit (${SMALL_BLIND}/${BIG_BLIND}) - ${yr}/${mo}/${dy} ${hh}:${mm}:${ss}`, 'header');
+    this.emitLog(`Satoshi Stacks Hand #${this.handCount}: Hold'em No Limit (${this.smallBlind}/${this.bigBlind}) - ${yr}/${mo}/${dy} ${hh}:${mm}:${ss}`, 'header');
     this.emitLog(`Table 'Satoshi Stacks' 6-max Seat #${this.dealerSeat + 1} is the button`, 'header');
     for (let i = 0; i < NUM_SEATS; i++) {
       const p = this.players[i];
@@ -337,8 +341,8 @@ class PokerGame {
     // Post blinds log
     const sbP = this.players[sbSeat];
     const bbP = this.players[bbSeat];
-    if (sbP) { this.emitLog(`${sbP.username}: posts small blind ${Math.min(SMALL_BLIND, sbP.stack + sbP.currentBet)}`, 'action'); sbP._hasBet = true; }
-    if (bbP) { this.emitLog(`${bbP.username}: posts big blind ${Math.min(BIG_BLIND, bbP.stack + bbP.currentBet)}`, 'action'); bbP._hasBet = true; }
+    if (sbP) { this.emitLog(`${sbP.username}: posts small blind ${Math.min(this.smallBlind, sbP.stack + sbP.currentBet)}`, 'action'); sbP._hasBet = true; }
+    if (bbP) { this.emitLog(`${bbP.username}: posts big blind ${Math.min(this.bigBlind, bbP.stack + bbP.currentBet)}`, 'action'); bbP._hasBet = true; }
     this.emitLog(`*** HOLE CARDS ***`, 'phase');
     // Emit per-player "Dealt to" lines (each player only sees their own cards)
     if (this.onDealCards) {
@@ -416,7 +420,7 @@ class PokerGame {
         );
         const isCappedByAllIns = raiseTotal > highestOpponentTotal && highestOpponentTotal <= maxBet;
         if (!isCappedByAllIns) {
-          const minRaise = maxBet + Math.max(BIG_BLIND, this.lastRaise);
+          const minRaise = maxBet + Math.max(this.bigBlind, this.lastRaise);
           if (raiseTotal < minRaise && player.stack > raiseTotal - player.currentBet) {
             return { valid: false, error: `Minimum raise is ${minRaise}` };
           }
@@ -485,7 +489,7 @@ class PokerGame {
         player._hasBet = true;
 
         // Log in standard format: "bets" if first aggression, "raises X to Y" otherwise
-        if (prevMaxBet === 0 || (this.phase === 'preflop' && prevMaxBet <= BIG_BLIND && player.currentBet > BIG_BLIND)) {
+        if (prevMaxBet === 0 || (this.phase === 'preflop' && prevMaxBet <= this.bigBlind && player.currentBet > this.bigBlind)) {
           if (this.phase !== 'preflop' || prevMaxBet === 0) {
             if (player.allIn) this.emitLog(`${player.username}: bets ${player.currentBet} and is all-in`, 'action');
             else this.emitLog(`${player.username}: bets ${player.currentBet}`, 'action');
@@ -504,7 +508,7 @@ class PokerGame {
         // A short all-in above the current bet but below the min raise
         // does NOT reopen — previous actors are not forced to act again.
         const raiseIncrement = player.currentBet - maxBet;
-        const minRaiseIncrement = Math.max(BIG_BLIND, this.lastRaise);
+        const minRaiseIncrement = Math.max(this.bigBlind, this.lastRaise);
         if (raiseIncrement >= minRaiseIncrement) {
           this.lastRaise = raiseIncrement;
           this.lastAggressor = idx;
@@ -565,7 +569,7 @@ class PokerGame {
   advancePhase() {
     this.collectBetsToPot();
     this.actedThisRound = [];
-    this.lastRaise = BIG_BLIND;
+    this.lastRaise = this.bigBlind;
     this.lastAggressor = -1;
 
     const active = this.getActivePlayers();
@@ -897,7 +901,7 @@ class PokerGame {
         if (p && p.participatedThisHand) {
           const won = winners.includes(p);
           const endStack = p.stack;
-          const startStack = p.startingStack || STARTING_STACK;
+          const startStack = p.startingStack || this.maxBuyin;
           const totalBet = p.totalInvested || 0;
 
           playerData.push({
@@ -932,8 +936,8 @@ class PokerGame {
         table_id: this.tableId,
         started_at: startedAt,
         completed_at: completedAt,
-        small_blind: SMALL_BLIND,
-        big_blind: BIG_BLIND,
+        small_blind: this.smallBlind,
+        big_blind: this.bigBlind,
         button_seat: this.dealerSeat,
         pot_total: playerData.reduce((sum, p) => sum + p.total_bet, 0),
         rake: 0,
@@ -955,7 +959,7 @@ class PokerGame {
         if (p && p.participatedThisHand && this.onBadgeCheck) {
           const won = winners.includes(p);
           const endStack = p.stack;
-          const startStack = p.startingStack || STARTING_STACK;
+          const startStack = p.startingStack || this.maxBuyin;
           const totalBet = p.totalInvested || 0;
           const updatedPlayer = db.getPlayer(p.userId);
           this.onBadgeCheck(p.userId, {
@@ -1150,7 +1154,10 @@ class PokerGame {
       currentPlayerIndex: this.currentPlayerIndex,
       phase: this.phase,
       handInProgress: this.handInProgress,
-      bigBlind: BIG_BLIND,
+      smallBlind: this.smallBlind,
+      bigBlind: this.bigBlind,
+      minBuyin: this.minBuyin,
+      maxBuyin: this.maxBuyin,
       lastRaise: this.lastRaise,
       yourTurn: this.players[this.currentPlayerIndex]?.userId === userId
     };
@@ -1498,11 +1505,11 @@ class PokerGame {
       return { success: false, error: 'Cannot rebuy during an active hand' };
     }
 
-    if (player.stack >= STARTING_STACK) {
-      return { success: false, error: 'Stack is already at or above starting amount' };
+    if (player.stack >= this.maxBuyin) {
+      return { success: false, error: 'Stack is already at or above max buy-in' };
     }
 
-    const buyIn = typeof amount === 'number' ? Math.max(2000, Math.min(STARTING_STACK, Math.floor(amount))) : STARTING_STACK;
+    const buyIn = typeof amount === 'number' ? Math.max(this.minBuyin, Math.min(this.maxBuyin, Math.floor(amount))) : this.maxBuyin;
     player.stack = buyIn;
     player.busted = false;
     player.sittingOut = false;
@@ -1537,6 +1544,10 @@ class PokerGame {
   serializeState() {
     return {
       tableId: this.tableId,
+      smallBlind: this.smallBlind,
+      bigBlind: this.bigBlind,
+      minBuyin: this.minBuyin,
+      maxBuyin: this.maxBuyin,
       players: this.players.map(p => {
         if (!p) return null;
         return {
@@ -1595,7 +1606,12 @@ class PokerGame {
    * Note: callbacks (onStateChange, onTimerStart, etc.) must be re-wired by the caller.
    */
   static deserializeState(snapshot) {
-    const game = new PokerGame(snapshot.tableId);
+    const game = new PokerGame(snapshot.tableId, {
+      smallBlind: snapshot.smallBlind || 50,
+      bigBlind: snapshot.bigBlind || 100,
+      minBuyin: snapshot.minBuyin || 2000,
+      maxBuyin: snapshot.maxBuyin || 10000,
+    });
 
     // Restore players
     game.players = snapshot.players.map(p => {

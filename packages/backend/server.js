@@ -33,11 +33,13 @@ const io = new Server(server, {
 
 // ==================== SHARED STATE ====================
 
-const games = new Map();           // tableId -> PokerGame
-const userSockets = new Map();     // userId -> socket.id
-const socketUsers = new Map();     // socket.id -> { userId, tableId, seatIndex }
-const observerSockets = new Map(); // socket.id -> { observerName, tableId }
-const waitlists = new Map();       // tableId -> [{ socketId, userId, observerName, offeredAt }]
+const games = new Map();              // tableId -> PokerGame
+const userSockets = new Map();        // userId -> socket.id
+const socketUsers = new Map();        // socket.id -> { userId, tableId, seatIndex }
+const observerSockets = new Map();    // socket.id -> { observerName, tableId }
+const waitlists = new Map();          // tableId -> [{ socketId, userId, observerName, offeredAt }]
+const tableInterests = new Map();     // tableId -> Map<socketId, { userId, username, joinedAt }>
+const tableCountdowns = new Map();    // tableId -> { timer, startedAt, seconds }
 
 // ==================== BROADCAST HELPER ====================
 
@@ -99,6 +101,31 @@ function broadcastGameState(tableId) {
   }
 }
 
+// Broadcast table navigator status to all connected clients (throttled)
+let tablesStatusTimeout = null;
+function broadcastTablesStatus() {
+  if (tablesStatusTimeout) return; // Already scheduled
+  tablesStatusTimeout = setTimeout(() => {
+    tablesStatusTimeout = null;
+    const tables = {};
+    for (const [id, tc] of Object.entries(config.TABLE_CONFIGS)) {
+      const game = games.get(id);
+      const interests = tableInterests.get(id);
+      let observerCount = 0;
+      for (const [, obs] of observerSockets) {
+        if (obs.tableId === id) observerCount++;
+      }
+      tables[id] = {
+        playerCount: game ? game.players.filter(p => p !== null).length : 0,
+        observerCount,
+        interestCount: interests ? interests.size : 0,
+        handInProgress: game ? game.handInProgress : false,
+      };
+    }
+    io.emit('tables-status', { tables });
+  }, 1000);
+}
+
 // ==================== MIDDLEWARE & ROUTES ====================
 
 // NIP-05 identifier (must be before static middleware)
@@ -134,12 +161,42 @@ console.log('[Server] Helmet security headers enabled');
 // Static files & JSON parsing
 const frontendDir = path.join(__dirname, '../../packages/frontend');
 app.use(express.static(frontendDir));
-app.use('/playmoney', express.static(frontendDir));  // serve under /playmoney too (matches nginx prefix)
 app.use(express.json({ limit: '16kb' }));
+
+// Table routes — all serve the same SPA, JS reads URL to determine table
+const TABLE_ROUTES = Object.values(config.TABLE_CONFIGS).map(t => t.route);
+TABLE_ROUTES.forEach(route => {
+  app.get(route, (req, res) => {
+    res.sendFile(path.join(frontendDir, 'index.html'));
+  });
+});
+
+// Legacy redirect
+app.get('/playmoney', (req, res) => res.redirect(301, '/pond'));
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime(), tables: games.size });
+});
+
+// Live table status API
+app.get('/api/tables', (req, res) => {
+  const tables = Object.values(config.TABLE_CONFIGS).map(tc => {
+    const game = games.get(tc.id);
+    const interests = tableInterests.get(tc.id);
+    let observerCount = 0;
+    for (const [, obs] of observerSockets) {
+      if (obs.tableId === tc.id) observerCount++;
+    }
+    return {
+      ...tc,
+      playerCount: game ? game.players.filter(p => p !== null).length : 0,
+      observerCount,
+      interestCount: interests ? interests.size : 0,
+      handInProgress: game ? game.handInProgress : false,
+    };
+  });
+  res.json({ success: true, tables });
 });
 
 // Mount route modules
@@ -174,7 +231,9 @@ authRoutes.setContext(sharedContext);
       return;
     }
 
-    for (const { table_id, hand_id, snapshot } of snapshots) {
+    for (const { table_id: rawTableId, hand_id, snapshot } of snapshots) {
+      // Map legacy 'table-1' to 'pond' for backward compat
+      const table_id = rawTableId === 'table-1' ? 'pond' : rawTableId;
       try {
         const game = PokerGame.deserializeState(snapshot);
 
@@ -243,9 +302,16 @@ authRoutes.setContext(sharedContext);
   }
 })();
 
+// ==================== SEED TABLE CONFIGS ====================
+// Ensure all configured tables exist in the database
+for (const [id, tc] of Object.entries(config.TABLE_CONFIGS)) {
+  db.upsertTable(id, tc.name, tc.smallBlind, tc.bigBlind);
+}
+console.log(`[Server] Seeded ${Object.keys(config.TABLE_CONFIGS).length} table configs`);
+
 // ==================== WEBSOCKET HANDLERS ====================
 
-socketHandlers.setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists);
+socketHandlers.setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists, tableInterests, tableCountdowns, broadcastTablesStatus);
 
 // ==================== START ====================
 

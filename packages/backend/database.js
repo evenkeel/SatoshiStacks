@@ -215,16 +215,6 @@ function initDatabase() {
     if (!e.message.includes('duplicate column')) throw e;
   }
 
-  // Stake interest list (gauge demand for higher-stakes tables)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS stake_interests (
-      user_id TEXT NOT NULL,
-      stake_level TEXT NOT NULL,
-      created_at INTEGER DEFAULT (strftime('%s','now')),
-      PRIMARY KEY(user_id, stake_level)
-    );
-  `);
-
   console.log('[Database] Schema initialized successfully');
 }
 
@@ -865,53 +855,6 @@ function updateHandNostrEventId(handId, eventId) {
   }
 }
 
-// ==================== STAKE INTEREST LIST ====================
-
-const VALID_STAKE_LEVELS = ['250/500', '500/1000', '5000/10000'];
-
-/**
- * Toggle a user's interest in a stake level (INSERT if absent, DELETE if present).
- * Returns { interested: boolean } indicating the new state.
- */
-function toggleStakeInterest(userId, stakeLevel) {
-  if (!VALID_STAKE_LEVELS.includes(stakeLevel)) {
-    return { interested: false, error: 'Invalid stake level' };
-  }
-  const existing = db.prepare('SELECT 1 FROM stake_interests WHERE user_id = ? AND stake_level = ?').get(userId, stakeLevel);
-  if (existing) {
-    db.prepare('DELETE FROM stake_interests WHERE user_id = ? AND stake_level = ?').run(userId, stakeLevel);
-    return { interested: false };
-  } else {
-    db.prepare('INSERT INTO stake_interests (user_id, stake_level) VALUES (?, ?)').run(userId, stakeLevel);
-    return { interested: true };
-  }
-}
-
-/**
- * Get counts of interested players per stake level.
- * Returns { '250/500': 3, '500/1000': 5, '5000/10000': 1 }
- */
-function getStakeInterestCounts() {
-  const rows = db.prepare('SELECT stake_level, COUNT(*) as count FROM stake_interests GROUP BY stake_level').all();
-  const counts = {};
-  for (const level of VALID_STAKE_LEVELS) {
-    counts[level] = 0;
-  }
-  for (const row of rows) {
-    counts[row.stake_level] = row.count;
-  }
-  return counts;
-}
-
-/**
- * Get the stake levels a specific user is interested in.
- * Returns array like ['250/500', '5000/10000']
- */
-function getUserInterests(userId) {
-  const rows = db.prepare('SELECT stake_level FROM stake_interests WHERE user_id = ?').all(userId);
-  return rows.map(r => r.stake_level);
-}
-
 // Initialize on module load
 initDatabase();
 
@@ -980,8 +923,4 @@ module.exports = {
   deleteHandSnapshot,
   settleHand,
   updateHandNostrEventId,
-  // Stake interest list
-  toggleStakeInterest,
-  getStakeInterestCounts,
-  getUserInterests,
 };
