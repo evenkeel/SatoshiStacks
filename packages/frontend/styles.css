@@ -61,6 +61,20 @@ height: 100%;
 display: flex;
 flex-direction: column;
 }
+/* === CORNER LOGO === */
+.corner-logo {
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  z-index: 50;
+  pointer-events: none;
+}
+.corner-logo img {
+  width: clamp(100px, 14vw, 160px);
+  height: auto;
+  opacity: 0.85;
+  filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.4));
+}
 /* === MIDDLE ROW: table fills most of screen === */
 .middle-row {
 flex: 1;
@@ -118,10 +132,10 @@ position: absolute;
 top: 50%;
 left: 50%;
 transform: translate(-50%, -50%);
-width: clamp(120px, 20vw, 220px);
-height: clamp(80px, 14vw, 150px);
+width: clamp(180px, 30vw, 340px);
+height: clamp(120px, 20vw, 230px);
 background: url('/playmoney/img/logo-sm.png') center / contain no-repeat;
-opacity: 0.08;
+opacity: 0.1;
 pointer-events: none;
 z-index: 0;
 }
@@ -1365,6 +1379,7 @@ transition: transform 0.2s;
 }
 /* === MOBILE PHONE LANDSCAPE === */
 @media (max-height: 500px) and (orientation: landscape) {
+  .corner-logo { display: none; }
   /* Table */
   body.is-mobile .poker-table {
     width: min(88vw, 680px);
@@ -1527,7 +1542,7 @@ transition: transform 0.2s;
   body.is-mobile .login-card { padding: 20px 24px; max-width: 320px; }
   body.is-mobile .login-subtitle { font-size: 12px; margin-bottom: 16px; }
   body.is-mobile .login-method-btn { padding: 10px 20px; font-size: 13px; max-width: 260px; }
-  body.is-mobile .login-logo-img { width: min(220px, 60vw); }
+  body.is-mobile .login-logo-img { width: min(300px, 75vw); }
 }
 /* Hide default chat toggle on non-mobile */
 .mobile-chat-toggle { display: none; }
@@ -1841,13 +1856,13 @@ transition: transform 0.2s;
   transition: color 0.2s;
 }
 .login-close-btn:hover { color: rgba(255,255,255,0.8); }
-.login-logo { margin-bottom: 12px; }
+.login-logo { margin-bottom: 16px; }
 .login-logo-img {
-  width: min(280px, 70vw);
+  width: min(380px, 80vw);
   height: auto;
   display: block;
   margin: 0 auto;
-  filter: drop-shadow(0 2px 12px rgba(232, 168, 56, 0.3));
+  filter: drop-shadow(0 2px 16px rgba(232, 168, 56, 0.35));
 }
 .login-subtitle {
   font-size: 14px;
