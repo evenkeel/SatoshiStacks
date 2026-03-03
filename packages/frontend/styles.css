@@ -112,6 +112,19 @@ background: repeating-conic-gradient(rgba(255,255,255,0.008) 0% 25%, transparent
 pointer-events: none;
 z-index: 0;
 }
+.poker-table::after {
+content: '';
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+width: clamp(120px, 20vw, 220px);
+height: clamp(80px, 14vw, 150px);
+background: url('/playmoney/img/logo-sm.png') center / contain no-repeat;
+opacity: 0.08;
+pointer-events: none;
+z-index: 0;
+}
 .community-cards {
 display: flex;
 align-items: center;
@@ -1512,10 +1525,9 @@ transition: transform 0.2s;
   body.is-mobile .buyin-btn-sit { padding: 10px 20px; font-size: 13px; }
   body.is-mobile .buyin-btn-cancel { padding: 10px 14px; font-size: 12px; }
   body.is-mobile .login-card { padding: 20px 24px; max-width: 320px; }
-  body.is-mobile .login-title { font-size: 22px; }
   body.is-mobile .login-subtitle { font-size: 12px; margin-bottom: 16px; }
   body.is-mobile .login-method-btn { padding: 10px 20px; font-size: 13px; max-width: 260px; }
-  body.is-mobile .login-logo svg { width: 36px; height: 36px; }
+  body.is-mobile .login-logo-img { width: min(220px, 60vw); }
 }
 /* Hide default chat toggle on non-mobile */
 .mobile-chat-toggle { display: none; }
@@ -1829,13 +1841,13 @@ transition: transform 0.2s;
   transition: color 0.2s;
 }
 .login-close-btn:hover { color: rgba(255,255,255,0.8); }
-.login-logo { margin-bottom: 16px; }
-.login-title {
-  font-size: 28px;
-  font-weight: 900;
-  color: var(--cream);
-  margin-bottom: 4px;
-  letter-spacing: -0.5px;
+.login-logo { margin-bottom: 12px; }
+.login-logo-img {
+  width: min(280px, 70vw);
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  filter: drop-shadow(0 2px 12px rgba(232, 168, 56, 0.3));
 }
 .login-subtitle {
   font-size: 14px;
