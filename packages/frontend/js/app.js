@@ -1568,7 +1568,7 @@ function renderInterestList(counts, myInterests) {
   }
 
   el.innerHTML =
-    '<div class="interest-list-title">Coming Soon</div>' +
+    '<div class="interest-list-title">Interest List</div>' +
     Object.entries(STAKE_LABELS).map(([level, label]) => {
       const count = (counts && counts[level]) || 0;
       const active = myStakeInterests.has(level);
