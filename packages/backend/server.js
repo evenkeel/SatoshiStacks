@@ -119,6 +119,7 @@ function broadcastTablesStatus() {
         playerCount: game ? game.players.filter(p => p !== null).length : 0,
         observerCount,
         interestCount: interests ? interests.size : 0,
+        interestedPlayers: interests ? Array.from(interests.values()).map(i => i.username) : [],
         handInProgress: game ? game.handInProgress : false,
       };
     }

@@ -1610,12 +1610,13 @@ function renderTableNavigator() {
   el.classList.remove('hidden');
 
   el.innerHTML =
-    '<div class="interest-list-title">Tables</div>' +
+    '<div class="interest-list-title">Game Interest</div>' +
     Object.values(TABLE_CONFIGS).filter(tc => tc.id !== 'playmoney').map(tc => {
       const status = cachedTablesStatus[tc.id] || {};
       const isCurrent = tc.id === myTableId;
       const playerCount = status.playerCount || 0;
       const interestCount = status.interestCount || 0;
+      const interestedPlayers = status.interestedPlayers || [];
 
       let statusText;
       if (status.handInProgress || playerCount > 0) {
@@ -1626,9 +1627,16 @@ function renderTableNavigator() {
         statusText = 'empty';
       }
 
+      const namesHtml = interestedPlayers.length > 0
+        ? `<div class="interest-player-names">${interestedPlayers.join(' · ')}</div>`
+        : '';
+
       return `<a href="/${tc.id}" class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
-        <span class="interest-label">${tc.emoji} ${tc.name}</span>
-        <span class="interest-count">${statusText}</span>
+        <div class="interest-row-top">
+          <span class="interest-label">${tc.emoji} ${tc.name}</span>
+          <span class="interest-count">${statusText}</span>
+        </div>
+        ${namesHtml}
       </a>`;
     }).join('');
 }
@@ -1665,6 +1673,7 @@ function updateTableInterestOverlay() {
   if (tableInterestCountdownSec !== null && tableInterestCountdownSec > 0) {
     overlay.innerHTML = `
       <div class="table-interest-panel">
+        <button class="interest-close-btn" data-action="close-interest-overlay">&times;</button>
         <div class="interest-emoji">${myTableConfig.emoji}</div>
         <div class="interest-table-name">${myTableConfig.name}</div>
         <div class="interest-countdown">⚡ Game starting in ${tableInterestCountdownSec}...</div>
@@ -1683,6 +1692,7 @@ function updateTableInterestOverlay() {
 
   overlay.innerHTML = `
     <div class="table-interest-panel">
+      <button class="interest-close-btn" data-action="close-interest-overlay">&times;</button>
       <div class="interest-emoji">${myTableConfig.emoji}</div>
       <div class="interest-table-name">${myTableConfig.name}</div>
       <div class="interest-progress">${tableInterestCount} / ${tableInterestNeeded} players interested</div>
@@ -3348,12 +3358,16 @@ document.addEventListener('click', (e) => {
     case 'join-table-interest':
       if (socket) socket.emit('join-table-interest', { tableId: myTableId });
       myTableInterested = true;
-      updateTableInterestOverlay();
+      // Auto-close overlay so the user can see table action
+      document.getElementById('tableInterestOverlay')?.classList.add('hidden');
       break;
     case 'leave-table-interest':
       if (socket) socket.emit('leave-table-interest', { tableId: myTableId });
       myTableInterested = false;
       updateTableInterestOverlay();
+      break;
+    case 'close-interest-overlay':
+      document.getElementById('tableInterestOverlay')?.classList.add('hidden');
       break;
     case 'interest-sign-in':
       loginIntent = 'observe';
