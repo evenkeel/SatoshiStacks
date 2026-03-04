@@ -416,8 +416,22 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         return;
       }
 
+      // Identify the user — could be observer OR seated player at another table
+      let userId, username;
       const obs = observerSockets.get(socket.id);
-      if (!obs || !obs.userId) {
+      const user = socketUsers.get(socket.id);
+      if (obs && obs.userId) {
+        userId = obs.userId;
+        username = obs.nostrName || obs.observerName;
+      } else if (user) {
+        userId = user.userId;
+        // Get display name from the game they're seated at
+        const game = games.get(user.tableId);
+        const player = game?.players?.find(p => p && p.userId === userId);
+        username = player?.nostrName || player?.displayName || userId;
+      }
+
+      if (!userId) {
         socket.emit('error', { message: 'Sign in to join the interest list' });
         return;
       }
@@ -428,12 +442,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       if (interests.has(socket.id)) return;
 
       interests.set(socket.id, {
-        userId: obs.userId,
-        username: obs.nostrName || obs.observerName,
+        userId,
+        username,
         joinedAt: Date.now(),
       });
 
-      console.log(`[Interest] ${obs.observerName} joined interest for ${tc.name} (${interests.size}/${tc.minPlayersToStart})`);
+      console.log(`[Interest] ${username} joined interest for ${tc.name} (${interests.size}/${tc.minPlayersToStart})`);
       broadcastTableInterest(tableId);
 
       // Check if we reached threshold
@@ -787,6 +801,20 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
       const user = socketUsers.get(socket.id);
       if (user) {
+        // Clean up any table interest this seated player had
+        for (const [intTableId, interests] of tableInterests) {
+          if (interests.has(socket.id)) {
+            interests.delete(socket.id);
+            const tc = config.TABLE_CONFIGS[intTableId];
+            if (tc && tc.mode === 'interest') {
+              if (interests.size < tc.minPlayersToStart && tableCountdowns.has(intTableId)) {
+                cancelTableCountdown(intTableId);
+              }
+              broadcastTableInterest(intTableId);
+            }
+          }
+        }
+
         const game = games.get(user.tableId);
         if (game) {
           const player = game.players.find(p => p && p.userId === user.userId);

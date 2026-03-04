@@ -1600,7 +1600,7 @@ function updateObserverAuthUI() {
 // ============================================================
 //  TABLE NAVIGATOR (top-right widget showing all tables)
 // ============================================================
-let cachedTablesStatus = {}; // { tableId: { playerCount, interestCount, handInProgress } }
+let cachedTablesStatus = {}; // { tableId: { playerCount, interestCount, interestedPlayers, handInProgress } }
 
 function renderTableNavigator() {
   const el = document.getElementById('interestList');
@@ -1631,13 +1631,26 @@ function renderTableNavigator() {
         ? `<div class="interest-player-names">${interestedPlayers.join(' · ')}</div>`
         : '';
 
-      return `<a href="/${tc.id}" class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
+      // Show interest join/leave button for interest-mode tables (not for the table you're viewing as observer — that has the overlay)
+      const myName = myUsername || myNostrName || observerName;
+      const amInterested = interestedPlayers.some(n => n === myName);
+      let interestBtn = '';
+      if (tc.mode === 'interest' && mySessionToken && !isCurrent) {
+        if (amInterested) {
+          interestBtn = `<button class="nav-interest-btn leave" data-action="nav-leave-interest" data-table-id="${tc.id}">Leave</button>`;
+        } else {
+          interestBtn = `<button class="nav-interest-btn join" data-action="nav-join-interest" data-table-id="${tc.id}">+ Join</button>`;
+        }
+      }
+
+      return `<div class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
         <div class="interest-row-top">
-          <span class="interest-label">${tc.emoji} ${tc.name}</span>
+          <a href="/${tc.id}" class="interest-label-link">${tc.emoji} ${tc.name}</a>
           <span class="interest-count">${statusText}</span>
+          ${interestBtn}
         </div>
         ${namesHtml}
-      </a>`;
+      </div>`;
     }).join('');
 }
 
@@ -3366,6 +3379,16 @@ document.addEventListener('click', (e) => {
       myTableInterested = false;
       updateTableInterestOverlay();
       break;
+    case 'nav-join-interest': {
+      const tid = actionEl.dataset.tableId;
+      if (socket && tid) socket.emit('join-table-interest', { tableId: tid });
+      break;
+    }
+    case 'nav-leave-interest': {
+      const tid = actionEl.dataset.tableId;
+      if (socket && tid) socket.emit('leave-table-interest', { tableId: tid });
+      break;
+    }
     case 'close-interest-overlay':
       document.getElementById('tableInterestOverlay')?.classList.add('hidden');
       break;

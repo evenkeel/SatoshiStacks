@@ -149,8 +149,33 @@ flex-direction: column;
 .interest-row.active .interest-count {
   color: var(--mustard);
 }
-/* Navigator rows are <a> tags — remove link styling */
+/* Navigator link styling */
 .interest-row, a.interest-row { text-decoration: none; color: inherit; }
+.interest-label-link { text-decoration: none; color: inherit; font-size: 12px; font-weight: 700; }
+.interest-label-link:hover { color: var(--mustard); }
+/* Navigator interest join/leave buttons */
+.nav-interest-btn {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+}
+.nav-interest-btn.join {
+  background: var(--sage);
+  color: var(--warm-white);
+}
+.nav-interest-btn.join:hover { filter: brightness(1.2); }
+.nav-interest-btn.leave {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(250, 246, 238, 0.5);
+}
+.nav-interest-btn.leave:hover { background: var(--rust); color: var(--warm-white); }
 
 /* === TABLE INTEREST OVERLAY (for interest-mode tables) === */
 .table-interest-overlay {
