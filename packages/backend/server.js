@@ -171,8 +171,10 @@ TABLE_ROUTES.forEach(route => {
   });
 });
 
-// Legacy redirect
-app.get('/playmoney', (req, res) => res.redirect(301, '/pond'));
+// /playmoney also serves the SPA (maps to pond table via frontend routing)
+app.get('/playmoney', (req, res) => {
+  res.sendFile(path.join(frontendDir, 'index.html'));
+});
 
 // Health check
 app.get('/health', (req, res) => {

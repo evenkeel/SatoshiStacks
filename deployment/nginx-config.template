@@ -23,8 +23,8 @@ server {
     client_body_timeout 10s;
     client_header_timeout 10s;
 
-    # ─── Table routes (/pond, /reef, /deep, /abyss) ───────────────────────
-    location ~ ^/(pond|reef|deep|abyss)$ {
+    # ─── Table routes (/pond, /reef, /deep, /abyss, /playmoney) ────────────
+    location ~ ^/(pond|reef|deep|abyss|playmoney)$ {
         limit_req zone=general burst=50 nodelay;
         limit_conn addr 20;
 
@@ -41,10 +41,7 @@ server {
         proxy_buffering off;
     }
 
-    # ─── Legacy /playmoney redirect ─────────────────────────────────────
-    location = /playmoney {
-        return 301 /pond;
-    }
+    # (playmoney included in table routes regex above)
 
     # ─── Socket.IO (WebSocket upgrade) ────────────────────────────────────
     location /socket.io/ {
