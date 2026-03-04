@@ -1198,7 +1198,6 @@ function connectAsObserver() {
   window.socket = socket;
 
   socket.on('connect', () => {
-    updateConnectionStatus(true);
     // On connect AND reconnect: if we have a seat, rejoin as player; otherwise observe
     if (mySeat && mySessionToken) {
       console.log('[Socket] Reconnecting as seated player (seat', mySeat, ')');
@@ -1215,12 +1214,8 @@ function connectAsObserver() {
   socket.on('observer-joined', ({ observerName: name, userId, nostrName, nostrPicture }) => {
     observerName = name;
     myUsername = nostrName || name;
-    if (userId) {
-      myUserId = userId;
-      showToast(`Watching as ${myUsername}`, 'info');
-    } else {
-      showToast(`Watching as ${name}`, 'info');
-    }
+    if (userId) myUserId = userId;
+    updateConnectionStatus(true, myUsername);
   });
 
   // Share common socket event handlers
@@ -1251,7 +1246,7 @@ function connectToServer() {
   window.socket = socket;
 
   socket.on('connect', () => {
-    updateConnectionStatus(true);
+    updateConnectionStatus(true, myUsername || null);
     // On connect AND reconnect: always re-emit join-table to restore seat
     const buyIn = pendingBuyIn || 10000;
     socket.emit('join-table', {
@@ -2925,12 +2920,12 @@ window.addEventListener('orientationchange', () => {
 // ============================================================
 //  CONNECTION STATUS
 // ============================================================
-function updateConnectionStatus(connected) {
+function updateConnectionStatus(connected, name) {
   const statusEl = $('connectionStatus');
   const textEl = $('connectionText');
   if (connected) {
     statusEl.style.background = 'var(--sage)';
-    textEl.textContent = '\u25CF  Connected';
+    textEl.textContent = name ? `\u25CF  Connected as ${name}` : '\u25CF  Connected';
     statusEl.style.display = 'block';
     setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
   } else {
