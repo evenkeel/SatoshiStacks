@@ -10,10 +10,10 @@ const NUM_SEATS = 6;
 //  TABLE CONFIGURATION — derive from URL
 // ============================================================
 const TABLE_CONFIGS = {
-  pond:  { id: 'pond',  name: 'The Pond',  emoji: '🐟', smallBlind: 50,   bigBlind: 100,   minBuyin: 2000,    maxBuyin: 10000,   mode: 'open',     minPlayers: 2 },
-  reef:  { id: 'reef',  name: 'The Reef',  emoji: '🦀', smallBlind: 250,  bigBlind: 500,   minBuyin: 10000,   maxBuyin: 50000,   mode: 'interest', minPlayers: 4 },
-  deep:  { id: 'deep',  name: 'The Deep',  emoji: '🦈', smallBlind: 500,  bigBlind: 1000,  minBuyin: 20000,   maxBuyin: 100000,  mode: 'interest', minPlayers: 4 },
-  abyss: { id: 'abyss', name: 'The Abyss', emoji: '🐋', smallBlind: 5000, bigBlind: 10000, minBuyin: 200000,  maxBuyin: 1000000, mode: 'interest', minPlayers: 4 },
+  pond:  { id: 'pond',  name: '50 / 100',  emoji: '🐟', smallBlind: 50,   bigBlind: 100,   minBuyin: 2000,    maxBuyin: 10000,   mode: 'open',     minPlayers: 2 },
+  reef:  { id: 'reef',  name: '250 / 500', emoji: '🦀', smallBlind: 250,  bigBlind: 500,   minBuyin: 10000,   maxBuyin: 50000,   mode: 'interest', minPlayers: 4 },
+  deep:  { id: 'deep',  name: '500 / 1K',  emoji: '🦈', smallBlind: 500,  bigBlind: 1000,  minBuyin: 20000,   maxBuyin: 100000,  mode: 'interest', minPlayers: 4 },
+  abyss: { id: 'abyss', name: '5K / 10K',  emoji: '🐋', smallBlind: 5000, bigBlind: 10000, minBuyin: 200000,  maxBuyin: 1000000, mode: 'interest', minPlayers: 4 },
 };
 
 function getTableIdFromPath() {
@@ -1669,7 +1669,6 @@ function updateTableInterestOverlay() {
       <div class="table-interest-panel">
         <div class="interest-emoji">${myTableConfig.emoji}</div>
         <div class="interest-table-name">${myTableConfig.name}</div>
-        <div class="interest-blinds">${myTableConfig.smallBlind.toLocaleString()} / ${myTableConfig.bigBlind.toLocaleString()} Blinds</div>
         <div class="interest-countdown">⚡ Game starting in ${tableInterestCountdownSec}...</div>
       </div>
     `;
@@ -1688,7 +1687,6 @@ function updateTableInterestOverlay() {
     <div class="table-interest-panel">
       <div class="interest-emoji">${myTableConfig.emoji}</div>
       <div class="interest-table-name">${myTableConfig.name}</div>
-      <div class="interest-blinds">${myTableConfig.smallBlind.toLocaleString()} / ${myTableConfig.bigBlind.toLocaleString()} Blinds</div>
       <div class="interest-progress">${tableInterestCount} / ${tableInterestNeeded} players interested</div>
       ${playersList}
       <button class="interest-join-btn${myTableInterested ? ' active' : ''}" data-action="${btnAction}">${btnText}</button>
