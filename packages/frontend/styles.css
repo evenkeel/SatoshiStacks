@@ -289,7 +289,7 @@ left: 50%;
 transform: translate(-50%, -50%);
 width: clamp(180px, 30vw, 340px);
 height: clamp(120px, 20vw, 230px);
-background: url('/playmoney/img/logo-sm.png') center / contain no-repeat;
+background: url('/img/logo-sm.png') center / contain no-repeat;
 opacity: 0.1;
 pointer-events: none;
 z-index: 0;
