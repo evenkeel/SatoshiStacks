@@ -171,11 +171,6 @@ TABLE_ROUTES.forEach(route => {
   });
 });
 
-// /playmoney also serves the SPA (maps to pond table via frontend routing)
-app.get('/playmoney', (req, res) => {
-  res.sendFile(path.join(frontendDir, 'index.html'));
-});
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime(), tables: games.size });

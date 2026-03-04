@@ -10,6 +10,7 @@ const NUM_SEATS = 6;
 //  TABLE CONFIGURATION — derive from URL
 // ============================================================
 const TABLE_CONFIGS = {
+  playmoney: { id: 'playmoney', name: '50 / 100', emoji: '🎲', smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000, mode: 'open', minPlayers: 2 },
   pond:  { id: 'pond',  name: '50 / 100',  emoji: '🐟', smallBlind: 50,   bigBlind: 100,   minBuyin: 2000,    maxBuyin: 10000,   mode: 'open',     minPlayers: 2 },
   reef:  { id: 'reef',  name: '250 / 500', emoji: '🦀', smallBlind: 250,  bigBlind: 500,   minBuyin: 10000,   maxBuyin: 50000,   mode: 'interest', minPlayers: 4 },
   deep:  { id: 'deep',  name: '500 / 1K',  emoji: '🦈', smallBlind: 500,  bigBlind: 1000,  minBuyin: 20000,   maxBuyin: 100000,  mode: 'interest', minPlayers: 4 },
@@ -1609,11 +1610,13 @@ let cachedTablesStatus = {}; // { tableId: { playerCount, interestCount, handInP
 function renderTableNavigator() {
   const el = document.getElementById('interestList');
   if (!el) return;
+  // Hide navigator on the playmoney test table
+  if (myTableId === 'playmoney') { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
 
   el.innerHTML =
     '<div class="interest-list-title">Tables</div>' +
-    Object.values(TABLE_CONFIGS).map(tc => {
+    Object.values(TABLE_CONFIGS).filter(tc => tc.id !== 'playmoney').map(tc => {
       const status = cachedTablesStatus[tc.id] || {};
       const isCurrent = tc.id === myTableId;
       const playerCount = status.playerCount || 0;
@@ -1628,7 +1631,7 @@ function renderTableNavigator() {
         statusText = 'empty';
       }
 
-      return `<a href="${tc.route}" class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
+      return `<a href="/${tc.id}" class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
         <span class="interest-label">${tc.emoji} ${tc.name}</span>
         <span class="interest-count">${statusText}</span>
       </a>`;

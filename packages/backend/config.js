@@ -21,6 +21,11 @@ module.exports = {
 
   // Table definitions — min buyin = 20bb, max buyin = 100bb
   TABLE_CONFIGS: {
+    playmoney: {
+      id: 'playmoney', route: '/playmoney', name: '50 / 100', emoji: '🎲',
+      smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000,
+      mode: 'open', minPlayersToStart: 2,
+    },
     pond: {
       id: 'pond', route: '/pond', name: '50 / 100', emoji: '🐟',
       smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000,
