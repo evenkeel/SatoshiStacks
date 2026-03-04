@@ -1643,9 +1643,16 @@ function renderTableNavigator() {
         }
       }
 
+      // Only link to tables with active games (or open-mode tables)
+      const hasActiveGame = status.handInProgress || playerCount > 0;
+      const isClickable = tc.mode !== 'interest' || hasActiveGame;
+      const labelHtml = isClickable
+        ? `<a href="/${tc.id}" class="interest-label-link">${tc.emoji} ${tc.name}</a>`
+        : `<span class="interest-label">${tc.emoji} ${tc.name}</span>`;
+
       return `<div class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
         <div class="interest-row-top">
-          <a href="/${tc.id}" class="interest-label-link">${tc.emoji} ${tc.name}</a>
+          ${labelHtml}
           <span class="interest-count">${statusText}</span>
           ${interestBtn}
         </div>
