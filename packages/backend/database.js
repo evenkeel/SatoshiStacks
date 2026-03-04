@@ -103,6 +103,14 @@ function initDatabase() {
     // Column already exists — ignore
   }
 
+  // Migration: Add left_table column for per-table anti-rathole tracking
+  try {
+    db.exec(`ALTER TABLE players ADD COLUMN left_table TEXT DEFAULT NULL`);
+    console.log('[Database] Added left_table column to players table');
+  } catch (e) {
+    // Column already exists — ignore
+  }
+
   // Tables table
   db.exec(`
     CREATE TABLE IF NOT EXISTS tables (
@@ -334,17 +342,18 @@ function updatePlayerStats(userId, stats) {
 }
 
 /**
- * Save player's chip count and departure timestamp (anti-rathole tracking)
+ * Save player's chip count, departure timestamp, and table (anti-rathole tracking)
  */
-function updatePlayerLeftAt(userId, chips) {
+function updatePlayerLeftAt(userId, chips, tableId) {
   const stmt = db.prepare(`
     UPDATE players SET
       current_chips = ?,
-      left_at = strftime('%s','now')
+      left_at = strftime('%s','now'),
+      left_table = ?
     WHERE user_id = ?
   `);
   try {
-    stmt.run(chips, userId);
+    stmt.run(chips, tableId || null, userId);
   } catch (error) {
     console.error('[Database] Error updating player left_at:', error);
   }

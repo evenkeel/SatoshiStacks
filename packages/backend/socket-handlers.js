@@ -127,8 +127,8 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     game.onPlayerLeaving = (userId, stack) => {
       try {
-        db.updatePlayerLeftAt(userId, stack);
-        console.log(`[Server] Saved departure: ${userId.slice(0, 8)}... with ${stack} chips`);
+        db.updatePlayerLeftAt(userId, stack, tableId);
+        console.log(`[Server] Saved departure: ${userId.slice(0, 8)}... with ${stack} chips from ${tableId}`);
       } catch (err) {
         console.error(`[Server] Failed to save departure for ${userId}:`, err.message);
       }
@@ -558,12 +558,14 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           : tableConfig.maxBuyin;
 
         let chips;
-        const recentDeparture = playerData.left_at
+        const sameTable = playerData.left_table === tableId;
+        const recentDeparture = sameTable
+          && playerData.left_at
           && (Date.now() - playerData.left_at * 1000) < config.RATHOLE_WINDOW_MS
           && playerData.current_chips > tableConfig.maxBuyin;
         if (recentDeparture) {
           chips = playerData.current_chips;
-          console.log(`[Server] Anti-rathole: ${displayName} must return with ${chips} chips (left with ${playerData.current_chips}, max buy-in is ${tableConfig.maxBuyin})`);
+          console.log(`[Server] Anti-rathole: ${displayName} must return with ${chips} chips (left ${tableId} with ${playerData.current_chips}, max buy-in is ${tableConfig.maxBuyin})`);
         } else {
           chips = requestedBuyIn;
           console.log(`[Server] ${displayName} buying in for ${chips} playsats at ${tableConfig.name}`);

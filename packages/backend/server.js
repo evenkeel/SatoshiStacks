@@ -262,7 +262,7 @@ authRoutes.setContext(sharedContext);
           if (socketId) io.to(socketId).emit('hand-complete', { history: historyText });
         };
         game.onPlayerLeaving = (userId, stack) => {
-          try { db.updatePlayerLeftAt(userId, stack); } catch (e) {}
+          try { db.updatePlayerLeftAt(userId, stack, table_id); } catch (e) {}
         };
         game.onTableMaybeEmpty = () => {
           if (game.players.every(p => p === null)) {
