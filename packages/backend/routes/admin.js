@@ -11,6 +11,41 @@ const { validateBody, schemas } = require('../middleware/validate');
 
 const router = Router();
 
+// Per-IP rate limit applied before auth, so failed attempts count toward the
+// cap. Caps brute-force speed on ADMIN_TOKEN to maxRequests/windowSec.
+const adminRateLimits = new Map(); // ip -> [timestamps]
+
+function isAdminRateLimited(ip) {
+  const { maxRequests, windowSec } = config.ADMIN_RATE_LIMIT;
+  const now = Date.now();
+  const cutoff = now - windowSec * 1000;
+  let timestamps = adminRateLimits.get(ip) || [];
+  timestamps = timestamps.filter(t => t > cutoff);
+  if (timestamps.length >= maxRequests) {
+    adminRateLimits.set(ip, timestamps);
+    return true;
+  }
+  timestamps.push(now);
+  adminRateLimits.set(ip, timestamps);
+  return false;
+}
+
+const adminRateCleanup = setInterval(() => {
+  const cutoff = Date.now() - 120000;
+  for (const [ip, ts] of adminRateLimits) {
+    if (ts.every(t => t < cutoff)) adminRateLimits.delete(ip);
+  }
+}, 300000);
+adminRateCleanup.unref();
+
+router.use((req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  if (isAdminRateLimited(ip)) {
+    return res.status(429).json({ success: false, error: 'Too many requests' });
+  }
+  next();
+});
+
 // Admin auth middleware — timing-safe token comparison
 router.use((req, res, next) => {
   const token = req.headers['x-admin-token'] || '';

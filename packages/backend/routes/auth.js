@@ -34,12 +34,13 @@ function isAuthRateLimited(ip) {
 }
 
 // Clean up stale entries every 5 minutes
-setInterval(() => {
+const authRateCleanup = setInterval(() => {
   const cutoff = Date.now() - 120000;
   for (const [ip, ts] of authRateLimits) {
     if (ts.every(t => t < cutoff)) authRateLimits.delete(ip);
   }
 }, 300000);
+authRateCleanup.unref();
 
 // ==================== ENDPOINTS ====================
 

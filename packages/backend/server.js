@@ -319,16 +319,57 @@ server.listen(config.PORT, () => {
   nostr.publishStartupEvents();
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+// ==================== SHUTDOWN ====================
 
-// Catch unhandled promise rejections (e.g. NOSTR relay failures)
+let isShuttingDown = false;
+
+function flushSnapshots(label) {
+  let flushed = 0;
+  for (const [tableId, game] of games) {
+    try {
+      if (game.handInProgress) {
+        game.saveSnapshot();
+        flushed++;
+      }
+    } catch (err) {
+      console.error(`[${label}] Snapshot failed for ${tableId}: ${err.message}`);
+    }
+  }
+  if (flushed > 0) console.log(`[${label}] Flushed ${flushed} snapshot(s)`);
+}
+
+function shutdown(reason, exitCode) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[Shutdown] ${reason}`);
+
+  flushSnapshots('Shutdown');
+
+  try { io.disconnectSockets(true); } catch (e) { /* noop */ }
+
+  const forceExit = setTimeout(() => {
+    console.error('[Shutdown] Forced exit after 10s timeout');
+    process.exit(exitCode || 1);
+  }, 10000);
+  forceExit.unref();
+
+  server.close(() => {
+    console.log('[Shutdown] HTTP server closed');
+    process.exit(exitCode);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM received', 0));
+process.on('SIGINT', () => shutdown('SIGINT received', 0));
+
+// Unhandled promise rejection — log but keep running (NOSTR relay failures etc.)
 process.on('unhandledRejection', (reason) => {
   console.error('[Server] Unhandled promise rejection:', reason);
+});
+
+// Uncaught exception — try to persist state before exiting, since the process
+// is in an undefined state and staying up risks corrupting further hands.
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught exception:', err);
+  shutdown('Uncaught exception', 1);
 });

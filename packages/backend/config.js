@@ -3,7 +3,8 @@
  * All constants, env vars, and tuning values in one place.
  */
 
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 if (!process.env.ADMIN_TOKEN) {
   console.error('FATAL: ADMIN_TOKEN environment variable is not set. Refusing to start with insecure admin access. Set ADMIN_TOKEN in your .env file.');
@@ -60,6 +61,7 @@ module.exports = {
   AUTH_RATE_LIMIT: { maxRequests: 10, windowSec: 60 },
   ACTION_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
   JOIN_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
+  ADMIN_RATE_LIMIT: { maxRequests: 30, windowSec: 60 },
 
   // Observer name generation
   OBSERVER_ADJECTIVES: ['Curious', 'Lucky', 'Swift', 'Cosmic', 'Zen', 'Bold', 'Neon', 'Pixel', 'Lunar', 'Solar', 'Turbo', 'Ultra'],
