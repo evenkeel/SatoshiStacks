@@ -281,9 +281,23 @@ authRoutes.setContext(sharedContext);
 
         games.set(table_id, game);
 
-        // Restart action timer for current player if hand is in progress
-        if (game.handInProgress && game.currentPlayerIndex >= 0) {
-          game.startActionTimer();
+        // Resume interrupted timers. The snapshot doesn't serialize the
+        // timeouts themselves — just the game-state that tells us which one
+        // was running.
+        if (game.handInProgress) {
+          if (game.phase === 'showdown') {
+            // Dramatic runout was mid-flight. Either resume dealing remaining
+            // streets or finish the hand if all cards are already out.
+            if (game.communityCards.length < 5) {
+              console.log(`[Recovery] Resuming dramatic runout on ${table_id} (${game.communityCards.length}/5 community cards dealt)`);
+              game.dramaticRunOut();
+            } else {
+              console.log(`[Recovery] Finishing stalled showdown on ${table_id}`);
+              setTimeout(() => { try { game.endHand(); } catch (e) { console.error('[Recovery] endHand failed:', e.message); } }, 500);
+            }
+          } else if (game.currentPlayerIndex >= 0) {
+            game.startActionTimer();
+          }
         }
 
         console.log(`[Recovery] Restored hand ${hand_id} on table ${table_id} (phase: ${game.phase}, players: ${game.players.filter(p => p).length})`);

@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Syntax check backend
+        run: |
+          find packages/backend -name '*.js' -not -path '*/node_modules/*' -print0 \
+            | xargs -0 -n1 node --check
+
+      - name: Syntax check frontend
+        run: |
+          find packages/frontend/js -name '*.js' -not -path '*/node_modules/*' -print0 \
+            | xargs -0 -n1 node --check
+
+      - name: Smoke-boot backend
+        env:
+          ADMIN_TOKEN: ci-smoke-token
+          PORT: 39001
+          NODE_ENV: production
+        run: |
+          node -e "
+            require('./packages/backend/server.js');
+            setTimeout(() => { console.log('BOOT_OK'); process.kill(process.pid, 'SIGTERM'); }, 2000);
+            setTimeout(() => { console.error('TIMEOUT'); process.exit(1); }, 8000);
+          "
+
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high

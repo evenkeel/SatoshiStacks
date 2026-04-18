@@ -570,7 +570,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           chips = requestedBuyIn;
           console.log(`[Server] ${displayName} buying in for ${chips} playsats at ${tableConfig.name}`);
         }
-        db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
 
         // Clean up observer + waitlist + interest tracking
         if (observerSockets.has(socket.id)) {
@@ -604,9 +603,13 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           }
         }
 
-        // Create game & add player
+        // Create game & add player — persist buy-in to DB only now, since the
+        // reconnect branch above doesn't spend chips and mustn't clobber the
+        // live in-memory stack between hands.
         ensureGameExists(tableId);
         const game = games.get(tableId);
+
+        db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
 
         const lud16 = playerData.lud16 || null;
         const assignedSeat = game.addPlayer(userId, displayName, {
