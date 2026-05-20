@@ -21,6 +21,10 @@ const db = new Database(dbPath, isdev ? { verbose: console.log } : {});
 // Enable foreign keys and WAL mode for better concurrent read/write performance
 db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
+// Wait (up to 5s) on a locked database instead of immediately throwing
+// SQLITE_BUSY — covers transient WAL write contention in production and
+// concurrent opens by parallel test processes.
+db.pragma('busy_timeout = 5000');
 
 // In-memory badge cache to avoid DB queries on every game state broadcast
 const badgeCache = new Map(); // userId -> { badges: [...], cachedAt: timestamp }
