@@ -29,6 +29,11 @@ jobs:
           find packages/frontend/js -name '*.js' -not -path '*/node_modules/*' -print0 \
             | xargs -0 -n1 node --check
 
+      - name: Run unit tests
+        env:
+          NODE_ENV: production
+        run: npm test
+
       - name: Smoke-boot backend
         env:
           ADMIN_TOKEN: ci-smoke-token

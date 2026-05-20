@@ -9,7 +9,8 @@
   "scripts": {
     "install:all": "npm install && npm install --workspace=packages/backend",
     "dev": "npm run dev --workspace=packages/backend",
-    "start": "npm start --workspace=packages/backend"
+    "start": "npm start --workspace=packages/backend",
+    "test": "node --test packages/shared/hand-evaluator.test.js packages/backend/poker-game.test.js"
   },
   "keywords": [
     "poker",

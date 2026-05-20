@@ -882,12 +882,15 @@ function cleanupExpiredSessions() {
   }
 }
 
-// Cleanup abuse log, expired challenges, and expired sessions every hour
+// Cleanup abuse log, expired challenges, and expired sessions every hour.
+// unref() so this timer alone won't keep the process alive — the running
+// server is held open by its HTTP listener, while a bare `require` (tests,
+// CLI scripts) can still exit cleanly.
 setInterval(() => {
   cleanupAbuseLog();
   cleanupExpiredChallenges();
   cleanupExpiredSessions();
-}, 3600000);
+}, 3600000).unref();
 
 module.exports = {
   db,

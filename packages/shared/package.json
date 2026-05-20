@@ -5,7 +5,7 @@
   "main": "index.js",
   "private": true,
   "scripts": {
-    "test": "echo \"No tests yet\" && exit 0"
+    "test": "node --test hand-evaluator.test.js"
   },
   "keywords": ["poker", "shared"],
   "author": "Noah Rexrode",
