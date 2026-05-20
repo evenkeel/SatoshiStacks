@@ -26,7 +26,11 @@ jobs:
 
       - name: Syntax check frontend
         run: |
-          find packages/frontend/js -name '*.js' -not -path '*/node_modules/*' -print0 \
+          # nip46-loader.js is a browser ES module (top-level `import` from a
+          # URL, loaded via <script type="module">). `node --check` parses .js
+          # as CommonJS and rejects it, so exclude it from the Node syntax check.
+          find packages/frontend/js -name '*.js' -not -path '*/node_modules/*' \
+            ! -name 'nip46-loader.js' -print0 \
             | xargs -0 -n1 node --check
 
       - name: Run unit tests
