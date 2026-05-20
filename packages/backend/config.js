@@ -20,7 +20,7 @@ module.exports = {
   // Game rules
   NUM_SEATS: 6,
 
-  // Table definitions — min buyin = 20bb, max buyin = 100bb
+  // Table definitions
   TABLE_CONFIGS: {
     playmoney: {
       id: 'playmoney', route: '/playmoney', name: '50 / 100', emoji: '🎲',
@@ -28,24 +28,9 @@ module.exports = {
       mode: 'open', minPlayersToStart: 2,
     },
     pond: {
-      id: 'pond', route: '/pond', name: '50 / 100', emoji: '🐟',
-      smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000,
+      id: 'pond', route: '/pond', name: 'Table 1', emoji: '🃏',
+      smallBlind: 50, bigBlind: 100, minBuyin: 10000, maxBuyin: 10000,
       mode: 'open', minPlayersToStart: 2,
-    },
-    reef: {
-      id: 'reef', route: '/reef', name: '250 / 500', emoji: '🦀',
-      smallBlind: 250, bigBlind: 500, minBuyin: 10000, maxBuyin: 50000,
-      mode: 'interest', minPlayersToStart: 4,
-    },
-    deep: {
-      id: 'deep', route: '/deep', name: '500 / 1K', emoji: '🦈',
-      smallBlind: 500, bigBlind: 1000, minBuyin: 20000, maxBuyin: 100000,
-      mode: 'interest', minPlayersToStart: 4,
-    },
-    abyss: {
-      id: 'abyss', route: '/abyss', name: '5K / 10K', emoji: '🐋',
-      smallBlind: 5000, bigBlind: 10000, minBuyin: 200000, maxBuyin: 1000000,
-      mode: 'interest', minPlayersToStart: 4,
     },
   },
   DEFAULT_TABLE: 'pond',

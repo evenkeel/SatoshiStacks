@@ -11,10 +11,7 @@ const NUM_SEATS = 6;
 // ============================================================
 const TABLE_CONFIGS = {
   playmoney: { id: 'playmoney', name: '50 / 100', emoji: '🎲', smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000, mode: 'open', minPlayers: 2 },
-  pond:  { id: 'pond',  name: '50 / 100',  emoji: '🐟', smallBlind: 50,   bigBlind: 100,   minBuyin: 2000,    maxBuyin: 10000,   mode: 'open',     minPlayers: 2 },
-  reef:  { id: 'reef',  name: '250 / 500', emoji: '🦀', smallBlind: 250,  bigBlind: 500,   minBuyin: 10000,   maxBuyin: 50000,   mode: 'interest', minPlayers: 4 },
-  deep:  { id: 'deep',  name: '500 / 1K',  emoji: '🦈', smallBlind: 500,  bigBlind: 1000,  minBuyin: 20000,   maxBuyin: 100000,  mode: 'interest', minPlayers: 4 },
-  abyss: { id: 'abyss', name: '5K / 10K',  emoji: '🐋', smallBlind: 5000, bigBlind: 10000, minBuyin: 200000,  maxBuyin: 1000000, mode: 'interest', minPlayers: 4 },
+  pond:  { id: 'pond',  name: 'Table 1',   emoji: '🃏', smallBlind: 50,   bigBlind: 100,   minBuyin: 10000,   maxBuyin: 10000,   mode: 'open',     minPlayers: 2 },
 };
 
 function getTableIdFromPath() {
@@ -1605,8 +1602,8 @@ let cachedTablesStatus = {}; // { tableId: { playerCount, interestCount, interes
 function renderTableNavigator() {
   const el = document.getElementById('interestList');
   if (!el) return;
-  // Hide navigator on the playmoney test table
-  if (myTableId === 'playmoney') { el.classList.add('hidden'); return; }
+  // Hide navigator — only one real table exists right now
+  el.classList.add('hidden'); return;
   el.classList.remove('hidden');
 
   el.innerHTML =
