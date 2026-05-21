@@ -227,6 +227,34 @@ function initDatabase() {
     if (!e.message.includes('duplicate column')) throw e;
   }
 
+  // Lightning real-money ledger (append-only). Every sat crossing the boundary
+  // is one row. UNIQUE(payment_hash,direction) makes double-credit / double-
+  // withdraw physically impossible at the storage layer (not just in code).
+  // Deposit status:    pending -> settled | expired | canceled | settled_unseated | amount_mismatch
+  // Withdrawal status: reserved -> in_flight -> succeeded | failed -> refunded
+  //   (a refund is ONLY legal from `failed`; in_flight/unknown never auto-transitions)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ledger_entries (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      TEXT    NOT NULL,
+      table_id     TEXT    NOT NULL,
+      direction    TEXT    NOT NULL CHECK (direction IN ('deposit','withdrawal')),
+      amount_sats  INTEGER NOT NULL CHECK (amount_sats > 0),
+      payment_hash TEXT    NOT NULL,
+      bolt11       TEXT,
+      status       TEXT    NOT NULL,
+      fee_sats     INTEGER DEFAULT 0,
+      seat_index   INTEGER,
+      created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      settled_at   INTEGER,
+      UNIQUE (payment_hash, direction)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ledger_user   ON ledger_entries(user_id);
+    CREATE INDEX IF NOT EXISTS idx_ledger_status ON ledger_entries(status);
+    CREATE INDEX IF NOT EXISTS idx_ledger_hash   ON ledger_entries(payment_hash);
+  `);
+
   console.log('[Database] Schema initialized successfully');
 }
 
@@ -886,6 +914,80 @@ function cleanupExpiredSessions() {
   }
 }
 
+// ==================== LIGHTNING REAL-MONEY LEDGER ====================
+// Append-only accounting for sats crossing the Lightning boundary. The atomic
+// withdrawal critical section (check stack + reserve + debit game object) is
+// composed in services/payments.js using the exported `db.transaction`, since
+// the authoritative stack lives in the in-memory game object. These helpers
+// are the durable DB side.
+
+// Record a new deposit invoice (pending). Throws on UNIQUE(payment_hash,'deposit').
+function createDepositRow({ userId, tableId, amountSats, paymentHash, bolt11, seatIndex }) {
+  return db.prepare(`
+    INSERT INTO ledger_entries (user_id, table_id, direction, amount_sats, payment_hash, bolt11, status, seat_index)
+    VALUES (?, ?, 'deposit', ?, ?, ?, 'pending', ?)
+  `).run(userId, tableId, amountSats, paymentHash, bolt11 || null, seatIndex ?? null);
+}
+
+// Idempotent deposit settlement. Safe to call repeatedly (LND redelivers settled
+// invoices on stream reconnect). Returns { status, row }. Only the pending->settled
+// transition credits; everything else is a no-op classification.
+const settleDepositTx = db.transaction((paymentHash, amtPaidSat) => {
+  const row = db.prepare(`SELECT * FROM ledger_entries WHERE payment_hash = ? AND direction = 'deposit'`).get(paymentHash);
+  if (!row) return { status: 'unknown', row: null };
+  if (row.status === 'settled' || row.status === 'settled_unseated') return { status: 'already_settled', row };
+  if (row.status !== 'pending') return { status: row.status, row }; // expired / canceled / amount_mismatch — never credit
+  if (Number(amtPaidSat) !== row.amount_sats) {
+    db.prepare(`UPDATE ledger_entries SET status='amount_mismatch', updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
+    return { status: 'amount_mismatch', row: { ...row, status: 'amount_mismatch' } };
+  }
+  db.prepare(`UPDATE ledger_entries SET status='settled', settled_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
+  return { status: 'settled', row: { ...row, status: 'settled' } };
+});
+function settleDeposit(paymentHash, amtPaidSat) { return settleDepositTx(paymentHash, amtPaidSat); }
+
+// Insert a reserved withdrawal. Throws on UNIQUE(payment_hash,'withdrawal') — this
+// is the replay/double-withdraw guard. Caller composes this with the stack debit
+// inside a single synchronous db.transaction.
+function insertWithdrawalReserved({ userId, tableId, amountSats, paymentHash, bolt11, seatIndex }) {
+  return db.prepare(`
+    INSERT INTO ledger_entries (user_id, table_id, direction, amount_sats, payment_hash, bolt11, status, seat_index)
+    VALUES (?, ?, 'withdrawal', ?, ?, ?, 'reserved', ?)
+  `).run(userId, tableId, amountSats, paymentHash, bolt11 || null, seatIndex ?? null);
+}
+
+function updateLedgerStatus(id, status, opts = {}) {
+  return db.prepare(`
+    UPDATE ledger_entries
+    SET status = ?, updated_at = strftime('%s','now'),
+        fee_sats = COALESCE(?, fee_sats),
+        settled_at = COALESCE(?, settled_at)
+    WHERE id = ?
+  `).run(status, opts.feeSats ?? null, opts.settledAt ?? null, id);
+}
+
+function getLedgerByHash(paymentHash, direction) {
+  return db.prepare(`SELECT * FROM ledger_entries WHERE payment_hash = ? AND direction = ?`).get(paymentHash, direction);
+}
+function getLedgerById(id) {
+  return db.prepare(`SELECT * FROM ledger_entries WHERE id = ?`).get(id);
+}
+// Non-terminal rows the reconciler must resolve on startup / periodically.
+function getPendingLedger() {
+  return db.prepare(`
+    SELECT * FROM ledger_entries
+    WHERE (direction='deposit' AND status='pending')
+       OR (direction='withdrawal' AND status IN ('reserved','in_flight'))
+    ORDER BY created_at ASC
+  `).all();
+}
+function sumSettledDeposits() {
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit' AND status IN ('settled','settled_unseated')`).get().t;
+}
+function sumSucceededWithdrawals() {
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='withdrawal' AND status='succeeded'`).get().t;
+}
+
 // Cleanup abuse log, expired challenges, and expired sessions every hour.
 // unref() so this timer alone won't keep the process alive — the running
 // server is held open by its HTTP listener, while a bare `require` (tests,
@@ -939,4 +1041,14 @@ module.exports = {
   deleteHandSnapshot,
   settleHand,
   updateHandNostrEventId,
+  // Lightning real-money ledger
+  createDepositRow,
+  settleDeposit,
+  insertWithdrawalReserved,
+  updateLedgerStatus,
+  getLedgerByHash,
+  getLedgerById,
+  getPendingLedger,
+  sumSettledDeposits,
+  sumSucceededWithdrawals,
 };

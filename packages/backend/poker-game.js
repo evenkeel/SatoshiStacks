@@ -39,6 +39,10 @@ class PokerGame {
     this.bigBlind = options.bigBlind || 100;
     this.minBuyin = options.minBuyin || 2000;
     this.maxBuyin = options.maxBuyin || 10000;
+    // Real-money (Lightning) table: free chips are forbidden — every chip must be
+    // backed by a confirmed deposit. Gates rebuy() and is defense-in-depth alongside
+    // the socket-handler gating. Set from config.isRealMoney(tableId) at creation.
+    this.realMoney = !!options.realMoney;
     this.players = new Array(NUM_SEATS).fill(null);
     this.deck = [];
     this.communityCards = [];
@@ -200,13 +204,32 @@ class PokerGame {
         if (this.onStateChange) this.onStateChange();
       }
     } else {
-      // Notify server to persist chips + departure time before nulling
+      // Notify server to persist chips + departure time before nulling.
+      // Returns the freed stack so the cash-out path can confirm the amount removed.
       const player = this.players[idx];
+      const freedStack = player ? player.stack : 0;
       if (this.onPlayerLeaving && player) {
         this.onPlayerLeaving(player.userId, player.stack);
       }
       this.players[idx] = null;
+      return freedStack;
     }
+    return null; // mid-hand: seat not freed yet (deferred to cleanupPendingRemovals)
+  }
+
+  /**
+   * Whether a player may cash out right now. Withdrawable == their live stack, and
+   * only when NOT committed to a live hand (same predicate as rebuy). Folded players
+   * may cash out (their committed bets already left their stack into the pot).
+   * @returns {{ok: boolean, stack?: number, error?: string}}
+   */
+  canCashOut(userId) {
+    const player = this.players.find(p => p && p.userId === userId);
+    if (!player) return { ok: false, error: 'Player not found' };
+    if (this.handInProgress && player.participatedThisHand && !player.folded) {
+      return { ok: false, error: 'Cannot cash out during an active hand' };
+    }
+    return { ok: true, stack: player.stack };
   }
 
   /**
@@ -1499,6 +1522,14 @@ class PokerGame {
   rebuy(userId, amount) {
     const player = this.players.find(p => p && p.userId === userId);
     if (!player) return { success: false, error: 'Player not found' };
+
+    // Real-money tables: a "rebuy" mints free chips (player.stack = buyIn below),
+    // which would create sats from nothing. Forbid it — adding chips on a real-money
+    // table must go through a new Lightning deposit. Defense-in-depth (the socket
+    // layer also blocks rebuy on real-money tables).
+    if (this.realMoney) {
+      return { success: false, error: 'Real-money tables require a new Lightning deposit to add chips' };
+    }
 
     // Can't rebuy mid-hand if you're still active
     if (this.handInProgress && player.participatedThisHand && !player.folded) {
