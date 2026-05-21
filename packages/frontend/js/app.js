@@ -1027,16 +1027,14 @@ function nostrLogout() {
   myNostrPicture = null;
   myUserId = null;
   myUsername = 'Anon';
-  myTableInterested = false;
   mySeat = null;
   gameState = null;
   cachedHoleCards = null;
   // Clear NIP-51 follow/mute state
   myFollowSet = new Set();
   myMuteSet = new Set();
-  // Hide NWC row + interest list
+  // Hide NWC row
   showNWCRow();
-  updateTableInterestOverlay();
   // Clean up NIP-46 state
   if (nip46Signer) {
     try { nip46Signer.close(); } catch (e) { /* ignore */ }
@@ -1275,7 +1273,6 @@ function setupCommonSocketHandlers() {
     // Close buy-in dialog if open
     hideBuyinDialog();
     showToast(`Playing as ${myUsername}`, 'info');
-    // Request interest list data
     render();
   });
 
@@ -1350,55 +1347,6 @@ function setupCommonSocketHandlers() {
       ? (senderId ? `${sender} [observer]` : `[${sender}]`)
       : sender;
     addChatMessage(prefix, text);
-  });
-
-  // Table navigator status (all tables)
-  socket.on('tables-status', ({ tables }) => {
-    cachedTablesStatus = tables || {};
-    renderTableNavigator();
-  });
-
-  // Table interest updates (for interest-mode tables)
-  socket.on('table-interest-update', ({ tableId, interestCount, interestNeeded, players, countdown }) => {
-    if (tableId !== myTableId) return;
-    tableInterestCount = interestCount;
-    tableInterestNeeded = interestNeeded;
-    tableInterestPlayers = players || [];
-    // Check if we are in the interest list
-    const obs = observerName; // our name
-    myTableInterested = tableInterestPlayers.some(n => n === myUsername || n === myNostrName || n === observerName);
-    if (countdown !== null && countdown !== undefined) {
-      tableInterestCountdownSec = countdown;
-    }
-    updateTableInterestOverlay();
-  });
-
-  // Table interest countdown
-  socket.on('table-interest-countdown', ({ tableId, seconds }) => {
-    if (tableId !== myTableId) return;
-    if (seconds === null || seconds === undefined) {
-      // Countdown cancelled
-      tableInterestCountdownSec = null;
-      if (interestCountdownInterval) {
-        clearInterval(interestCountdownInterval);
-        interestCountdownInterval = null;
-      }
-      updateTableInterestOverlay();
-      return;
-    }
-    tableInterestCountdownSec = seconds;
-    updateTableInterestOverlay();
-    // Tick down locally
-    if (interestCountdownInterval) clearInterval(interestCountdownInterval);
-    interestCountdownInterval = setInterval(() => {
-      if (tableInterestCountdownSec !== null && tableInterestCountdownSec > 0) {
-        tableInterestCountdownSec--;
-        updateTableInterestOverlay();
-      } else {
-        clearInterval(interestCountdownInterval);
-        interestCountdownInterval = null;
-      }
-    }, 1000);
   });
 
   // NIP-58: Badge awarded notification
@@ -1493,7 +1441,6 @@ function setupCommonSocketHandlers() {
     showToast(`Signed in as ${myUsername}`, 'info');
     // NIP-51: Fetch follow/mute lists now that we have a pubkey
     if (userId) fetchFollowAndMuteLists(userId);
-    // Request interest list data now that we're authenticated
     render();
   });
 
@@ -1533,7 +1480,6 @@ function render() {
     updateSpectatorBadge();
     updateWaitlistUI();
     updateObserverAuthUI();
-    updateTableInterestOverlay();
     return;
   }
 
@@ -1592,131 +1538,6 @@ function updateSpectatorBadge() {
 function updateObserverAuthUI() {
   // Sign-in link is now rendered inline by updateSpectatorBadge()
   // This function is kept as a no-op so existing call sites don't break
-}
-
-// ============================================================
-//  TABLE NAVIGATOR (top-right widget showing all tables)
-// ============================================================
-let cachedTablesStatus = {}; // { tableId: { playerCount, interestCount, interestedPlayers, handInProgress } }
-
-function renderTableNavigator() {
-  const el = document.getElementById('interestList');
-  if (!el) return;
-  // Hide navigator — only one real table exists right now
-  el.classList.add('hidden'); return;
-  el.classList.remove('hidden');
-
-  el.innerHTML =
-    '<div class="interest-list-title">Game Interest</div>' +
-    Object.values(TABLE_CONFIGS).filter(tc => tc.id !== 'playmoney').map(tc => {
-      const status = cachedTablesStatus[tc.id] || {};
-      const isCurrent = tc.id === myTableId;
-      const playerCount = status.playerCount || 0;
-      const interestCount = status.interestCount || 0;
-      const interestedPlayers = status.interestedPlayers || [];
-
-      let statusText;
-      if (status.handInProgress || playerCount > 0) {
-        statusText = `${playerCount} playing`;
-      } else if (tc.mode === 'interest') {
-        statusText = interestCount > 0 ? `${interestCount}/${tc.minPlayers}` : 'empty';
-      } else {
-        statusText = 'empty';
-      }
-
-      const namesHtml = interestedPlayers.length > 0
-        ? `<div class="interest-player-names">${interestedPlayers.join(' · ')}</div>`
-        : '';
-
-      // Show interest join/leave button for interest-mode tables (not for the table you're viewing as observer — that has the overlay)
-      const myName = myUsername || myNostrName || observerName;
-      const amInterested = interestedPlayers.some(n => n === myName);
-      let interestBtn = '';
-      if (tc.mode === 'interest' && mySessionToken && !isCurrent) {
-        if (amInterested) {
-          interestBtn = `<button class="nav-interest-btn leave" data-action="nav-leave-interest" data-table-id="${tc.id}">Leave</button>`;
-        } else {
-          interestBtn = `<button class="nav-interest-btn join" data-action="nav-join-interest" data-table-id="${tc.id}">+ Join</button>`;
-        }
-      }
-
-      // Only link to tables with active games (or open-mode tables)
-      const hasActiveGame = status.handInProgress || playerCount > 0;
-      const isClickable = tc.mode !== 'interest' || hasActiveGame;
-      const labelHtml = isClickable
-        ? `<a href="/${tc.id}" class="interest-label-link">${tc.emoji} ${tc.name}</a>`
-        : `<span class="interest-label">${tc.emoji} ${tc.name}</span>`;
-
-      return `<div class="interest-row${isCurrent ? ' active' : ''}" data-table="${tc.id}">
-        <div class="interest-row-top">
-          ${labelHtml}
-          <span class="interest-count">${statusText}</span>
-          ${interestBtn}
-        </div>
-        ${namesHtml}
-      </div>`;
-    }).join('');
-}
-
-// ============================================================
-//  TABLE INTEREST OVERLAY (for interest-mode tables)
-// ============================================================
-let myTableInterested = false;
-let tableInterestCount = 0;
-let tableInterestNeeded = 4;
-let tableInterestPlayers = [];
-let tableInterestCountdownSec = null;
-let interestCountdownInterval = null;
-
-function updateTableInterestOverlay() {
-  const overlay = document.getElementById('tableInterestOverlay');
-  if (!overlay) return;
-
-  // Only show on interest-mode tables when no game is active
-  if (myTableConfig.mode !== 'interest') {
-    overlay.classList.add('hidden');
-    return;
-  }
-
-  // If there's an active game with players, hide the interest overlay
-  if (gameState && gameState.players && gameState.players.some(p => p !== null)) {
-    overlay.classList.add('hidden');
-    return;
-  }
-
-  overlay.classList.remove('hidden');
-
-  // Countdown active?
-  if (tableInterestCountdownSec !== null && tableInterestCountdownSec > 0) {
-    overlay.innerHTML = `
-      <div class="table-interest-panel">
-        <button class="interest-close-btn" data-action="close-interest-overlay">&times;</button>
-        <div class="interest-emoji">${myTableConfig.emoji}</div>
-        <div class="interest-table-name">${myTableConfig.name}</div>
-        <div class="interest-countdown">⚡ Game starting in ${tableInterestCountdownSec}...</div>
-      </div>
-    `;
-    return;
-  }
-
-  const authRequired = !mySessionToken;
-  const btnAction = authRequired ? 'interest-sign-in' : (myTableInterested ? 'leave-table-interest' : 'join-table-interest');
-  const btnText = authRequired ? 'Sign In to Join' : (myTableInterested ? 'Leave Interest List' : 'Join Interest List');
-
-  const playersList = tableInterestPlayers.length > 0
-    ? `<div class="interest-waiting">Waiting: ${tableInterestPlayers.join(' · ')}</div>`
-    : '';
-
-  overlay.innerHTML = `
-    <div class="table-interest-panel">
-      <button class="interest-close-btn" data-action="close-interest-overlay">&times;</button>
-      <div class="interest-emoji">${myTableConfig.emoji}</div>
-      <div class="interest-table-name">${myTableConfig.name}</div>
-      <div class="interest-progress">${tableInterestCount} / ${tableInterestNeeded} players interested</div>
-      ${playersList}
-      <button class="interest-join-btn${myTableInterested ? ' active' : ''}" data-action="${btnAction}">${btnText}</button>
-    </div>
-  `;
 }
 
 // ============================================================
@@ -3316,8 +3137,6 @@ async function init() {
   scheduleBolt();
   checkOrientation();
   initMobileChat();
-  renderTableNavigator();
-  updateTableInterestOverlay();
 
   // Try to restore existing NOSTR session
   const hasSession = await tryRestoreSession();
@@ -3371,34 +3190,6 @@ document.addEventListener('click', (e) => {
       clearSeatOfferPrompt();
       seatOfferActive = false;
       waitlistPosition = null;
-      break;
-    case 'join-table-interest':
-      if (socket) socket.emit('join-table-interest', { tableId: myTableId });
-      myTableInterested = true;
-      // Auto-close overlay so the user can see table action
-      document.getElementById('tableInterestOverlay')?.classList.add('hidden');
-      break;
-    case 'leave-table-interest':
-      if (socket) socket.emit('leave-table-interest', { tableId: myTableId });
-      myTableInterested = false;
-      updateTableInterestOverlay();
-      break;
-    case 'nav-join-interest': {
-      const tid = actionEl.dataset.tableId;
-      if (socket && tid) socket.emit('join-table-interest', { tableId: tid });
-      break;
-    }
-    case 'nav-leave-interest': {
-      const tid = actionEl.dataset.tableId;
-      if (socket && tid) socket.emit('leave-table-interest', { tableId: tid });
-      break;
-    }
-    case 'close-interest-overlay':
-      document.getElementById('tableInterestOverlay')?.classList.add('hidden');
-      break;
-    case 'interest-sign-in':
-      loginIntent = 'observe';
-      showLoginOverlay();
       break;
     case 'observer-sign-in': handleObserverSignIn(); break;
     case 'submit-bunker': submitBunkerLogin(); break;

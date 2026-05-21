@@ -1,6 +1,6 @@
 /**
  * WebSocket event handlers — all Socket.IO logic extracted from server.js.
- * Handles join-table, action, leave-table, sit-out, rebuy, disconnect, observer, chat, table interest.
+ * Handles join-table, action, leave-table, sit-out, rebuy, disconnect, observer, chat.
  */
 
 const config = require('./config');
@@ -24,11 +24,8 @@ function generateObserverName() {
  * @param {Map} observerSockets - socket.id -> { observerName, tableId }
  * @param {Function} broadcastGameState - broadcasts state to all at a table
  * @param {Map} waitlists - tableId -> [{ socketId, userId, observerName, offeredAt }]
- * @param {Map} tableInterests - tableId -> Map<socketId, { userId, username, joinedAt }>
- * @param {Map} tableCountdowns - tableId -> { timer, startedAt, seconds }
- * @param {Function} broadcastTablesStatus - broadcasts table nav status to all clients
  */
-function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists, tableInterests, tableCountdowns, broadcastTablesStatus) {
+function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists) {
 
   // ==================== WAITLIST HELPER ====================
 
@@ -90,7 +87,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     game.onStateChange = () => {
       console.log(`[Server] Broadcasting state for table ${tableId}`);
       broadcastGameState(tableId);
-      broadcastTablesStatus();
       checkWaitlist(tableId);
     };
 
@@ -147,7 +143,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       if (game.players.every(p => p === null)) {
         games.delete(tableId);
         console.log(`Table ${tableId} destroyed (empty after auto-kick)`);
-        broadcastTablesStatus();
         nostr.scheduleLiveActivityUpdate(tableId, games, true);
       }
     };
@@ -164,106 +159,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     games.set(tableId, game);
     console.log(`[Server] Created game for table ${tableId} (${tableConfig.name} ${tableConfig.smallBlind}/${tableConfig.bigBlind})`);
-  }
-
-  // ==================== TABLE INTEREST HELPERS ====================
-
-  function broadcastTableInterest(tableId) {
-    const tc = config.TABLE_CONFIGS[tableId];
-    if (!tc) return;
-    const interests = tableInterests.get(tableId);
-    const interestCount = interests ? interests.size : 0;
-    const players = interests ? Array.from(interests.values()).map(i => i.username) : [];
-    const countdown = tableCountdowns.get(tableId);
-
-    io.to(`table-${tableId}`).emit('table-interest-update', {
-      tableId,
-      interestCount,
-      interestNeeded: tc.minPlayersToStart,
-      players,
-      countdown: countdown ? Math.max(0, countdown.seconds - Math.floor((Date.now() - countdown.startedAt) / 1000)) : null,
-    });
-    broadcastTablesStatus();
-  }
-
-  function startTableCountdown(tableId) {
-    const tc = config.TABLE_CONFIGS[tableId];
-    if (!tc) return;
-    const seconds = 10;
-    const startedAt = Date.now();
-
-    console.log(`[Interest] Game countdown started for ${tc.name} (${seconds}s)`);
-    io.to(`table-${tableId}`).emit('table-interest-countdown', { tableId, seconds });
-
-    const timer = setTimeout(() => {
-      tableCountdowns.delete(tableId);
-      autoSeatInterestedPlayers(tableId);
-    }, seconds * 1000);
-
-    tableCountdowns.set(tableId, { timer, startedAt, seconds });
-  }
-
-  function cancelTableCountdown(tableId) {
-    const cd = tableCountdowns.get(tableId);
-    if (cd) {
-      clearTimeout(cd.timer);
-      tableCountdowns.delete(tableId);
-      console.log(`[Interest] Countdown cancelled for ${tableId}`);
-      io.to(`table-${tableId}`).emit('table-interest-countdown', { tableId, seconds: null });
-    }
-  }
-
-  function autoSeatInterestedPlayers(tableId) {
-    const interests = tableInterests.get(tableId);
-    if (!interests || interests.size === 0) return;
-
-    const tc = config.TABLE_CONFIGS[tableId];
-    if (!tc) return;
-
-    ensureGameExists(tableId);
-    const game = games.get(tableId);
-
-    console.log(`[Interest] Auto-seating ${interests.size} players at ${tc.name}`);
-
-    for (const [socketId, info] of interests) {
-      const sock = io.sockets.sockets.get(socketId);
-      if (!sock) continue;
-
-      // Look up full player data from session
-      const obs = observerSockets.get(socketId);
-      if (!obs || !obs.userId) continue;
-
-      const playerData = db.getPlayer(obs.userId);
-      if (!playerData) continue;
-
-      const userId = obs.userId;
-      const displayName = playerData.nostr_name || playerData.username;
-      const chips = tc.maxBuyin;
-      db.db.prepare('UPDATE players SET current_chips = ? WHERE user_id = ?').run(chips, userId);
-
-      // Clean up observer entry
-      observerSockets.delete(socketId);
-
-      const assignedSeat = game.addPlayer(userId, displayName, {
-        initialStack: chips,
-        nostrName: playerData.nostr_name,
-        nostrPicture: playerData.nostr_picture,
-        lud16: playerData.lud16 || null,
-      });
-
-      sock.join(`table-${tableId}`);
-      userSockets.set(userId, socketId);
-      socketUsers.set(socketId, { userId, tableId, seatIndex: assignedSeat });
-
-      sock.emit('seat-assigned', { seatIndex: assignedSeat, displayName });
-      console.log(`[Interest] Auto-seated ${displayName} at ${tc.name} seat ${assignedSeat + 1}`);
-    }
-
-    // Clear interest list for this table
-    tableInterests.delete(tableId);
-    broadcastGameState(tableId);
-    broadcastTablesStatus();
-    nostr.scheduleLiveActivityUpdate(tableId, games);
   }
 
   // ==================== CONNECTION HANDLER ====================
@@ -310,14 +205,8 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         ensureGameExists(tableId);
       }
 
-      // Send current table interest state for interest-mode tables
-      if (tc.mode === 'interest') {
-        broadcastTableInterest(tableId);
-      }
-
       // Broadcast updated observer count to all clients
       if (games.has(tableId)) broadcastGameState(tableId);
-      broadcastTablesStatus();
     });
 
     // Observer authenticates while already watching
@@ -402,71 +291,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       // Tell frontend to show buy-in dialog
       socket.emit('seat-offer-accepted', { tableId });
       broadcastGameState(tableId);
-    });
-
-    // ==================== TABLE INTEREST (game-forming for interest-mode tables) ====================
-
-    socket.on('join-table-interest', ({ tableId }) => {
-      const tc = config.TABLE_CONFIGS[tableId];
-      if (!tc || tc.mode !== 'interest') {
-        socket.emit('error', { message: 'This table does not use interest lists' });
-        return;
-      }
-
-      // Identify the user — could be observer OR seated player at another table
-      let userId, username;
-      const obs = observerSockets.get(socket.id);
-      const user = socketUsers.get(socket.id);
-      if (obs && obs.userId) {
-        userId = obs.userId;
-        username = obs.nostrName || obs.observerName;
-      } else if (user) {
-        userId = user.userId;
-        // Get display name from the game they're seated at
-        const game = games.get(user.tableId);
-        const player = game?.players?.find(p => p && p.userId === userId);
-        username = player?.nostrName || player?.displayName || userId;
-      }
-
-      if (!userId) {
-        socket.emit('error', { message: 'Sign in to join the interest list' });
-        return;
-      }
-
-      // Prevent duplicate
-      if (!tableInterests.has(tableId)) tableInterests.set(tableId, new Map());
-      const interests = tableInterests.get(tableId);
-      if (interests.has(socket.id)) return;
-
-      interests.set(socket.id, {
-        userId,
-        username,
-        joinedAt: Date.now(),
-      });
-
-      console.log(`[Interest] ${username} joined interest for ${tc.name} (${interests.size}/${tc.minPlayersToStart})`);
-      broadcastTableInterest(tableId);
-
-      // Check if we reached threshold
-      if (interests.size >= tc.minPlayersToStart && !tableCountdowns.has(tableId)) {
-        startTableCountdown(tableId);
-      }
-    });
-
-    socket.on('leave-table-interest', ({ tableId }) => {
-      const interests = tableInterests.get(tableId);
-      if (!interests) return;
-
-      interests.delete(socket.id);
-      console.log(`[Interest] Player left interest for ${tableId} (${interests.size} remaining)`);
-
-      // Cancel countdown if below threshold
-      const tc = config.TABLE_CONFIGS[tableId];
-      if (tc && interests.size < tc.minPlayersToStart && tableCountdowns.has(tableId)) {
-        cancelTableCountdown(tableId);
-      }
-
-      broadcastTableInterest(tableId);
     });
 
     // ==================== CHAT ====================
@@ -567,14 +391,11 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           console.log(`[Server] ${displayName} buying in for ${chips} playsats at ${tableConfig.name}`);
         }
 
-        // Clean up observer + waitlist + interest tracking
+        // Clean up observer + waitlist tracking
         if (observerSockets.has(socket.id)) {
           observerSockets.delete(socket.id);
         }
         removeFromWaitlist(socket.id, tableId);
-        // Remove from interest list if present
-        const interests = tableInterests.get(tableId);
-        if (interests) interests.delete(socket.id);
 
         // Handle reconnection
         const game0 = games.get(tableId);
@@ -629,7 +450,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         console.log(`${displayName} (${userId.slice(0, 8)}...) joined table ${tableId} at seat ${assignedSeat + 1}`);
         socket.emit('seat-assigned', { seatIndex: assignedSeat, displayName });
         broadcastGameState(tableId);
-        broadcastTablesStatus();
         nostr.scheduleLiveActivityUpdate(tableId, games);
 
       } catch (error) {
@@ -712,7 +532,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
       userSockets.delete(user.userId);
       socketUsers.delete(socket.id);
-      broadcastTablesStatus();
 
       if (ack) ack({ ok: true });
     });
@@ -780,42 +599,13 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         console.log(`Observer ${obs.observerName} disconnected from table ${obs.tableId}`);
         removeFromWaitlist(socket.id, obs.tableId);
 
-        // Remove from table interest if present
-        const interests = tableInterests.get(obs.tableId);
-        if (interests && interests.has(socket.id)) {
-          interests.delete(socket.id);
-          const tc = config.TABLE_CONFIGS[obs.tableId];
-          if (tc && tc.mode === 'interest') {
-            // Cancel countdown if below threshold
-            if (interests.size < tc.minPlayersToStart && tableCountdowns.has(obs.tableId)) {
-              cancelTableCountdown(obs.tableId);
-            }
-            broadcastTableInterest(obs.tableId);
-          }
-        }
-
         observerSockets.delete(socket.id);
         // Update observer count for remaining clients
         if (games.has(obs.tableId)) broadcastGameState(obs.tableId);
-        broadcastTablesStatus();
       }
 
       const user = socketUsers.get(socket.id);
       if (user) {
-        // Clean up any table interest this seated player had
-        for (const [intTableId, interests] of tableInterests) {
-          if (interests.has(socket.id)) {
-            interests.delete(socket.id);
-            const tc = config.TABLE_CONFIGS[intTableId];
-            if (tc && tc.mode === 'interest') {
-              if (interests.size < tc.minPlayersToStart && tableCountdowns.has(intTableId)) {
-                cancelTableCountdown(intTableId);
-              }
-              broadcastTableInterest(intTableId);
-            }
-          }
-        }
-
         const game = games.get(user.tableId);
         if (game) {
           const player = game.players.find(p => p && p.userId === user.userId);

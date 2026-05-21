@@ -38,8 +38,6 @@ const userSockets = new Map();        // userId -> socket.id
 const socketUsers = new Map();        // socket.id -> { userId, tableId, seatIndex }
 const observerSockets = new Map();    // socket.id -> { observerName, tableId }
 const waitlists = new Map();          // tableId -> [{ socketId, userId, observerName, offeredAt }]
-const tableInterests = new Map();     // tableId -> Map<socketId, { userId, username, joinedAt }>
-const tableCountdowns = new Map();    // tableId -> { timer, startedAt, seconds }
 
 // ==================== BROADCAST HELPER ====================
 
@@ -101,32 +99,6 @@ function broadcastGameState(tableId) {
   }
 }
 
-// Broadcast table navigator status to all connected clients (throttled)
-let tablesStatusTimeout = null;
-function broadcastTablesStatus() {
-  if (tablesStatusTimeout) return; // Already scheduled
-  tablesStatusTimeout = setTimeout(() => {
-    tablesStatusTimeout = null;
-    const tables = {};
-    for (const [id, tc] of Object.entries(config.TABLE_CONFIGS)) {
-      const game = games.get(id);
-      const interests = tableInterests.get(id);
-      let observerCount = 0;
-      for (const [, obs] of observerSockets) {
-        if (obs.tableId === id) observerCount++;
-      }
-      tables[id] = {
-        playerCount: game ? game.players.filter(p => p !== null).length : 0,
-        observerCount,
-        interestCount: interests ? interests.size : 0,
-        interestedPlayers: interests ? Array.from(interests.values()).map(i => i.username) : [],
-        handInProgress: game ? game.handInProgress : false,
-      };
-    }
-    io.emit('tables-status', { tables });
-  }, 1000);
-}
-
 // ==================== MIDDLEWARE & ROUTES ====================
 
 // NIP-05 identifier (must be before static middleware)
@@ -181,7 +153,6 @@ app.get('/health', (req, res) => {
 app.get('/api/tables', (req, res) => {
   const tables = Object.values(config.TABLE_CONFIGS).map(tc => {
     const game = games.get(tc.id);
-    const interests = tableInterests.get(tc.id);
     let observerCount = 0;
     for (const [, obs] of observerSockets) {
       if (obs.tableId === tc.id) observerCount++;
@@ -190,7 +161,6 @@ app.get('/api/tables', (req, res) => {
       ...tc,
       playerCount: game ? game.players.filter(p => p !== null).length : 0,
       observerCount,
-      interestCount: interests ? interests.size : 0,
       handInProgress: game ? game.handInProgress : false,
     };
   });
@@ -321,7 +291,7 @@ console.log(`[Server] Seeded ${Object.keys(config.TABLE_CONFIGS).length} table c
 
 // ==================== WEBSOCKET HANDLERS ====================
 
-socketHandlers.setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists, tableInterests, tableCountdowns, broadcastTablesStatus);
+socketHandlers.setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists);
 
 // ==================== START ====================
 
