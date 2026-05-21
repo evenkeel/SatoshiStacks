@@ -8,13 +8,15 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-// Create db directory if it doesn't exist
-const dbDir = path.join(__dirname, 'db');
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+// DB path: SATOSHISTACKS_DB_PATH overrides (tests use ':memory:' for a hermetic,
+// throwaway database). Default is the on-disk dev/prod file.
+const dbPath = process.env.SATOSHISTACKS_DB_PATH || path.join(__dirname, 'db', 'satoshistacks.db');
+if (dbPath !== ':memory:') {
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
 }
-
-const dbPath = path.join(dbDir, 'satoshistacks.db');
 const isdev = process.env.NODE_ENV !== 'production';
 const db = new Database(dbPath, isdev ? { verbose: console.log } : {});
 

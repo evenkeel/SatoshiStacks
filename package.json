@@ -10,7 +10,7 @@
     "install:all": "npm install && npm install --workspace=packages/backend",
     "dev": "npm run dev --workspace=packages/backend",
     "start": "npm start --workspace=packages/backend",
-    "test": "node --test --test-concurrency=1 packages/shared/hand-evaluator.test.js packages/backend/poker-game.test.js packages/backend/poker-game.lifecycle.test.js packages/backend/poker-game.allin.test.js packages/backend/poker-game.betting.test.js packages/backend/poker-game.realmoney.test.js"
+    "test": "SATOSHISTACKS_DB_PATH=:memory: node --test --test-concurrency=1 packages/shared/hand-evaluator.test.js packages/backend/poker-game.test.js packages/backend/poker-game.lifecycle.test.js packages/backend/poker-game.allin.test.js packages/backend/poker-game.betting.test.js packages/backend/poker-game.realmoney.test.js packages/backend/services/payments.test.js"
   },
   "keywords": [
     "poker",
