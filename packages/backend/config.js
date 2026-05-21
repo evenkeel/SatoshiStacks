@@ -27,13 +27,13 @@ module.exports = {
       smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000,
       mode: 'open', minPlayersToStart: 2,
     },
-    pond: {
-      id: 'pond', route: '/pond', name: 'Table 1', emoji: '🃏',
+    station100: {
+      id: 'station100', route: '/station100', name: 'Station 100', emoji: '',
       smallBlind: 50, bigBlind: 100, minBuyin: 10000, maxBuyin: 10000,
       mode: 'open', minPlayersToStart: 2,
     },
   },
-  DEFAULT_TABLE: 'pond',
+  DEFAULT_TABLE: 'station100',
 
   // Anti-rathole
   RATHOLE_WINDOW_MS: 2 * 60 * 60 * 1000, // 2 hours

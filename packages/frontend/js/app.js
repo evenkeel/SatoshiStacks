@@ -11,12 +11,12 @@ const NUM_SEATS = 6;
 // ============================================================
 const TABLE_CONFIGS = {
   playmoney: { id: 'playmoney', name: '50 / 100', emoji: '🎲', smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000, mode: 'open', minPlayers: 2 },
-  pond:  { id: 'pond',  name: 'Table 1',   emoji: '🃏', smallBlind: 50,   bigBlind: 100,   minBuyin: 10000,   maxBuyin: 10000,   mode: 'open',     minPlayers: 2 },
+  station100: { id: 'station100', name: 'Station 100', emoji: '', smallBlind: 50, bigBlind: 100, minBuyin: 10000, maxBuyin: 10000, mode: 'open', minPlayers: 2 },
 };
 
 function getTableIdFromPath() {
   const path = window.location.pathname.replace(/\/$/, '').split('/').pop();
-  return TABLE_CONFIGS[path] ? path : 'pond';
+  return TABLE_CONFIGS[path] ? path : 'station100';
 }
 
 const myTableId = getTableIdFromPath();
@@ -3309,7 +3309,7 @@ function handleObserverSignIn() {
 // ============================================================
 async function init() {
   // Set page title from table config
-  document.title = `${myTableConfig.emoji} ${myTableConfig.name} – Satoshi Stacks`;
+  document.title = `${myTableConfig.emoji ? myTableConfig.emoji + ' ' : ''}${myTableConfig.name} – Satoshi Stacks`;
 
   initChat();
   initBuyinDialog();

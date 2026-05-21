@@ -172,6 +172,11 @@ TABLE_ROUTES.forEach(route => {
   });
 });
 
+// Legacy URL redirects — the real-money table was renamed (table-1 -> pond -> station100)
+['/pond', '/table-1'].forEach(legacy => {
+  app.get(legacy, (req, res) => res.redirect(302, '/station100'));
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime(), tables: games.size });
@@ -230,8 +235,8 @@ authRoutes.setContext(sharedContext);
     }
 
     for (const { table_id: rawTableId, hand_id, snapshot } of snapshots) {
-      // Map legacy 'table-1' to 'pond' for backward compat
-      const table_id = rawTableId === 'table-1' ? 'pond' : rawTableId;
+      // Map legacy table ids forward (table was renamed: table-1 -> pond -> station100)
+      const table_id = (rawTableId === 'table-1' || rawTableId === 'pond') ? 'station100' : rawTableId;
       try {
         const game = PokerGame.deserializeState(snapshot);
 
