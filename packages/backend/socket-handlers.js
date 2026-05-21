@@ -274,11 +274,6 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     // ==================== OBSERVE ====================
 
     socket.on('observe-table', ({ tableId, sessionToken }) => {
-      // Backward compat: map legacy table-1 to playmoney
-      if (tableId === 'table-1') tableId = 'playmoney';
-      // Backward compat: real-money table renamed pond -> station100
-      if (tableId === 'pond') tableId = 'station100';
-
       // Validate table exists
       if (!config.TABLE_CONFIGS[tableId]) {
         socket.emit('error', { message: 'Invalid table' });
@@ -509,9 +504,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     // ==================== JOIN TABLE ====================
 
     socket.on('join-table', ({ tableId: requestedTableId, sessionToken, preferredSeat, buyIn }) => {
-      // Backward compat: map legacy table-1 to playmoney, and pond -> station100
-      let tableId = requestedTableId === 'table-1' ? 'playmoney' : requestedTableId;
-      if (tableId === 'pond') tableId = 'station100';
+      const tableId = requestedTableId;
       const tableConfig = config.TABLE_CONFIGS[tableId];
       if (!tableConfig) {
         socket.emit('error', { message: 'Invalid table' });
