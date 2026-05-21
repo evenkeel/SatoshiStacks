@@ -23,8 +23,10 @@ server {
     client_body_timeout 10s;
     client_header_timeout 10s;
 
-    # ─── Table routes (/pond, /reef, /deep, /abyss, /playmoney) ────────────
-    location ~ ^/(pond|reef|deep|abyss|playmoney)$ {
+    # ─── Table routes (/station100, /playmoney) + legacy /pond,/table-1 -> app 302 ───
+    # NOTE: this list must include every TABLE_CONFIGS route id, plus any legacy
+    # ids the app redirects (pond, table-1). Update it whenever a table is renamed.
+    location ~ ^/(station100|playmoney|pond|table-1)$ {
         limit_req zone=general burst=50 nodelay;
         limit_conn addr 20;
 
