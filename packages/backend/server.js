@@ -17,6 +17,8 @@ const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
 const socketHandlers = require('./socket-handlers');
+const { createLightning } = require('./services/lightning');
+const { createPayments } = require('./services/payments');
 
 // ==================== EXPRESS & SOCKET.IO SETUP ====================
 
@@ -291,7 +293,62 @@ console.log(`[Server] Seeded ${Object.keys(config.TABLE_CONFIGS).length} table c
 
 // ==================== WEBSOCKET HANDLERS ====================
 
-socketHandlers.setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists);
+// Lightning real-money services. `payments` stays null on a play-money node, so
+// socket handlers reach it lazily via the getter (it's set below only when the
+// REALMONEY_ENABLED master switch is on).
+let lightning = null;
+let payments = null;
+
+const walletHandlers = socketHandlers.setup(
+  io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists,
+  () => payments,
+);
+
+// ==================== LIGHTNING REAL-MONEY WIRING ====================
+// Total sats currently represented as real-money stacks/pots across all tables.
+function liveStacksTotal() {
+  let total = 0;
+  for (const [tableId, game] of games) {
+    if (!config.isRealMoney(tableId)) continue;
+    for (const p of game.players) {
+      if (p) total += (p.stack || 0) + (p.currentBet || 0);
+    }
+    total += game.pot || 0;
+  }
+  return total;
+}
+
+if (config.REALMONEY_ENABLED) {
+  lightning = createLightning(config.LIGHTNING);
+  payments = createPayments({
+    lnd: lightning,
+    db,
+    config,
+    getGame: (id) => games.get(id),
+    liveStacksTotal,
+    onSeatPlayer: (row) => walletHandlers.seatFromDeposit(row),
+    onRefund: (row) => walletHandlers.refundToPlayer(row),
+    alert: (m) => console.error('[Wallet][ALERT]', m),
+  });
+
+  lightning.connect()
+    .then(() => {
+      // Stream settled deposits -> idempotent credit + seat.
+      lightning.subscribeInvoices((s) => {
+        try { payments.creditDeposit(s.paymentHash, s.amountSats); }
+        catch (e) { console.error('[Wallet] creditDeposit failed:', e.message); }
+      });
+      // Resolve anything left mid-flight by a previous crash, then watch solvency.
+      payments.reconcilePending().catch(e => console.error('[Wallet] reconcile failed:', e.message));
+      setInterval(() => {
+        payments.solvencyCheck().catch(e => console.error('[Wallet] solvency check failed:', e.message));
+      }, 60000).unref();
+      console.log('[Wallet] Real-money Lightning wiring active');
+    })
+    .catch((e) => {
+      console.error('[Wallet] FATAL: could not connect to LND — real-money disabled until restart:', e.message);
+    });
+}
 
 // ==================== START ====================
 

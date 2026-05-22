@@ -27,7 +27,7 @@ function mockLnd(overrides = {}) {
       return {
         amountSats: parseInt(amt, 10), paymentHash: hash,
         destination: dest || 'peer_pubkey',
-        timestamp: Math.floor(Date.now() / 1000), expiry: 3600,
+        expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
       };
     },
     async sendPayment() { if (this.sendShouldThrow) throw new Error('timeout'); return this.sendResult; },

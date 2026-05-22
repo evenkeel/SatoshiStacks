@@ -102,7 +102,7 @@ function createPayments(deps) {
     if (!(dec.amountSats > 0)) throw new Error('Invoice must specify an amount');
     if (dec.amountSats !== amount) throw new Error(`Invoice amount must equal your stack (${amount} sats)`);
     if (L().ownPubkey && dec.destination === L().ownPubkey) throw new Error('Self-payment is not allowed');
-    if (dec.timestamp && dec.expiry && (dec.timestamp + dec.expiry) * 1000 < Date.now()) throw new Error('Invoice has expired');
+    if (dec.expiresAt && new Date(dec.expiresAt).getTime() < Date.now()) throw new Error('Invoice has expired');
 
     // 3. CRITICAL SECTION — one synchronous SQLite transaction. No `await` inside,
     //    so check + reserve + debit cannot interleave with another request. Every
@@ -141,6 +141,7 @@ function createPayments(deps) {
     try {
       result = await lnd.sendPayment({
         bolt11: row.bolt11,
+        paymentHash: row.payment_hash,
         feeLimitSats: L().withdrawalFeeLimitSats,
         timeoutSec: 60,
       });
@@ -182,6 +183,15 @@ function createPayments(deps) {
     const rows = db.getPendingLedger();
     for (const row of rows) {
       if (row.direction !== 'withdrawal') continue; // deposit reconciliation handled by the invoice stream
+      // 'reserved' means the process died before the send was ever dispatched
+      // (dispatch sets 'in_flight' first), so the payment was never made — safe to
+      // (re-)dispatch. LND dedups by payment_hash, so this can never double-pay.
+      if (row.status === 'reserved') {
+        try { await dispatchPayment(row); }
+        catch (e) { alert(`Reconcile could not dispatch reserved ${row.payment_hash}: ${e.message}`); }
+        continue;
+      }
+      // 'in_flight' -> ask LND for the authoritative fate; never assume failure.
       try {
         const st = await lnd.trackPayment(row.payment_hash);
         if (st && st.status === 'SUCCEEDED') {
@@ -189,12 +199,9 @@ function createPayments(deps) {
         } else if (st && st.status === 'FAILED') {
           db.updateLedgerStatus(row.id, 'failed');
           doRefund({ ...row, status: 'failed' });
-        } else if (row.status === 'reserved') {
-          // Reserved but never dispatched (crashed before send) -> safe to dispatch.
-          await dispatchPayment(row);
-        } // in_flight + non-terminal -> leave for next pass
+        } // pending / unknown -> leave in_flight for the next pass
       } catch (e) {
-        alert(`Reconcile could not resolve ${row.payment_hash}: ${e.message}`);
+        alert(`Reconcile could not resolve in-flight ${row.payment_hash}: ${e.message}`);
       }
     }
   }
