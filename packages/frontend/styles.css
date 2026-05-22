@@ -2012,3 +2012,47 @@ body.is-mobile .login-qr-container { padding: 8px; }
 }
 @keyframes badgePopIn { 0% { transform: translateX(-50%) scale(0.5); opacity: 0; } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
 @keyframes badgeFadeOut { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+/* === REAL-MONEY WALLET MODAL (Lightning buy-in / cash-out) === */
+.wallet-modal-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(10, 12, 16, 0.78);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.wallet-modal-overlay.hidden { display: none; }
+.wallet-modal {
+  position: relative;
+  background: linear-gradient(160deg, #1f2730 0%, #161c24 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 24px 22px;
+  width: 100%; max-width: 360px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  color: var(--warm-white, #f8f3ea);
+}
+.wallet-title { font-size: 18px; font-weight: 800; margin-bottom: 12px; letter-spacing: 0.02em; }
+.wallet-amount { font-size: 15px; margin-bottom: 14px; }
+.wallet-amount b { color: var(--mustard, #d4a017); }
+.wallet-qr { display: flex; justify-content: center; margin: 4px auto 14px; min-height: 0; }
+.wallet-qr img, .wallet-qr canvas { border-radius: 8px; background: #fff; padding: 8px; }
+.wallet-invoice {
+  width: 100%; box-sizing: border-box; height: 64px; resize: none;
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+  border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25); color: var(--warm-white, #f8f3ea);
+  padding: 8px; margin-bottom: 10px; word-break: break-all;
+}
+.wallet-btn {
+  width: 100%; padding: 11px 16px; border: none; border-radius: 10px;
+  font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: 8px;
+  background: linear-gradient(145deg, #d4a017 0%, #b8860b 100%); color: #1a1410;
+}
+.wallet-btn:hover { filter: brightness(1.08); }
+.wallet-status { font-size: 12px; opacity: 0.75; margin-top: 6px; line-height: 1.4; }
+.wallet-close {
+  position: absolute; top: 8px; right: 12px; background: none; border: none;
+  color: rgba(255, 255, 255, 0.5); font-size: 26px; line-height: 1; cursor: pointer;
+}
+.wallet-close:hover { color: var(--warm-white, #f8f3ea); }

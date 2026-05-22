@@ -1270,8 +1270,9 @@ function setupCommonSocketHandlers() {
     mySeat = newSeat;
     isObserver = false;
     if (displayName) myUsername = displayName;
-    // Close buy-in dialog if open
+    // Close buy-in dialog / wallet modal if open
     hideBuyinDialog();
+    closeWalletModal();
     showToast(`Playing as ${myUsername}`, 'info');
     render();
   });
@@ -1329,6 +1330,25 @@ function setupCommonSocketHandlers() {
 
   socket.on('error', (error) => {
     showToast(error.message);
+  });
+
+  // ---- real-money wallet events ----
+  socket.on('buyin-invoice', ({ bolt11, amountSats }) => {
+    showBuyinInvoice(bolt11, amountSats);
+  });
+  socket.on('deposit-confirmed', ({ amountSats }) => {
+    closeWalletModal();
+    showToast(`Deposited ${Number(amountSats).toLocaleString()} sats — you're in!`, 'info');
+  });
+  socket.on('cashout-result', (res) => {
+    if (!res) return;
+    if (res.status === 'succeeded') { closeWalletModal(); showToast('Cashed out — payment sent!', 'info'); }
+    else if (res.status === 'in_flight') { closeWalletModal(); showToast('Payment processing — it will arrive shortly.', 'info'); }
+    // 'failed' is handled by the cashout-failed event (chips returned, re-seated)
+  });
+  socket.on('cashout-failed', ({ message }) => {
+    closeWalletModal();
+    showToast(message || 'Payment failed — your chips were returned to the table.');
   });
 
   socket.on('action-timer-start', ({ playerIndex, timeoutMs, timeBankMs, isPreflop }) => {
@@ -2839,6 +2859,17 @@ window.handleSitOut = function() {
 // ============================================================
 window.handleStandUp = function() {
   if (!socket) return;
+  // Real-money: standing up with chips means cashing out (you can't abandon sats).
+  // Busted players (no chips) fall through to the normal stand-up.
+  if (isRealMoneyTable() && mySeat) {
+    const me = (gameState && gameState.players || []).find(p => p && p.userId === myUserId);
+    if (me && me.stack > 0) { startCashout(); return; }
+  }
+  handleStandUpPlain();
+};
+
+function handleStandUpPlain() {
+  if (!socket) return;
   mySeat = null;
   localStorage.setItem('ss_stoodUp', '1');
 
@@ -2857,7 +2888,79 @@ window.handleStandUp = function() {
   socket.emit('leave-table', { tableId: myTableId }, finishStandUp);
   // Fallback: if ack never arrives (network issue), disconnect after 2s
   setTimeout(finishStandUp, 2000);
-};
+}
+
+// ============================================================
+//  REAL-MONEY WALLET (Lightning buy-in / cash-out)
+// ============================================================
+function isRealMoneyTable() {
+  return !!(gameState && gameState.realMoney);
+}
+
+function requestRealMoneyBuyin() {
+  if (!socket || !mySessionToken) { handleNostrLoginThenSit(); return; }
+  showWalletModal('Buy in', '<div class="wallet-status">Generating Lightning invoice…</div>');
+  socket.emit('buyin-request', { tableId: myTableId, sessionToken: mySessionToken });
+}
+
+function showBuyinInvoice(bolt11, amountSats) {
+  const body =
+    `<div class="wallet-amount">Pay <b>${Number(amountSats).toLocaleString()} sats</b> to take your seat</div>` +
+    `<div id="walletQr" class="wallet-qr"></div>` +
+    `<textarea class="wallet-invoice" readonly>${bolt11}</textarea>` +
+    `<button class="wallet-btn" data-action="copy-invoice" data-invoice="${bolt11}">Copy invoice</button>` +
+    `<div class="wallet-status">Waiting for payment — you'll be seated automatically.</div>`;
+  showWalletModal('Buy in', body);
+  const qc = document.getElementById('walletQr');
+  if (qc && typeof QRCode !== 'undefined') {
+    try {
+      new QRCode(qc, { text: bolt11.toUpperCase(), width: 220, height: 220, colorDark: '#3d3228', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    } catch (e) { /* QR optional */ }
+  }
+}
+
+function startCashout() {
+  if (!socket || !gameState) return;
+  const me = (gameState.players || []).find(p => p && p.userId === myUserId);
+  const stack = me ? me.stack : 0;
+  if (!stack || stack <= 0) { handleStandUpPlain(); return; }
+  const body =
+    `<div class="wallet-amount">Cash out <b>${stack.toLocaleString()} sats</b></div>` +
+    `<div class="wallet-status">In your Lightning wallet, create an invoice for exactly <b>${stack.toLocaleString()} sats</b> and paste it here.</div>` +
+    `<textarea id="cashoutInvoice" class="wallet-invoice" placeholder="lnbc…"></textarea>` +
+    `<button class="wallet-btn" data-action="submit-cashout">Cash out</button>`;
+  showWalletModal('Cash out', body);
+}
+
+function submitCashout() {
+  const ta = document.getElementById('cashoutInvoice');
+  const bolt11 = ((ta && ta.value) || '').trim();
+  if (!bolt11) { showToast('Paste a Lightning invoice'); return; }
+  showWalletModal('Cash out', '<div class="wallet-status">Sending payment…</div>');
+  socket.emit('cashout-request', { tableId: myTableId, bolt11, sessionToken: mySessionToken });
+}
+
+function showWalletModal(title, bodyHtml) {
+  let el = document.getElementById('walletModal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'walletModal';
+    el.className = 'wallet-modal-overlay';
+    document.body.appendChild(el);
+  }
+  el.innerHTML =
+    `<div class="wallet-modal">` +
+    `<button class="wallet-close" data-action="close-wallet">&times;</button>` +
+    `<div class="wallet-title">${title}</div>` +
+    bodyHtml +
+    `</div>`;
+  el.classList.remove('hidden');
+}
+
+function closeWalletModal() {
+  const el = document.getElementById('walletModal');
+  if (el) el.classList.add('hidden');
+}
 
 // ============================================================
 //  TABLE ACTIONS VISIBILITY (Sit Out + Stand Up bar)
@@ -2915,8 +3018,12 @@ document.addEventListener('click', (e) => {
   pendingSeat = seatIdx;
 
   if (mySessionToken) {
-    // Already authenticated — show buy-in dialog
-    showBuyinDialog();
+    // Real-money tables: take a seat by paying a Lightning invoice, not free chips.
+    if (isRealMoneyTable()) {
+      requestRealMoneyBuyin();
+    } else {
+      showBuyinDialog();
+    }
   } else {
     // Need to authenticate first
     handleNostrLoginThenSit();
@@ -2948,6 +3055,11 @@ document.addEventListener('click', (e) => {
 
 function showRebuyDialog() {
   if (!gameState || !socket) return;
+  // Real-money: you can't top up for free — cash out and buy back in instead.
+  if (isRealMoneyTable()) {
+    showToast('Cash out and buy back in to change your stack');
+    return;
+  }
   const myPlayer = gameState.players?.find(p => p && p.userId === myUserId);
   if (!myPlayer) return;
 
@@ -3192,6 +3304,11 @@ document.addEventListener('click', (e) => {
       waitlistPosition = null;
       break;
     case 'observer-sign-in': handleObserverSignIn(); break;
+    case 'copy-invoice':
+      navigator.clipboard.writeText(actionEl.dataset.invoice || '').then(() => showToast('Invoice copied', 'info')).catch(() => {});
+      break;
+    case 'submit-cashout': submitCashout(); break;
+    case 'close-wallet': closeWalletModal(); break;
     case 'submit-bunker': submitBunkerLogin(); break;
     case 'nip07-login': handleNIP07Login(); break;
     case 'start-qr-login': startQRCodeLogin(); break;

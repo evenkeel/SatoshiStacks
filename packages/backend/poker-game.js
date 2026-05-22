@@ -1181,6 +1181,7 @@ class PokerGame {
       bigBlind: this.bigBlind,
       minBuyin: this.minBuyin,
       maxBuyin: this.maxBuyin,
+      realMoney: this.realMoney,
       lastRaise: this.lastRaise,
       yourTurn: this.players[this.currentPlayerIndex]?.userId === userId
     };
@@ -1579,6 +1580,7 @@ class PokerGame {
       bigBlind: this.bigBlind,
       minBuyin: this.minBuyin,
       maxBuyin: this.maxBuyin,
+      realMoney: this.realMoney,
       players: this.players.map(p => {
         if (!p) return null;
         return {
@@ -1642,6 +1644,7 @@ class PokerGame {
       bigBlind: snapshot.bigBlind || 100,
       minBuyin: snapshot.minBuyin || 2000,
       maxBuyin: snapshot.maxBuyin || 10000,
+      realMoney: !!snapshot.realMoney,
     });
 
     // Restore players
