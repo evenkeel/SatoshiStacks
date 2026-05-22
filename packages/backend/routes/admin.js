@@ -162,6 +162,57 @@ router.get('/tables', (req, res) => {
 });
 
 /**
+ * GET /api/admin/wallet — real-money ledger + solvency snapshot (read-only).
+ * Operators must be able to see the money: deposits in, withdrawals out, what's
+ * outstanding, total owed (live stacks + outstanding), and the breaker state.
+ * Side-effect-free (does NOT run a solvency check that could trip the breaker).
+ */
+let paymentsRef = null;
+router.setPayments = (p) => { paymentsRef = p; };
+
+router.get('/wallet', (req, res) => {
+  try {
+    const recent = db.getRecentLedger(req.query.limit);
+    const pending = db.getPendingLedger();
+    const outstanding = pending
+      .filter(r => r.direction === 'withdrawal')
+      .reduce((s, r) => s + r.amount_sats, 0);
+    const pendingDeposits = pending.filter(r => r.direction === 'deposit').length;
+
+    // Live real-money stacks across all tables.
+    let liveStacks = 0;
+    if (gamesRef) {
+      for (const [tableId, game] of gamesRef.entries()) {
+        if (!config.isRealMoney(tableId)) continue;
+        for (const p of game.players) if (p) liveStacks += (p.stack || 0) + (p.currentBet || 0);
+        liveStacks += game.pot || 0;
+      }
+    }
+
+    const totals = {
+      settledDeposits: db.sumSettledDeposits(),
+      succeededWithdrawals: db.sumSucceededWithdrawals(),
+      liveStacks,
+      outstanding,            // reserved + in_flight withdrawals
+      owed: liveStacks + outstanding, // what the node must be able to cover
+      pendingDeposits,
+    };
+
+    const wallet = {
+      realMoneyEnabled: config.REALMONEY_ENABLED,
+      withdrawalsEnabled: paymentsRef ? paymentsRef.withdrawalsEnabled() : false,
+      breaker: paymentsRef ? paymentsRef.breakerState() : { tripped: false, reason: null },
+      totals,
+      recent,
+    };
+    res.json(wallet);
+  } catch (error) {
+    console.error('[API] Error fetching wallet ledger:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * POST /api/admin/ban-ip — ban an IP address directly
  */
 router.post('/ban-ip', validateBody(schemas.adminBanIp), (req, res) => {

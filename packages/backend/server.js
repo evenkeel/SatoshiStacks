@@ -330,6 +330,7 @@ if (config.REALMONEY_ENABLED) {
     onRefund: (row) => walletHandlers.refundToPlayer(row),
     alert: (m) => console.error('[Wallet][ALERT]', m),
   });
+  adminRoutes.setPayments(payments); // expose breaker/withdrawals state to the admin wallet view
 
   lightning.connect()
     .then(() => {

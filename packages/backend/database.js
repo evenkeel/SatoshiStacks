@@ -989,6 +989,9 @@ function sumSettledDeposits() {
 function sumSucceededWithdrawals() {
   return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='withdrawal' AND status='succeeded'`).get().t;
 }
+function getRecentLedger(limit = 100) {
+  return db.prepare(`SELECT * FROM ledger_entries ORDER BY created_at DESC, id DESC LIMIT ?`).all(Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500));
+}
 
 // Cleanup abuse log, expired challenges, and expired sessions every hour.
 // unref() so this timer alone won't keep the process alive — the running
@@ -1053,4 +1056,5 @@ module.exports = {
   getPendingLedger,
   sumSettledDeposits,
   sumSucceededWithdrawals,
+  getRecentLedger,
 };
