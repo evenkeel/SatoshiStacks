@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "lnd:check": "node check-lnd.js",
     "test": "SATOSHISTACKS_DB_PATH=:memory: node --test --test-concurrency=1 poker-game.test.js poker-game.lifecycle.test.js poker-game.allin.test.js poker-game.betting.test.js poker-game.realmoney.test.js services/payments.test.js"
   },
   "keywords": [
