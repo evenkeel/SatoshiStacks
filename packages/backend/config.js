@@ -25,7 +25,6 @@ const LIGHTNING = {
   port: process.env.LND_PORT || 10009,
   macaroonPath: process.env.LND_MACAROON_PATH || null,
   tlsCertPath: process.env.LND_TLS_CERT_PATH || null,
-  protoPath: process.env.LND_PROTO_PATH || null,
   ownPubkey: process.env.LND_OWN_PUBKEY || null, // self-pay-loop guard
   hotWalletCapSats: parseInt(process.env.HOT_WALLET_CAP_SATS || '0', 10),
   maxWithdrawalSats: parseInt(process.env.MAX_WITHDRAWAL_SATS || '0', 10),
@@ -40,7 +39,6 @@ if (REALMONEY_ENABLED) {
   const required = {
     LND_MACAROON_PATH: LIGHTNING.macaroonPath,
     LND_TLS_CERT_PATH: LIGHTNING.tlsCertPath,
-    LND_PROTO_PATH: LIGHTNING.protoPath,
     LND_OWN_PUBKEY: LIGHTNING.ownPubkey,
   };
   const missing = Object.entries(required).filter(([, v]) => !v).map(([k]) => k);
