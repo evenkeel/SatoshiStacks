@@ -992,6 +992,11 @@ function sumSucceededWithdrawals() {
 function getRecentLedger(limit = 100) {
   return db.prepare(`SELECT * FROM ledger_entries ORDER BY created_at DESC, id DESC LIMIT ?`).all(Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500));
 }
+// Deposits that settled but the player wasn't seated (e.g. socket churned while
+// paying). Claimed when the player reconnects / re-requests a buy-in.
+function getUnseatedDeposits(userId, tableId) {
+  return db.prepare(`SELECT * FROM ledger_entries WHERE user_id=? AND table_id=? AND direction='deposit' AND status='settled_unseated' ORDER BY created_at ASC`).all(userId, tableId);
+}
 
 // Cleanup abuse log, expired challenges, and expired sessions every hour.
 // unref() so this timer alone won't keep the process alive — the running
@@ -1057,4 +1062,5 @@ module.exports = {
   sumSettledDeposits,
   sumSucceededWithdrawals,
   getRecentLedger,
+  getUnseatedDeposits,
 };

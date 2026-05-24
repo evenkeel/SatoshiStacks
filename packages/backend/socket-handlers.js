@@ -212,6 +212,10 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
       // Broadcast updated observer count to all clients
       if (games.has(tableId)) broadcastGameState(tableId);
+
+      // Real-money: if they already paid a buy-in but weren't seated (socket churned
+      // while paying in a wallet app), claim it now that they're connected.
+      if (userId && config.isRealMoney(tableId)) claimDeposits(userId, tableId, socket.id);
     });
 
     // Observer authenticates while already watching
@@ -241,6 +245,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       });
 
       console.log(`[Observer] ${obs.observerName} authenticated while observing ${obs.tableId}`);
+
+      // Now that we know who they are, claim any settled-but-unseated deposit.
+      if (config.isRealMoney(obs.tableId)) claimDeposits(obs.userId, obs.tableId, socket.id);
 
       // Update waitlist entry if applicable
       const wl = waitlists.get(obs.tableId);
@@ -640,6 +647,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         if (db.isRateLimited(userId, clientIp, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions)) {
           socket.emit('error', { message: 'Too many actions. Please wait.' }); return;
         }
+        // If they already paid a buy-in that wasn't seated (reconnected after paying),
+        // claim it instead of issuing a NEW invoice — prevents accidental double payment.
+        if (claimDeposits(userId, tableId, socket.id)) {
+          console.log(`[Wallet] Claimed existing unseated deposit for ${userId.slice(0, 8)}... — no new invoice issued`);
+          return;
+        }
         const tc = config.TABLE_CONFIGS[tableId];
         const inv = await payments.createDepositInvoice({ userId, tableId, amountSats: tc.maxBuyin });
         socket.emit('buyin-invoice', { bolt11: inv.bolt11, paymentHash: inv.paymentHash, amountSats: inv.amountSats });
@@ -744,20 +757,37 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     return socketId;
   }
 
-  // Seat a player after their deposit settles. They must be connected (observing
-  // the table). If not connected, hold as settled_unseated for manual resolution.
+  // Seat a player after their deposit settles. If their socket isn't connected at
+  // the settlement instant (e.g. they switched to a wallet app to pay and the
+  // socket churned), hold as settled_unseated — it will be CLAIMED automatically
+  // when they reconnect / observe / re-request a buy-in (see claimDeposits).
   function seatFromDeposit(row) {
-    const { user_id: userId, table_id: tableId, amount_sats: amount } = row;
-    const socketId = findSocketId(userId);
-    const playerData = db.getPlayerByPubkey(userId);
-    const displayName = (playerData && (playerData.nostr_name || playerData.username)) || userId.slice(0, 8);
+    const socketId = findSocketId(row.user_id);
     if (!socketId) {
       db.updateLedgerStatus(row.id, 'settled_unseated');
-      console.error(`[Wallet][ALERT] Deposit ${row.payment_hash} settled but ${userId.slice(0, 8)}... not connected — settled_unseated (manual refund needed)`);
+      console.error(`[Wallet] Deposit ${row.payment_hash} settled but ${row.user_id.slice(0, 8)}... not connected yet — held as settled_unseated; will auto-seat on reconnect.`);
       return;
     }
+    seatDepositRow(row, socketId);
+  }
+
+  // Core seating: put `userId` from a settled deposit `row` into a seat using
+  // `socketId`. Idempotent — if already seated, just marks the row consumed.
+  // Returns true if the player is seated. Used by seatFromDeposit AND claimDeposits.
+  function seatDepositRow(row, socketId) {
+    const { user_id: userId, table_id: tableId, amount_sats: amount } = row;
+    if (!socketId) return false;
+    const playerData = db.getPlayerByPubkey(userId);
+    const displayName = (playerData && (playerData.nostr_name || playerData.username)) || userId.slice(0, 8);
     ensureGameExists(tableId);
     const game = games.get(tableId);
+
+    // Already seated (claimed via another trigger / reconnect)? Mark consumed.
+    if (game.players.find(p => p && p.userId === userId)) {
+      db.updateLedgerStatus(row.id, 'settled');
+      return true;
+    }
+
     let assignedSeat;
     try {
       assignedSeat = game.addPlayer(userId, displayName, {
@@ -771,8 +801,10 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       db.updateLedgerStatus(row.id, 'settled_unseated');
       io.to(socketId).emit('error', { message: 'Table is full — your deposit will be refunded.' });
       console.error(`[Wallet][ALERT] Deposit ${row.payment_hash}: seating failed (${e.message}) — settled_unseated`);
-      return;
+      return false;
     }
+
+    db.updateLedgerStatus(row.id, 'settled'); // consumed (credited + seated)
     const sock = io.sockets.sockets.get(socketId);
     if (sock) sock.join(`table-${tableId}`);
     observerSockets.delete(socketId);
@@ -783,6 +815,19 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     broadcastGameState(tableId);
     nostr.scheduleLiveActivityUpdate(tableId, games);
     console.log(`[Wallet] Seated ${displayName} at ${tableId} seat ${assignedSeat + 1} from deposit ${row.payment_hash.slice(0, 12)}... (${amount} sats)`);
+    return true;
+  }
+
+  // Seat the player from any settled-but-unseated deposit they have on this table.
+  // Called when an authenticated user (re)connects/observes a real-money table or
+  // re-requests a buy-in — makes seating resilient to socket churn while paying.
+  function claimDeposits(userId, tableId, socketId) {
+    if (!config.isRealMoney(tableId) || !userId || !socketId) return false;
+    let claimed = false;
+    for (const row of db.getUnseatedDeposits(userId, tableId)) {
+      if (seatDepositRow(row, socketId)) claimed = true;
+    }
+    return claimed;
   }
 
   // Re-credit a player after a DEFINITIVE failed withdrawal — their chips were
