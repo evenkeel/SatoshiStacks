@@ -11,7 +11,7 @@ const NUM_SEATS = 6;
 // ============================================================
 const TABLE_CONFIGS = {
   playmoney: { id: 'playmoney', name: '50 / 100', emoji: '🎲', smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000, mode: 'open', minPlayers: 2 },
-  station100: { id: 'station100', name: 'Station 100', emoji: '', smallBlind: 50, bigBlind: 100, minBuyin: 10000, maxBuyin: 10000, mode: 'open', minPlayers: 2 },
+  station100: { id: 'station100', name: 'Station 100', emoji: '', smallBlind: 50, bigBlind: 100, minBuyin: 5000, maxBuyin: 10000, mode: 'open', minPlayers: 2, realMoney: true },
 };
 
 function getTableIdFromPath() {
@@ -2894,13 +2894,34 @@ function handleStandUpPlain() {
 //  REAL-MONEY WALLET (Lightning buy-in / cash-out)
 // ============================================================
 function isRealMoneyTable() {
-  return !!(gameState && gameState.realMoney);
+  // Prefer the server's authoritative flag; fall back to the table config so a
+  // seat-click works even before the first game-state arrives.
+  return !!((gameState && gameState.realMoney) || (myTableConfig && myTableConfig.realMoney));
 }
 
 function requestRealMoneyBuyin() {
+  if (!socket) { showToast('Not connected — try again in a moment'); return; }
+  if (!mySessionToken) { handleNostrLoginThenSit(); return; }
+  const min = (gameState && gameState.minBuyin) || (myTableConfig && myTableConfig.minBuyin) || 5000;
+  const max = (gameState && gameState.maxBuyin) || (myTableConfig && myTableConfig.maxBuyin) || 10000;
+  const body =
+    `<div class="wallet-amount">Choose your buy-in</div>` +
+    `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${max.toLocaleString()}</b> sats</div>` +
+    `<input id="rmBuyinSlider" class="wallet-slider" type="range" min="${min}" max="${max}" step="100" value="${max}">` +
+    `<div class="wallet-slider-ends"><span>${min.toLocaleString()}</span><span>${max.toLocaleString()}</span></div>` +
+    `<button class="wallet-btn" data-action="generate-buyin-invoice">Generate invoice</button>`;
+  showWalletModal('Buy in', body);
+  const slider = document.getElementById('rmBuyinSlider');
+  const amt = document.getElementById('rmBuyinAmt');
+  if (slider && amt) slider.addEventListener('input', () => { amt.textContent = Number(slider.value).toLocaleString(); });
+}
+
+function generateBuyinInvoice() {
   if (!socket || !mySessionToken) { handleNostrLoginThenSit(); return; }
-  showWalletModal('Buy in', '<div class="wallet-status">Generating Lightning invoice…</div>');
-  socket.emit('buyin-request', { tableId: myTableId, sessionToken: mySessionToken });
+  const slider = document.getElementById('rmBuyinSlider');
+  const amountSats = slider ? parseInt(slider.value, 10) : undefined;
+  showWalletModal('Buy in', '<div class="wallet-status">Generating your Lightning invoice…</div>');
+  socket.emit('buyin-request', { tableId: myTableId, sessionToken: mySessionToken, amountSats });
 }
 
 function showBuyinInvoice(bolt11, amountSats) {
@@ -2924,20 +2945,25 @@ function startCashout() {
   const me = (gameState.players || []).find(p => p && p.userId === myUserId);
   const stack = me ? me.stack : 0;
   if (!stack || stack <= 0) { handleStandUpPlain(); return; }
+  const addr = localStorage.getItem('ss_lud16') || '';
+  if (!addr) {
+    showWalletModal('Cash out',
+      `<div class="wallet-amount">Cash out <b>${stack.toLocaleString()} sats</b></div>` +
+      `<div class="wallet-status">Your Nostr profile has no Lightning address, so we can't send your sats automatically. Add a Lightning address (lud16) to your Nostr profile, then stand up again.</div>`);
+    return;
+  }
   const body =
     `<div class="wallet-amount">Cash out <b>${stack.toLocaleString()} sats</b></div>` +
-    `<div class="wallet-status">In your Lightning wallet, create an invoice for exactly <b>${stack.toLocaleString()} sats</b> and paste it here.</div>` +
-    `<textarea id="cashoutInvoice" class="wallet-invoice" placeholder="lnbc…"></textarea>` +
-    `<button class="wallet-btn" data-action="submit-cashout">Cash out</button>`;
+    `<div class="wallet-status">We'll send it straight to the Lightning address on your Nostr profile:</div>` +
+    `<div class="wallet-address">${addr}</div>` +
+    `<button class="wallet-btn" data-action="confirm-cashout">Cash out ${stack.toLocaleString()} sats</button>`;
   showWalletModal('Cash out', body);
 }
 
-function submitCashout() {
-  const ta = document.getElementById('cashoutInvoice');
-  const bolt11 = ((ta && ta.value) || '').trim();
-  if (!bolt11) { showToast('Paste a Lightning invoice'); return; }
-  showWalletModal('Cash out', '<div class="wallet-status">Sending payment…</div>');
-  socket.emit('cashout-request', { tableId: myTableId, bolt11, sessionToken: mySessionToken });
+function confirmCashout() {
+  if (!socket || !mySessionToken) { showToast('Not connected'); return; }
+  showWalletModal('Cash out', '<div class="wallet-status">Sending your sats to your Lightning address…</div>');
+  socket.emit('cashout-request', { tableId: myTableId, sessionToken: mySessionToken });
 }
 
 function showWalletModal(title, bodyHtml) {
@@ -3307,7 +3333,8 @@ document.addEventListener('click', (e) => {
     case 'copy-invoice':
       navigator.clipboard.writeText(actionEl.dataset.invoice || '').then(() => showToast('Invoice copied', 'info')).catch(() => {});
       break;
-    case 'submit-cashout': submitCashout(); break;
+    case 'generate-buyin-invoice': generateBuyinInvoice(); break;
+    case 'confirm-cashout': confirmCashout(); break;
     case 'close-wallet': closeWalletModal(); break;
     case 'submit-bunker': submitBunkerLogin(); break;
     case 'nip07-login': handleNIP07Login(); break;

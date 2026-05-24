@@ -2056,3 +2056,12 @@ body.is-mobile .login-qr-container { padding: 8px; }
   color: rgba(255, 255, 255, 0.5); font-size: 26px; line-height: 1; cursor: pointer;
 }
 .wallet-close:hover { color: var(--warm-white, #f8f3ea); }
+.wallet-buyin-value { font-size: 26px; font-weight: 800; margin: 6px 0 10px; }
+.wallet-buyin-value b { color: var(--mustard, #d4a017); }
+.wallet-slider { width: 100%; margin: 6px 0 2px; accent-color: var(--mustard, #d4a017); cursor: pointer; }
+.wallet-slider-ends { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.6; margin-bottom: 14px; }
+.wallet-address {
+  font-size: 13px; font-weight: 700; color: var(--mustard, #d4a017);
+  background: rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 8px 10px;
+  margin: 8px 0 14px; word-break: break-all;
+}

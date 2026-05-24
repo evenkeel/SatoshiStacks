@@ -77,7 +77,7 @@ module.exports = {
     },
     station100: {
       id: 'station100', route: '/station100', name: 'Station 100', emoji: '',
-      smallBlind: 50, bigBlind: 100, minBuyin: 10000, maxBuyin: 10000,
+      smallBlind: 50, bigBlind: 100, minBuyin: 5000, maxBuyin: 10000,
       mode: 'open', minPlayersToStart: 2, realMoney: true,
     },
   },

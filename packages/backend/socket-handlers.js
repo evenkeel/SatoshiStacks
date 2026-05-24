@@ -634,7 +634,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== REAL-MONEY: BUY-IN ====================
 
-    socket.on('buyin-request', async ({ tableId, sessionToken }) => {
+    socket.on('buyin-request', async ({ tableId, sessionToken, amountSats }) => {
       try {
         if (!config.isRealMoney(tableId)) { socket.emit('error', { message: 'Not a real-money table' }); return; }
         const payments = getPayments();
@@ -654,7 +654,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           return;
         }
         const tc = config.TABLE_CONFIGS[tableId];
-        const inv = await payments.createDepositInvoice({ userId, tableId, amountSats: tc.maxBuyin });
+        // Honor the player's chosen buy-in, clamped to the table's [min,max] range.
+        const requested = Math.floor(Number(amountSats));
+        const amt = (Number.isFinite(requested) && requested > 0)
+          ? Math.max(tc.minBuyin, Math.min(tc.maxBuyin, requested))
+          : tc.maxBuyin;
+        const inv = await payments.createDepositInvoice({ userId, tableId, amountSats: amt });
         socket.emit('buyin-invoice', { bolt11: inv.bolt11, paymentHash: inv.paymentHash, amountSats: inv.amountSats });
         console.log(`[Wallet] Buy-in invoice ${inv.paymentHash.slice(0, 12)}... for ${inv.amountSats} sats (${userId.slice(0, 8)}...)`);
       } catch (e) {
@@ -664,7 +669,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== REAL-MONEY: CASH-OUT ====================
 
-    socket.on('cashout-request', async ({ tableId, bolt11, sessionToken }) => {
+    socket.on('cashout-request', async ({ tableId, sessionToken }) => {
       try {
         if (!config.isRealMoney(tableId)) { socket.emit('error', { message: 'Not a real-money table' }); return; }
         const payments = getPayments();
@@ -674,7 +679,8 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         if (!user || !playerData || playerData.pubkey_hex !== user.userId) {
           socket.emit('error', { message: 'Not authorized to cash out this seat' }); return;
         }
-        const res = await payments.requestWithdrawal({ userId: user.userId, tableId, bolt11 });
+        // Cash out the current stack to the Lightning address on their Nostr profile.
+        const res = await payments.cashoutToAddress({ userId: user.userId, tableId, lud16: playerData.lud16 });
         socket.emit('cashout-result', res);
         if (res.status === 'succeeded' || res.status === 'in_flight') {
           // requestWithdrawal already removed the player from the game.

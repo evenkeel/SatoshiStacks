@@ -211,6 +211,27 @@ test('solvency: ok when node spendable covers owed', async () => {
   assert.equal(payments.withdrawalsEnabled(), true);
 });
 
+// ======================= CASH-OUT TO LUD16 =======================
+
+test('cashout: sends a seated stack to the lud16 and frees the seat', async () => {
+  const { payments, game } = setup({ stacks: [10000] });
+  const res = await payments.cashoutToAddress({ userId: 'u0', tableId: 'station100', lud16: 'name@example.com' });
+  assert.equal(res.status, 'succeeded');
+  assert.equal(game.players[0], null, 'seat freed');
+});
+
+test('cashout: rejected with no lud16 on file', async () => {
+  const { payments } = setup({ stacks: [10000] });
+  await assert.rejects(payments.cashoutToAddress({ userId: 'u0', tableId: 'station100', lud16: null }), /Lightning address/);
+});
+
+test('cashout: rejected mid-hand', async () => {
+  const { payments, game } = setup({ stacks: [10000, 10000] });
+  game.startNewHand();
+  const active = game.players[game.currentPlayerIndex].userId;
+  await assert.rejects(payments.cashoutToAddress({ userId: active, tableId: 'station100', lud16: 'name@example.com' }), /active hand/);
+});
+
 // ======================= REFUND UNSEATED DEPOSIT =======================
 
 test('refund: pushes an unseated deposit to the lud16 and marks it refunded', async () => {

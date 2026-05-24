@@ -207,6 +207,23 @@ function createPayments(deps) {
     }
   }
 
+  // Cash out a seated player's full stack to the Lightning address on their Nostr
+  // profile (lud16): resolve an invoice for the stack, then run it through the same
+  // safe withdrawal path (atomic reserve + remove, refund-only-from-FAILED).
+  async function cashoutToAddress({ userId, tableId, lud16 }) {
+    if (!config.isRealMoney(tableId)) throw new Error('Not a real-money table');
+    if (!withdrawalsEnabled()) throw new Error('Withdrawals are temporarily paused');
+    if (!lud16) throw new Error('No Lightning address on your Nostr profile — add one to cash out');
+    const game = getGame(tableId);
+    if (!game) throw new Error('Table is not active');
+    const cc = game.canCashOut(userId);
+    if (!cc.ok) throw new Error(cc.error);
+    const amount = cc.stack;
+    if (amount <= 0) throw new Error('No chips to cash out');
+    const bolt11 = await resolveLightningAddress(lud16, amount);
+    return requestWithdrawal({ userId, tableId, bolt11 });
+  }
+
   // ======================= REFUND UN-SEATABLE DEPOSIT =====================
   // A deposit settled but the player couldn't be seated (table full, or they
   // never reconnected to claim it). Push it back to the Lightning address in
@@ -307,6 +324,7 @@ function createPayments(deps) {
     createDepositInvoice,
     creditDeposit,
     requestWithdrawal,
+    cashoutToAddress,
     refundDepositToAddress,
     refundUnseatedDeposits,
     dispatchPayment,
