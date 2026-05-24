@@ -989,6 +989,11 @@ function sumSettledDeposits() {
 function sumSucceededWithdrawals() {
   return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='withdrawal' AND status='succeeded'`).get().t;
 }
+// Deposits we still hold for a player who isn't seated (owed back to them): not
+// yet seated/claimed, or a refund in progress. Part of the solvency "owed" total.
+function sumHeldDeposits() {
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit' AND status IN ('settled_unseated','refund_pending')`).get().t;
+}
 function getRecentLedger(limit = 100) {
   return db.prepare(`SELECT * FROM ledger_entries ORDER BY created_at DESC, id DESC LIMIT ?`).all(Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500));
 }
@@ -996,6 +1001,12 @@ function getRecentLedger(limit = 100) {
 // paying). Claimed when the player reconnects / re-requests a buy-in.
 function getUnseatedDeposits(userId, tableId) {
   return db.prepare(`SELECT * FROM ledger_entries WHERE user_id=? AND table_id=? AND direction='deposit' AND status='settled_unseated' ORDER BY created_at ASC`).all(userId, tableId);
+}
+// Settled-unseated deposits older than the grace window — the player didn't come
+// back to claim a seat, so they should be auto-refunded to their lud16.
+function getRefundableDeposits(graceSec) {
+  const cutoff = Math.floor(Date.now() / 1000) - (graceSec || 120);
+  return db.prepare(`SELECT * FROM ledger_entries WHERE direction='deposit' AND status='settled_unseated' AND settled_at IS NOT NULL AND settled_at < ? ORDER BY created_at ASC`).all(cutoff);
 }
 
 // Cleanup abuse log, expired challenges, and expired sessions every hour.
@@ -1061,6 +1072,8 @@ module.exports = {
   getPendingLedger,
   sumSettledDeposits,
   sumSucceededWithdrawals,
+  sumHeldDeposits,
   getRecentLedger,
   getUnseatedDeposits,
+  getRefundableDeposits,
 };

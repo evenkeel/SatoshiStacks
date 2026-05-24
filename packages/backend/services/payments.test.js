@@ -40,7 +40,7 @@ function mockLnd(overrides = {}) {
 const wInvoice = (amount, hash, dest) =>
   `mock:${amount}:${hash || ('w_' + Math.random().toString(36).slice(2))}${dest ? ':' + dest : ''}`;
 
-function setup({ stacks = [10000], lndOverrides = {}, cfgOverrides = {} } = {}) {
+function setup({ stacks = [10000], lndOverrides = {}, cfgOverrides = {}, resolveImpl } = {}) {
   const game = new PokerGame('station100', { smallBlind: 50, bigBlind: 100, realMoney: true });
   game.saveSnapshot = () => {}; game.saveHandToDatabase = () => {};
   game.startActionTimer = () => {}; game.deductTimeBank = () => {};
@@ -63,9 +63,21 @@ function setup({ stacks = [10000], lndOverrides = {}, cfgOverrides = {} } = {}) 
     liveStacksTotal: () => game.players.reduce((s, p) => (p ? s + p.stack + (p.currentBet || 0) : s), 0) + (game.pot || 0),
     onSeatPlayer: (row) => seated.push(row),
     onRefund: (row) => refunded.push(row),
+    // Default mock LNURL resolver: returns a mock invoice for the exact amount.
+    resolveLightningAddress: resolveImpl || (async (lud16, amt) => `mock:${amt}:refund_${Math.random().toString(36).slice(2)}`),
     alert: () => {},
   });
   return { game, lnd, config, payments, seated, refunded };
+}
+
+// Insert a settled-but-unseated deposit row (a deposit that couldn't be seated).
+function unseatedDeposit(userId, tableId, amount) {
+  const hash = 'udep_' + Math.random().toString(36).slice(2);
+  db.createDepositRow({ userId, tableId, amountSats: amount, paymentHash: hash, bolt11: 'x', seatIndex: null });
+  db.settleDeposit(hash, amount);
+  const row = db.getLedgerByHash(hash, 'deposit');
+  db.updateLedgerStatus(row.id, 'settled_unseated');
+  return db.getLedgerByHash(hash, 'deposit');
 }
 
 // ======================= DEPOSITS =======================
@@ -197,4 +209,48 @@ test('solvency: ok when node spendable covers owed', async () => {
   const r = await payments.solvencyCheck();
   assert.equal(r.ok, true);
   assert.equal(payments.withdrawalsEnabled(), true);
+});
+
+// ======================= REFUND UNSEATED DEPOSIT =======================
+
+test('refund: pushes an unseated deposit to the lud16 and marks it refunded', async () => {
+  const { payments } = setup({ stacks: [] });
+  const row = unseatedDeposit('r0', 'station100', 10000);
+  const res = await payments.refundDepositToAddress(row, 'name@example.com');
+  assert.equal(res.status, 'refunded');
+  assert.equal(db.getLedgerById(row.id).status, 'refunded');
+});
+
+test('refund: a resolved invoice for the wrong amount is rejected and the deposit reverts', async () => {
+  const { payments } = setup({ stacks: [], resolveImpl: async (l, amt) => `mock:${amt - 1}:wrong` });
+  const row = unseatedDeposit('r1', 'station100', 10000);
+  await assert.rejects(payments.refundDepositToAddress(row, 'name@example.com'), /amount/);
+  assert.equal(db.getLedgerById(row.id).status, 'settled_unseated', 'reverted for retry');
+});
+
+test('refund: a FAILED payment reverts the deposit to settled_unseated (retryable)', async () => {
+  const { payments } = setup({ stacks: [], lndOverrides: { sendResult: { status: 'FAILED' } } });
+  const row = unseatedDeposit('r2', 'station100', 10000);
+  const res = await payments.refundDepositToAddress(row, 'name@example.com');
+  assert.equal(res.status, 'failed');
+  assert.equal(db.getLedgerById(row.id).status, 'settled_unseated');
+});
+
+test('refund: a second concurrent refund is skipped (deposit is locked)', async () => {
+  let release;
+  const gate = new Promise(r => { release = r; });
+  const { payments } = setup({ stacks: [], lndOverrides: { sendPayment: async function () { await gate; return this.sendResult; } } });
+  const row = unseatedDeposit('r3', 'station100', 10000);
+  const p1 = payments.refundDepositToAddress(row, 'name@example.com');
+  await new Promise(r => setTimeout(r, 5)); // let p1 acquire the lock + reach the gated send
+  const r2 = await payments.refundDepositToAddress(row, 'name@example.com');
+  assert.equal(r2.status, 'skipped', 'second refund skipped while first is locked');
+  release();
+  assert.equal((await p1).status, 'refunded');
+});
+
+test('refund: no lud16 on file is rejected', async () => {
+  const { payments } = setup({ stacks: [] });
+  const row = unseatedDeposit('r4', 'station100', 10000);
+  await assert.rejects(payments.refundDepositToAddress(row, null), /Lightning address/);
 });

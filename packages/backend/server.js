@@ -339,10 +339,13 @@ if (config.REALMONEY_ENABLED) {
         try { payments.creditDeposit(s.paymentHash, s.amountSats); }
         catch (e) { console.error('[Wallet] creditDeposit failed:', e.message); }
       });
-      // Resolve anything left mid-flight by a previous crash, then watch solvency.
+      // Resolve anything left mid-flight by a previous crash, then watch solvency
+      // and auto-refund any unseated deposits to the player's lud16.
       payments.reconcilePending().catch(e => console.error('[Wallet] reconcile failed:', e.message));
+      payments.refundUnseatedDeposits().catch(e => console.error('[Wallet] refund sweep failed:', e.message));
       setInterval(() => {
         payments.solvencyCheck().catch(e => console.error('[Wallet] solvency check failed:', e.message));
+        payments.refundUnseatedDeposits().catch(e => console.error('[Wallet] refund sweep failed:', e.message));
       }, 60000).unref();
       console.log('[Wallet] Real-money Lightning wiring active');
     })

@@ -33,6 +33,7 @@ function createPayments(deps) {
     liveStacksTotal = () => 0,
     onSeatPlayer = () => {},
     onRefund = () => {},
+    resolveLightningAddress = require('./lnurl').resolveLightningAddress,
     alert = (m) => console.error('[Payments][ALERT]', m),
   } = deps;
 
@@ -206,15 +207,92 @@ function createPayments(deps) {
     }
   }
 
-  // The solvency identity: node spendable must cover all live stacks plus every
-  // withdrawal we've committed to but not yet definitively settled.
+  // ======================= REFUND UN-SEATABLE DEPOSIT =====================
+  // A deposit settled but the player couldn't be seated (table full, or they
+  // never reconnected to claim it). Push it back to the Lightning address in
+  // their Nostr profile (lud16). Deposit status walks:
+  //   settled_unseated -> refund_pending (locked) -> refunded (success)
+  //                                               -> settled_unseated (FAILED, retry)
+  //                                               -> refund_pending (UNKNOWN, manual)
+  // Safety mirrors withdrawals: validate the resolved invoice's amount/destination,
+  // and NEVER revert (re-open for retry) once a payment of unknown fate is in flight.
+  async function refundDepositToAddress(depositRow, lud16) {
+    const amount = depositRow.amount_sats;
+    if (!lud16) throw new Error('No Lightning address on file for refund');
+    if (L().maxWithdrawalSats && amount > L().maxWithdrawalSats) throw new Error('Refund exceeds max withdrawal');
+    if (L().hotWalletCapSats && amount > L().hotWalletCapSats) throw new Error('Refund exceeds hot-wallet cap');
+
+    // Atomically lock the deposit so only one refund can run and a concurrent
+    // claim-seat can't grab it.
+    const locked = db.db.transaction((id) => {
+      const fresh = db.getLedgerById(id);
+      if (!fresh || fresh.direction !== 'deposit' || fresh.status !== 'settled_unseated') return null;
+      db.updateLedgerStatus(id, 'refund_pending');
+      return fresh;
+    })(depositRow.id);
+    if (!locked) return { status: 'skipped' };
+
+    try {
+      const bolt11 = await resolveLightningAddress(lud16, amount);
+      const dec = await lnd.decodeInvoice(bolt11);
+      if (!dec || !dec.paymentHash) throw new Error('Invalid refund invoice');
+      if (dec.amountSats !== amount) throw new Error(`Refund invoice amount ${dec.amountSats} != deposit ${amount}`);
+      if (L().ownPubkey && dec.destination === L().ownPubkey) throw new Error('Refund invoice points to our own node');
+      if (dec.expiresAt && new Date(dec.expiresAt).getTime() < Date.now()) throw new Error('Refund invoice expired');
+
+      let result;
+      try {
+        result = await lnd.sendPayment({ bolt11, paymentHash: dec.paymentHash, feeLimitSats: L().withdrawalFeeLimitSats, timeoutSec: 60 });
+      } catch (e) {
+        // UNKNOWN fate -> do NOT revert (would risk a double-pay). Hold locked, alert.
+        alert(`Refund for deposit ${depositRow.payment_hash} send errored (UNKNOWN fate): ${e.message}. Held refund_pending for manual resolution.`);
+        return { status: 'in_flight' };
+      }
+      if (result && result.status === 'SUCCEEDED') {
+        db.updateLedgerStatus(depositRow.id, 'refunded', { feeSats: result.feeSats || 0, settledAt: nowSec() });
+        console.log(`[Payments] Refunded deposit ${depositRow.payment_hash.slice(0, 12)}... (${amount} sats) to ${lud16}`);
+        return { status: 'refunded', feeSats: result.feeSats || 0 };
+      }
+      if (result && result.status === 'FAILED') {
+        db.updateLedgerStatus(depositRow.id, 'settled_unseated'); // revert -> retried next sweep
+        return { status: 'failed' };
+      }
+      alert(`Refund for deposit ${depositRow.payment_hash} returned non-terminal status; held refund_pending.`);
+      return { status: 'in_flight' };
+    } catch (e) {
+      // Error BEFORE any payment was dispatched (resolve/decode/validate) -> safe to revert.
+      db.updateLedgerStatus(depositRow.id, 'settled_unseated');
+      alert(`Refund for deposit ${depositRow.payment_hash} to ${lud16} aborted before send: ${e.message}`);
+      throw e;
+    }
+  }
+
+  // Sweep: auto-refund deposits that settled but couldn't be seated and weren't
+  // claimed within the grace window, to the player's Nostr lud16. Players without
+  // a lud16 are alerted for manual / self-service refund (we can't push to them).
+  async function refundUnseatedDeposits(graceSec = 120) {
+    for (const row of db.getRefundableDeposits(graceSec)) {
+      const player = db.getPlayerByPubkey(row.user_id);
+      const lud16 = player && player.lud16;
+      if (!lud16) {
+        alert(`Unseated deposit ${row.payment_hash} (${row.amount_sats} sats, ${row.user_id.slice(0, 8)}...) has NO lud16 — cannot auto-refund; needs manual/self-service refund.`);
+        continue;
+      }
+      try { await refundDepositToAddress(row, lud16); }
+      catch (e) { /* refundDepositToAddress already alerted + reverted */ }
+    }
+  }
+
+  // The solvency identity: node spendable must cover all live stacks, every
+  // withdrawal we've committed to but not yet settled, AND every deposit we're
+  // still holding for an un-seated player (owed back to them).
   function outstandingWithdrawals() {
     return db.getPendingLedger()
       .filter(r => r.direction === 'withdrawal' && (r.status === 'reserved' || r.status === 'in_flight'))
       .reduce((s, r) => s + r.amount_sats, 0);
   }
   async function solvencyCheck() {
-    const owed = liveStacksTotal() + outstandingWithdrawals();
+    const owed = liveStacksTotal() + outstandingWithdrawals() + db.sumHeldDeposits();
     let spendable;
     try { spendable = await lnd.getSpendableSats(); }
     catch (e) { tripBreaker(`LND unreachable during solvency check: ${e.message}`); return { ok: false, reason: 'lnd_unreachable' }; }
@@ -229,6 +307,8 @@ function createPayments(deps) {
     createDepositInvoice,
     creditDeposit,
     requestWithdrawal,
+    refundDepositToAddress,
+    refundUnseatedDeposits,
     dispatchPayment,
     reconcilePending,
     solvencyCheck,
