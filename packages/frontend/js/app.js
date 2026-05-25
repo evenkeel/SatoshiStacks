@@ -1342,8 +1342,8 @@ function setupCommonSocketHandlers() {
   });
   socket.on('cashout-result', (res) => {
     if (!res) return;
-    if (res.status === 'succeeded') { closeWalletModal(); showToast('Cashed out — payment sent!', 'info'); }
-    else if (res.status === 'in_flight') { closeWalletModal(); showToast('Payment processing — it will arrive shortly.', 'info'); }
+    if (res.status === 'succeeded') { mySeat = null; closeWalletModal(); showToast('Cashed out — sent to your Lightning address!', 'info'); }
+    else if (res.status === 'in_flight') { mySeat = null; closeWalletModal(); showToast('Payment processing — it will arrive shortly.', 'info'); }
     // 'failed' is handled by the cashout-failed event (chips returned, re-seated)
   });
   socket.on('cashout-failed', ({ message }) => {
@@ -1483,6 +1483,14 @@ function setupCommonSocketHandlers() {
 // ============================================================
 function render() {
   if (!gameState) return; // Wait for game state
+
+  // Reconcile local seated-state with the authoritative game-state. If the server
+  // no longer has me in a seat (after cash-out, stand-up, logout, kick, or a Nostr
+  // account switch), clear mySeat — otherwise the empty seats stay hidden and you
+  // can't take/buy a seat again.
+  if (mySeat && !(myUserId && gameState.players.some(p => p && p.userId === myUserId))) {
+    mySeat = null;
+  }
 
   // In observer mode (no seat), render table but skip player controls
   if (!mySeat) {
@@ -3267,6 +3275,17 @@ function handleObserverSignIn() {
 //  INIT
 // ============================================================
 async function init() {
+  // Surface any runtime JS error as a visible toast instead of failing silently
+  // (so a broken click can never look like "nothing happens" again).
+  window.addEventListener('error', (e) => {
+    try { showToast('⚠️ ' + (e.message || 'Script error'), 'error'); } catch (_) {}
+    console.error('[GlobalError]', e.message, e.error && e.error.stack);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    try { showToast('⚠️ ' + ((e.reason && e.reason.message) || 'Async error'), 'error'); } catch (_) {}
+    console.error('[UnhandledRejection]', e.reason);
+  });
+
   // Set page title from table config
   document.title = `${myTableConfig.emoji ? myTableConfig.emoji + ' ' : ''}${myTableConfig.name} – Satoshi Stacks`;
 
