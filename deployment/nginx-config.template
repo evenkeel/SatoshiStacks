@@ -23,10 +23,10 @@ server {
     client_body_timeout 10s;
     client_header_timeout 10s;
 
-    # ─── Table routes (/station100, /playmoney) ───────────────────────────
+    # ─── Table routes ─────────────────────────────────────────────────────
     # NOTE: this list must include every TABLE_CONFIGS route id. Update it
     # whenever a table is added or renamed.
-    location ~ ^/(station100|playmoney|pond|table-1)$ {
+    location ~ ^/(station100)$ {
         limit_req zone=general burst=50 nodelay;
         limit_conn addr 20;
 

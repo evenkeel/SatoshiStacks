@@ -146,11 +146,6 @@ TABLE_ROUTES.forEach(route => {
   });
 });
 
-// Legacy table URLs (retired tables / old names) → redirect to the single table.
-['/playmoney', '/pond', '/table-1'].forEach(legacy => {
-  app.get(legacy, (req, res) => res.redirect(302, '/station100'));
-});
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime(), tables: games.size });
