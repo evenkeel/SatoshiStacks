@@ -1,7 +1,7 @@
 {
   "name": "Satoshi Stacks",
   "short_name": "SatoshiStacks",
-  "description": "Play-money 6-max Texas Hold'em",
+  "description": "6-max No-Limit Hold'em on Lightning",
   "start_url": "/station100",
   "scope": "/",
   "display": "fullscreen",

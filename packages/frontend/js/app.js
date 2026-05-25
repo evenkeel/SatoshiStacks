@@ -10,7 +10,6 @@ const NUM_SEATS = 6;
 //  TABLE CONFIGURATION — derive from URL
 // ============================================================
 const TABLE_CONFIGS = {
-  playmoney: { id: 'playmoney', name: '50 / 100', emoji: '🎲', smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000, mode: 'open', minPlayers: 2 },
   station100: { id: 'station100', name: 'Station 100', emoji: '', smallBlind: 50, bigBlind: 100, minBuyin: 5000, maxBuyin: 10000, mode: 'open', minPlayers: 2, realMoney: true },
 };
 

@@ -70,11 +70,6 @@ module.exports = {
 
   // Table definitions
   TABLE_CONFIGS: {
-    playmoney: {
-      id: 'playmoney', route: '/playmoney', name: '50 / 100', emoji: '🎲',
-      smallBlind: 50, bigBlind: 100, minBuyin: 2000, maxBuyin: 10000,
-      mode: 'open', minPlayersToStart: 2, realMoney: false,
-    },
     station100: {
       id: 'station100', route: '/station100', name: 'Station 100', emoji: '',
       smallBlind: 50, bigBlind: 100, minBuyin: 5000, maxBuyin: 10000,

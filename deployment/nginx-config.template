@@ -26,7 +26,7 @@ server {
     # ─── Table routes (/station100, /playmoney) ───────────────────────────
     # NOTE: this list must include every TABLE_CONFIGS route id. Update it
     # whenever a table is added or renamed.
-    location ~ ^/(station100|playmoney)$ {
+    location ~ ^/(station100|playmoney|pond|table-1)$ {
         limit_req zone=general burst=50 nodelay;
         limit_conn addr 20;
 
