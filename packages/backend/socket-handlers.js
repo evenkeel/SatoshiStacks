@@ -27,6 +27,11 @@ function generateObserverName() {
  */
 function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists, getPayments = () => null) {
 
+  // paymentHash -> socket.id of the player who requested that buy-in. Lets a
+  // settled deposit seat the exact requesting socket instantly, without relying
+  // on a userId->socket lookup that can miss if the observer entry is anonymous.
+  const buyinSockets = new Map();
+
   // ==================== WAITLIST HELPER ====================
 
   function checkWaitlist(tableId) {
@@ -647,6 +652,11 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         if (db.isRateLimited(userId, clientIp, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions)) {
           socket.emit('error', { message: 'Too many actions. Please wait.' }); return;
         }
+        // Tie this live socket to the authenticated user, so the deposit can seat
+        // them the instant it settles (their observer entry may still be anonymous
+        // if they signed in after they started observing).
+        const obs = observerSockets.get(socket.id);
+        if (obs) obs.userId = userId;
         // If they already paid a buy-in that wasn't seated (reconnected after paying),
         // claim it instead of issuing a NEW invoice — prevents accidental double payment.
         if (claimDeposits(userId, tableId, socket.id)) {
@@ -660,6 +670,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           ? Math.max(tc.minBuyin, Math.min(tc.maxBuyin, requested))
           : tc.maxBuyin;
         const inv = await payments.createDepositInvoice({ userId, tableId, amountSats: amt });
+        buyinSockets.set(inv.paymentHash, socket.id); // seat THIS socket when it settles
         socket.emit('buyin-invoice', { bolt11: inv.bolt11, paymentHash: inv.paymentHash, amountSats: inv.amountSats });
         console.log(`[Wallet] Buy-in invoice ${inv.paymentHash.slice(0, 12)}... for ${inv.amountSats} sats (${userId.slice(0, 8)}...)`);
       } catch (e) {
@@ -768,12 +779,16 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
   // socket churned), hold as settled_unseated — it will be CLAIMED automatically
   // when they reconnect / observe / re-request a buy-in (see claimDeposits).
   function seatFromDeposit(row) {
-    const socketId = findSocketId(row.user_id);
+    // Prefer the exact socket that requested this buy-in; fall back to a userId lookup.
+    const socketId = (buyinSockets.get(row.payment_hash) && io.sockets.sockets.has(buyinSockets.get(row.payment_hash)))
+      ? buyinSockets.get(row.payment_hash)
+      : findSocketId(row.user_id);
     if (!socketId) {
       db.updateLedgerStatus(row.id, 'settled_unseated');
       console.error(`[Wallet] Deposit ${row.payment_hash} settled but ${row.user_id.slice(0, 8)}... not connected yet — held as settled_unseated; will auto-seat on reconnect.`);
       return;
     }
+    buyinSockets.delete(row.payment_hash);
     seatDepositRow(row, socketId);
   }
 
