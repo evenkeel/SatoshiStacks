@@ -58,14 +58,14 @@ test('canCashOut blocked for an active player mid-hand', () => {
   assert.match(r.error, /active hand/i);
 });
 
-test('canCashOut allowed for a folded player mid-hand', () => {
+test('canCashOut waits for the hand to end even for a folded player', () => {
   const g = game();
   seat(g, [10000, 10000, 10000]);
   g.startNewHand();
   const cur = g.players[g.currentPlayerIndex];
   assert.equal(g.processAction(cur.userId, 'fold').valid, true);
   const r = g.canCashOut(cur.userId);
-  assert.equal(r.ok, true, 'a folded player has no chips committed and may cash out');
+  assert.equal(r.ok, false, 'folded players must wait so the stack can be removed atomically');
 });
 
 test('removePlayer returns the freed stack between hands', () => {

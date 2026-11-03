@@ -45,10 +45,12 @@ function createLightning(lightningConfig) {
 
   async function connect() {
     const { authenticatedLndGrpc } = lib();
+    if (!lnd) {
     const cert = fs.readFileSync(lightningConfig.tlsCertPath).toString('base64');
     const macaroon = fs.readFileSync(lightningConfig.macaroonPath).toString('base64');
     const socket = `${lightningConfig.host}:${lightningConfig.port}`;
     ({ lnd } = authenticatedLndGrpc({ cert, macaroon, socket }));
+    }
     // Health check + verify pubkey matches config (self-pay guard relies on it).
     const info = await lib().getWalletInfo({ lnd });
     if (lightningConfig.ownPubkey && info.public_key !== lightningConfig.ownPubkey) {
@@ -126,9 +128,14 @@ function createLightning(lightningConfig) {
     return info.public_key;
   }
 
+  async function lookupInvoice(paymentHash) {
+    const invoice = await lib().getInvoice({ lnd, id: paymentHash });
+    return { confirmed: invoice.is_confirmed, canceled: invoice.is_canceled, amountSats: invoice.received };
+  }
+
   return {
     connect, createInvoice, decodeInvoice, sendPayment, trackPayment,
-    getSpendableSats, subscribeInvoices, getOwnPubkey,
+    getSpendableSats, subscribeInvoices, getOwnPubkey, lookupInvoice,
   };
 }
 

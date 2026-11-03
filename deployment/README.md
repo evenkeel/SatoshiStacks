@@ -23,7 +23,7 @@
 | URL                                | Serves                          |
 |------------------------------------|---------------------------------|
 | `satoshistacks.com/`               | Coming Soon landing page        |
-| `satoshistacks.com/playmoney`      | Poker game (play-money beta)    |
+| `satoshistacks.com/station100`      | Poker table (effective demo/real-sats mode)    |
 | `satoshistacks.com/api/*`          | Backend API                     |
 | `satoshistacks.com/socket.io/*`    | WebSocket connections           |
 | `satoshistacks.com/health`         | Health check endpoint           |
@@ -47,7 +47,7 @@ ssh root@YOUR_VPS_IP
 bash server-setup.sh
 ```
 
-This installs Node.js 20, Nginx, PM2, Certbot, SQLite, fail2ban, and UFW firewall.
+This installs Node.js 24, Nginx, PM2, Certbot, SQLite, fail2ban, and UFW firewall.
 
 ### 3. Deploy Application
 
@@ -56,7 +56,7 @@ This installs Node.js 20, Nginx, PM2, Certbot, SQLite, fail2ban, and UFW firewal
 cd /opt
 git clone https://github.com/evenkeel/SatoshiStacks.git
 cd SatoshiStacks/packages/backend
-npm install --production
+npm ci --omit=dev
 
 # Create .env
 cat > .env << 'EOF'
@@ -112,7 +112,7 @@ bash setup-ssl.sh satoshistacks.com
 ssh root@YOUR_VPS_IP
 cd /opt/SatoshiStacks
 git pull origin main
-cd packages/backend && npm install --production
+cd packages/backend && npm ci --omit=dev
 pm2 restart satoshistacks
 ```
 

@@ -1978,16 +1978,16 @@ transition: transform 0.2s;
 /* Mobile QR adjustments */
 body.is-mobile .login-qr-container { padding: 8px; }
 
-/* NIP-47 NWC Settings Button */
-.nwc-btn {
+/* Connected wallet settings */
+.wallet-connect-btn {
   background: linear-gradient(135deg, #2a2a3a, #1a1a2a);
   border: 1px solid rgba(255,255,255,0.1); color: var(--text);
   font-family: inherit; font-size: 12px; font-weight: 700;
   padding: 6px 14px; border-radius: 6px; cursor: pointer;
   transition: all 0.2s;
 }
-.nwc-btn:hover { border-color: var(--mustard); color: var(--mustard); }
-.nwc-btn.connected {
+.wallet-connect-btn:hover { border-color: var(--mustard); color: var(--mustard); }
+.wallet-connect-btn.connected {
   border-color: #4caf50; color: #4caf50;
   background: linear-gradient(135deg, #1a2a1a, #0a1a0a);
 }
@@ -2035,15 +2035,6 @@ body.is-mobile .login-qr-container { padding: 8px; }
 .wallet-title { font-size: 18px; font-weight: 800; margin-bottom: 12px; letter-spacing: 0.02em; }
 .wallet-amount { font-size: 15px; margin-bottom: 14px; }
 .wallet-amount b { color: var(--mustard, #d4a017); }
-.wallet-qr { display: flex; justify-content: center; margin: 4px auto 14px; min-height: 0; }
-.wallet-qr img, .wallet-qr canvas { border-radius: 8px; background: #fff; padding: 8px; }
-.wallet-invoice {
-  width: 100%; box-sizing: border-box; height: 64px; resize: none;
-  font-family: ui-monospace, Menlo, monospace; font-size: 11px;
-  border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.25); color: var(--warm-white, #f8f3ea);
-  padding: 8px; margin-bottom: 10px; word-break: break-all;
-}
 .wallet-btn {
   width: 100%; padding: 11px 16px; border: none; border-radius: 10px;
   font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: 8px;
@@ -2060,8 +2051,57 @@ body.is-mobile .login-qr-container { padding: 8px; }
 .wallet-buyin-value b { color: var(--mustard, #d4a017); }
 .wallet-slider { width: 100%; margin: 6px 0 2px; accent-color: var(--mustard, #d4a017); cursor: pointer; }
 .wallet-slider-ends { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.6; margin-bottom: 14px; }
-.wallet-address {
-  font-size: 13px; font-weight: 700; color: var(--mustard, #d4a017);
-  background: rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 8px 10px;
-  margin: 8px 0 14px; word-break: break-all;
+
+
+/* Account and wallet controls remain visible to spectators and seated players. */
+.account-bar { position: fixed; z-index: 80; top: max(12px, env(safe-area-inset-top)); left: 20px; right: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid #65766e; border-radius: 14px; background: #26343a; color: #f3ebd9; box-shadow: 0 4px 18px #0003; }
+.account-bar strong { display: block; font-size: 16px; }
+.account-bar span { display: block; margin-top: 3px; font-size: 11px; color: #d1dbd3; }
+.account-bar nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-bar button { min-height: 38px; padding: 8px 12px; border: 1px solid #87998d; border-radius: 9px; background: #354a48; color: #fff7e8; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.account-bar #accountSignIn:not(:disabled) { background: #e7c05d; border-color: #e7c05d; color: #242b2d; }
+.account-bar button:disabled { cursor: default; opacity: .8; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #f0ce74; outline-offset: 3px; }
+.game-container { box-sizing: border-box; padding-top: 96px; }
+.corner-logo { top: 86px; left: 20px; }
+.corner-logo img { width: 180px; }
+.poker-table { top: 40%; width: min(80vw, 1050px); height: min(40vh, 400px); transform: translate(-50%, -50%); }
+.login-card { max-height: calc(100dvh - 32px); overflow-y: auto; color: #f3ebd9; padding: 28px 32px; }
+.login-logo { height: 134px; overflow: hidden; margin-bottom: 12px; }
+.login-logo-img { width: 300px; max-width: 100%; transform: translateY(-34px); }
+.login-subtitle { color: #f3ebd9; opacity: 1; margin: 0 0 14px; font-size: 19px; }
+.login-help, .login-provider-note { color: #d4ddd5; opacity: 1; }
+.login-help a { color: #f0ce74; }
+.login-provider-note { font-size: 13px; line-height: 1.55; margin: 0 4px 12px; }
+.login-help { line-height: 1.6; }
+.wallet-modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.wallet-status { line-height: 1.6; }
+@media (max-width: 600px) {
+  .account-bar { left: 10px; right: 10px; padding: 10px; flex-wrap: wrap; }
+  .player-avatar-wrap, .empty-avatar { width: 64px; height: 64px; }
+  .empty-label { font-size: 10px; }
+  .account-bar > div { width: 100%; }
+  .account-bar nav { gap: 6px; }
+  .account-bar button { min-height: 40px; font-size: 11px; padding: 7px 10px; }
+  .game-container, body.is-mobile .game-container { padding-top: 148px; }
+  .corner-logo { display: none; }
+  .poker-table, body.is-mobile .poker-table { top: 43%; width: 77vw; height: min(47dvh, 400px); transform: translate(-50%, -50%); }
+  .seat-2 { left: 96%; } .seat-5 { left: 4%; }
+  .table-actions-bar { bottom: max(12px, env(safe-area-inset-bottom)); }
+  .controls-area { bottom: 62px; }
 }
+@media (max-height: 500px) and (orientation: landscape) {
+  .account-bar { top: 6px; padding: 6px 12px; }
+  .player-avatar-wrap, .empty-avatar { width: 52px; height: 52px; }
+  .account-bar strong { font-size: 12px; }
+  .account-bar button { min-height: 32px; padding: 5px 8px; font-size: 10px; }
+  .game-container, body.is-mobile .game-container { padding-top: 64px; }
+  .poker-table, body.is-mobile .poker-table { top: 42%; width: min(74vw, 680px); height: 48dvh; transform: translate(-50%, -50%); }
+  .seat-1, .seat-6 { top: 10%; } .seat-3, .seat-4 { top: 90%; }
+  .controls-area { bottom: 2px; width: 65vw; }
+  .table-actions-bar { bottom: 8px; }
+}
+
+#connectionStatus { top: 86px !important; right: 20px !important; }
+#toastContainer { top: 86px !important; right: 20px !important; }
+@media (max-width:600px) { #connectionStatus, #toastContainer { top: 140px !important; right: 10px !important; } }

@@ -4,7 +4,7 @@
  */
 
 const crypto = require('crypto');
-const { finalizeEvent, getPublicKey } = require('nostr-tools/pure');
+const { finalizeEvent, getPublicKey, verifyEvent } = require('nostr-tools/pure');
 const { npubEncode, decode: nip19Decode } = require('nostr-tools/nip19');
 const config = require('../config');
 const db = require('../database');
@@ -162,6 +162,18 @@ function publishLiveActivity(tableId, games) {
 
 // ==================== PROFILE FETCHING ====================
 
+function isValidProfileEvent(event, pubkeyHex) {
+  try {
+    if (!event || event.kind !== 0 || event.pubkey !== pubkeyHex || !verifyEvent(event)) return false;
+    if (event.created_at > Math.floor(Date.now() / 1000) + 60) return false;
+    const profile = JSON.parse(event.content);
+    return profile && typeof profile === 'object' && !Array.isArray(profile) &&
+      ['name', 'display_name', 'picture', 'lud16'].every(key =>
+        profile[key] === undefined || profile[key] === null ||
+        (typeof profile[key] === 'string' && profile[key].length <= 2048));
+  } catch (_) { return false; }
+}
+
 async function fetchNostrProfile(pubkeyHex, { games, userSockets, io, broadcastGameState }) {
   const WebSocket = (await import('ws')).default;
 
@@ -188,13 +200,13 @@ async function fetchNostrProfile(pubkeyHex, { games, userSockets, io, broadcastG
         ws.on('message', (data) => {
           try {
             const msg = JSON.parse(data.toString());
-            if (msg[0] === 'EVENT' && msg[2] && msg[2].kind === 0) {
+            if (msg[0] === 'EVENT' && msg[1] === subId && isValidProfileEvent(msg[2], pubkeyHex)) {
               const profile = JSON.parse(msg[2].content);
               const name = profile.display_name || profile.name || null;
               const picture = profile.picture || null;
               const lud16 = profile.lud16 || null;
 
-              if (name && !resolved) {
+              if (!resolved) {
                 resolved = true;
                 clearTimeout(timeout);
 
@@ -341,6 +353,7 @@ function publishStartupEvents() {
 }
 
 module.exports = {
+  isValidProfileEvent,
   hasServerKey,
   serverPk,
   publishToRelays,

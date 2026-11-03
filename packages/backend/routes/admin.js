@@ -194,7 +194,9 @@ router.get('/wallet', (req, res) => {
       succeededWithdrawals: db.sumSucceededWithdrawals(),
       liveStacks,
       outstanding,            // reserved + in_flight withdrawals
-      owed: liveStacks + outstanding, // what the node must be able to cover
+      heldDeposits: db.sumHeldDeposits(),
+      walletCredits: db.sumWalletCredits(),
+      owed: liveStacks + outstanding + db.sumHeldDeposits() + db.sumWalletCredits(),
       pendingDeposits,
     };
 

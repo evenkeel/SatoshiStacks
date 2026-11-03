@@ -28,7 +28,6 @@ const LIGHTNING = {
   ownPubkey: process.env.LND_OWN_PUBKEY || null, // self-pay-loop guard
   hotWalletCapSats: parseInt(process.env.HOT_WALLET_CAP_SATS || '0', 10),
   maxWithdrawalSats: parseInt(process.env.MAX_WITHDRAWAL_SATS || '0', 10),
-  minWithdrawalSats: parseInt(process.env.MIN_WITHDRAWAL_SATS || '1000', 10),
   withdrawalFeeLimitSats: parseInt(process.env.WITHDRAWAL_FEE_LIMIT_SATS || '50', 10),
   invoiceExpirySec: parseInt(process.env.INVOICE_EXPIRY_SEC || '600', 10),
 };
@@ -46,8 +45,17 @@ if (REALMONEY_ENABLED) {
     console.error(`FATAL: REALMONEY_ENABLED=true but missing Lightning config: ${missing.join(', ')}. Refusing to start a real-money node without LND wiring.`);
     process.exit(1);
   }
-  if (!LIGHTNING.hotWalletCapSats || !LIGHTNING.maxWithdrawalSats) {
+  if (![LIGHTNING.hotWalletCapSats, LIGHTNING.maxWithdrawalSats, LIGHTNING.invoiceExpirySec].every(n => Number.isSafeInteger(n) && n > 0) ||
+      !Number.isSafeInteger(LIGHTNING.withdrawalFeeLimitSats) || LIGHTNING.withdrawalFeeLimitSats < 0) {
     console.error('FATAL: REALMONEY_ENABLED=true requires HOT_WALLET_CAP_SATS and MAX_WITHDRAWAL_SATS (>0) to bound node exposure.');
+    process.exit(1);
+  }
+  if (LIGHTNING.maxWithdrawalSats < LIGHTNING.hotWalletCapSats) {
+    console.error('FATAL: MAX_WITHDRAWAL_SATS must cover HOT_WALLET_CAP_SATS so a full balance can always exit.');
+    process.exit(1);
+  }
+  if (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*') {
+    console.error('FATAL: real-money mode requires an explicit CORS_ORIGIN.');
     process.exit(1);
   }
 }
@@ -55,6 +63,7 @@ if (REALMONEY_ENABLED) {
 module.exports = {
   REALMONEY_ENABLED,
   WITHDRAWALS_ENABLED,
+  DEPOSITS_ENABLED: process.env.DEPOSITS_ENABLED !== 'false',
   LIGHTNING,
   // True only when the master switch is on AND this table is flagged for real money.
   isRealMoney(tableId) {

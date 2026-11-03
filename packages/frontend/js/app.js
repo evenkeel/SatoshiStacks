@@ -492,7 +492,7 @@ function setLoginStatus(msg, isError = true) {
   const el = document.getElementById('loginStatus');
   if (el) {
     el.textContent = msg;
-    el.style.color = isError ? 'var(--rust)' : 'var(--sage)';
+    el.style.color = isError ? '#efb59b' : '#b5d4c4';
   }
 }
 
@@ -518,66 +518,20 @@ function populateLoginMethods() {
   if (!container) return;
   container.innerHTML = '';
 
-  const hasExtension = !!window.nostr;
-
-  if (!isMobileDevice) {
-    // DESKTOP: Extension (if available) + QR Code + Bunker URL
-    if (hasExtension) {
-      container.innerHTML =
-        `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
-        `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-        `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    } else {
-      container.innerHTML =
-        `<button class="login-method-btn primary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
-        `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    }
-  } else if (isAndroid) {
-    // ANDROID: Deep link (Amber/Primal/any NIP-46 signer) + Bunker URL fallback
-    container.innerHTML =
-      `<button class="login-method-btn primary" data-action="deep-link-login" data-provider="Nostr">${LOGIN_ICONS.amber} Sign in with Nostr</button>` +
-      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    if (hasExtension) {
-      container.innerHTML +=
-        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>`;
-    }
-  } else if (isIOS) {
-    // iOS: Deep link (Nostr Keyring/Primal/any NIP-46 signer) + Bunker URL fallback
-    container.innerHTML =
-      `<button class="login-method-btn primary" data-action="deep-link-login" data-provider="Nostr">${LOGIN_ICONS.keyring} Sign in with Nostr</button>` +
-      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    if (hasExtension) {
-      container.innerHTML +=
-        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>`;
-    }
-  } else {
-    // Fallback: show all options
-    container.innerHTML =
-      `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
-      `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-  }
-
-  // Update help text
-  const helpEl = document.getElementById('loginHelp');
-  if (helpEl) {
-    if (!isMobileDevice) {
-      helpEl.innerHTML = hasExtension
-        ? 'Scan the QR code with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer'
-        : 'Use <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or install <a href="https://chromewebstore.google.com/detail/nos2x/kpgefcfmnafjgpblomihpgmejjdanjjp" target="_blank" rel="noopener">nos2x</a>';
-    } else if (isAndroid) {
-      helpEl.innerHTML = 'Works with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer';
-    } else if (isIOS) {
-      helpEl.innerHTML = 'Works with <a href="https://apps.apple.com/app/nostr-keyring/id6446657094" target="_blank" rel="noopener">Nostr Keyring</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer';
-    } else {
-      helpEl.innerHTML = 'Requires a Nostr signer app or browser extension';
-    }
-  }
+  container.innerHTML =
+    `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Sign in with Nostr</button>` +
+    `<p class="login-provider-note">Use Sidecar or any NIP-07 browser signer. Approve the sign-in request in your extension.</p>` +
+    `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect a phone signer</button>` +
+    `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Use a bunker URL</button>`;
+  if (isMobileDevice) container.innerHTML +=
+    `<button class="login-method-btn secondary" data-action="deep-link-login">${LOGIN_ICONS.keyring} Open signer app</button>`;
+  const help = $('loginHelp');
+  if (help) help.innerHTML = 'New here? <a href="https://sidecar.top" target="_blank" rel="noopener noreferrer">Set up Sidecar</a> for Nostr sign-in and a Lightning wallet. Your private key stays in your signer. Wallet connection is a separate step.';
 }
 
 // Shared session storage helper
 function storeAuthSession(verifyData) {
+  lightningWallet.disconnect();
   mySessionToken = verifyData.sessionToken;
   myPubkeyHex = verifyData.pubkeyHex;
   myNpub = verifyData.npub;
@@ -596,49 +550,29 @@ function storeAuthSession(verifyData) {
   // NIP-51: Fetch follow/mute lists in background
   fetchFollowAndMuteLists(myPubkeyHex);
 
-  // NIP-47: Show wallet connect option in settings
-  showNWCRow();
+  // Show connected-wallet controls
+  showWalletControls();
+  requestWalletState();
 }
 
 // Challenge-response auth using a signer object (window.nostr or NIP-46 BunkerSigner)
 async function performChallengeAuth(signer) {
-  // Step 1: Get challenge from server
-  setLoginStatus('Requesting challenge...', false);
-  const challengeRes = await fetch('/api/auth/challenge', { method: 'POST' });
-  const challengeData = await challengeRes.json();
-  if (!challengeData.success) throw new Error(challengeData.error || 'Failed to get challenge');
-
-  // Step 2: Get pubkey from signer
-  setLoginStatus('Requesting pubkey...', false);
-  const pubkey = await signer.getPublicKey();
-
-  // Step 3: Sign the challenge event
-  setLoginStatus('Please approve the login request...', false);
-  const eventTemplate = {
-    kind: 22242,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['challenge', challengeData.nonce],
-      ['relay', window.location.origin]
-    ],
-    content: ''
-  };
-  const signedEvent = await signer.signEvent(eventTemplate);
-
-  // Step 4: Verify with server
-  setLoginStatus('Verifying signature...', false);
-  const verifyRes = await fetch('/api/auth/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      challengeId: challengeData.challengeId,
-      signedEvent
-    })
+  setLoginStatus('Approve the sign-in request in your signer.', false);
+  return window.StacksProviders.authenticate(signer, {
+    origin: window.location.origin,
+    async requestChallenge() {
+      const response = await fetch('/api/auth/challenge', { method: 'POST' });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Could not request sign-in');
+      return data;
+    },
+    async verify(body) {
+      const response = await fetch('/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Sign-in verification failed');
+      return data;
+    },
   });
-  const verifyData = await verifyRes.json();
-  if (!verifyData.success) throw new Error(verifyData.error || 'Verification failed');
-
-  return verifyData;
 }
 
 // === NIP-07 Browser Extension Login ===
@@ -649,7 +583,7 @@ async function handleNIP07Login() {
 
   const hasNostr = await detectNostr();
   if (!hasNostr) {
-    setLoginStatus('No Nostr extension found. Install nos2x or another NIP-07 signer extension.');
+    setLoginStatus('No NIP-07 signer found. Install or unlock Sidecar, then reload. You can also connect a phone signer.');
     document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
     return;
   }
@@ -1019,6 +953,8 @@ function nostrLogout() {
   localStorage.removeItem('ss_lud16');
   localStorage.removeItem('ss_authMethod');
   localStorage.removeItem('ss_nwcUri');
+  lightningWallet.disconnect();
+  availableCashoutSats = 0;
   mySessionToken = null;
   myPubkeyHex = null;
   myNpub = null;
@@ -1032,8 +968,8 @@ function nostrLogout() {
   // Clear NIP-51 follow/mute state
   myFollowSet = new Set();
   myMuteSet = new Set();
-  // Hide NWC row
-  showNWCRow();
+  // Update wallet controls
+  showWalletControls();
   // Clean up NIP-46 state
   if (nip46Signer) {
     try { nip46Signer.close(); } catch (e) { /* ignore */ }
@@ -1058,39 +994,54 @@ window.nostrLogout = nostrLogout;
 // ============================================================
 //  NIP-47: Nostr Wallet Connect
 // ============================================================
-function connectNWC() {
-  const existing = localStorage.getItem('ss_nwcUri');
-  if (existing) {
-    // Already connected — offer disconnect
-    if (confirm('Disconnect Lightning wallet?')) {
-      localStorage.removeItem('ss_nwcUri');
-      updateNWCButton();
-    }
+const lightningWallet = window.StacksProviders.createWallet(() => window.webln);
+let walletBusy = false;
+let availableCashoutSats = 0;
+let activeBuyinInvoice = null;
+// Remove obsolete placeholder credentials; the application no longer stores NWC secrets.
+localStorage.removeItem('ss_nwcUri');
+
+async function connectWallet() {
+  if (walletBusy) return;
+  if (lightningWallet.isConnected()) {
+    lightningWallet.disconnect();
+    updateWalletButtons();
+    showToast('Wallet disconnected from this page. You can revoke site permissions in your extension.', 'info');
     return;
   }
-  const uri = prompt('Paste your nostr+walletconnect:// URI from your wallet (Alby, Mutiny, etc.):');
-  if (!uri || !uri.startsWith('nostr+walletconnect://')) {
-    if (uri) showToast('Invalid NWC URI — must start with nostr+walletconnect://');
-    return;
+  walletBusy = true;
+  updateWalletButtons();
+  try {
+    const wallet = await lightningWallet.connect();
+    showToast(`${wallet.name} connected. Each payment starts when you choose Pay.`, 'info');
+  } catch (error) { showToast(error.message || 'Wallet connection declined'); }
+  finally { walletBusy = false; updateWalletButtons(); }
+}
+window.connectWallet = connectWallet;
+
+function updateWalletButtons() {
+  const connected = lightningWallet.isConnected();
+  for (const id of ['walletSettingsBtn', 'walletConnectBtn']) {
+    const button = $(id);
+    if (!button) continue;
+    button.textContent = walletBusy ? 'Connecting…' : connected ? `${lightningWallet.name()} connected · Disconnect` : 'Connect Lightning wallet';
+    button.disabled = walletBusy;
+    button.classList.toggle('connected', connected);
   }
-  localStorage.setItem('ss_nwcUri', uri);
-  updateNWCButton();
-  showToast('⚡ Lightning wallet connected!');
+  const account = $('accountSignIn');
+  if (account) { account.textContent = myUserId ? myUsername : 'Sign in with Nostr'; account.disabled = !!myUserId; }
+  const cashout = $('recoverFundsBtn');
+  if (cashout) cashout.hidden = !myUserId || !isRealMoneyTable();
+  const signOut = $('accountSignOut');
+  if (signOut) signOut.hidden = !myUserId;
 }
-window.connectNWC = connectNWC;
-
-function updateNWCButton() {
-  const btn = $('nwcConnectBtn');
-  if (!btn) return;
-  const connected = !!localStorage.getItem('ss_nwcUri');
-  btn.textContent = connected ? 'Connected ⚡' : 'Connect';
-  btn.classList.toggle('connected', connected);
-}
-
-function showNWCRow() {
-  const row = $('nwcSettingRow');
+function showWalletControls() {
+  const row = $('walletSettingRow');
   if (row) row.style.display = myUserId ? '' : 'none';
-  updateNWCButton();
+  updateWalletButtons();
+}
+function requestWalletState() {
+  if (socket && mySessionToken) socket.emit('wallet-state-request', { tableId: myTableId, sessionToken: mySessionToken });
 }
 
 // ============================================================
@@ -1164,8 +1115,8 @@ async function tryRestoreSession(retries = 2) {
       myUsername = myNostrName || myNpub.slice(0, 12) + '...';
       // NIP-51: Fetch follow/mute lists in background
       fetchFollowAndMuteLists(myPubkeyHex);
-      // NIP-47: Show wallet connect option
-      showNWCRow();
+      // Show connected-wallet controls
+      showWalletControls();
       return true;
     } catch (err) {
       console.error(`[NOSTR] Session restore attempt ${attempt + 1} failed:`, err);
@@ -1202,6 +1153,7 @@ function connectAsObserver() {
       });
     } else {
       socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined });
+      requestWalletState();
     }
   });
 
@@ -1274,6 +1226,10 @@ function setupCommonSocketHandlers() {
     closeWalletModal();
     showToast(`Playing as ${myUsername}`, 'info');
     render();
+    updateWalletButtons();
+    const mode = $('tableModeLabel');
+    if (mode) mode.textContent = `${state.realMoney ? 'Real sats' : 'Demo chips'} · ${state.smallBlind} / ${state.bigBlind} · Buy-in ${fmt(state.minBuyin)}–${fmt(state.maxBuyin)}`;
+    requestWalletState();
   });
 
   socket.on('auth-error', ({ message }) => {
@@ -1325,10 +1281,21 @@ function setupCommonSocketHandlers() {
     const currentPot = (state.pot || 0) + (state.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
     if (currentPot > 0) savedPotForAnimation = currentPot;
     render();
+    updateWalletButtons();
+    const mode = $('tableModeLabel');
+    if (mode) mode.textContent = `${state.realMoney ? 'Real sats' : 'Demo chips'} · ${state.smallBlind} / ${state.bigBlind} · Buy-in ${fmt(state.minBuyin)}–${fmt(state.maxBuyin)}`;
+    requestWalletState();
   });
 
   socket.on('error', (error) => {
+    if ($('walletModal') && !$('walletModal').classList.contains('hidden')) showWalletModal('Could not complete request', `<p role="alert">${esc(error.message)}</p><button class="wallet-btn" data-action="close-wallet">Close and try again</button>`);
     showToast(error.message);
+    requestWalletState();
+  });
+  socket.on('wallet-state', state => {
+    if (state.tableId !== myTableId) return;
+    availableCashoutSats = state.availableSats || 0;
+    updateWalletButtons();
   });
 
   // ---- real-money wallet events ----
@@ -1336,17 +1303,22 @@ function setupCommonSocketHandlers() {
     showBuyinInvoice(bolt11, amountSats);
   });
   socket.on('deposit-confirmed', ({ amountSats }) => {
+    activeBuyinInvoice = null;
     closeWalletModal();
+    requestWalletState();
     showToast(`Deposited ${Number(amountSats).toLocaleString()} sats — you're in!`, 'info');
   });
   socket.on('cashout-result', (res) => {
     if (!res) return;
+    availableCashoutSats = 0;
+    requestWalletState();
     if (res.status === 'succeeded') { mySeat = null; closeWalletModal(); showToast('Cashed out — sent to your Lightning address!', 'info'); }
-    else if (res.status === 'in_flight') { mySeat = null; closeWalletModal(); showToast('Payment processing — it will arrive shortly.', 'info'); }
-    // 'failed' is handled by the cashout-failed event (chips returned, re-seated)
+    else if (res.status === 'in_flight') { mySeat = null; closeWalletModal(); showToast('Payment pending. Reconnect any time to check its status.', 'info'); }
+    if (['succeeded', 'in_flight', 'failed'].includes(res.status)) { mySeat = null; connectAsObserver(); }
   });
   socket.on('cashout-failed', ({ message }) => {
     closeWalletModal();
+    requestWalletState();
     showToast(message || 'Payment failed — your chips were returned to the table.');
   });
 
@@ -2903,7 +2875,7 @@ function handleStandUpPlain() {
 function isRealMoneyTable() {
   // Prefer the server's authoritative flag; fall back to the table config so a
   // seat-click works even before the first game-state arrives.
-  return !!((gameState && gameState.realMoney) || (myTableConfig && myTableConfig.realMoney));
+  return gameState ? !!gameState.realMoney : !!myTableConfig.realMoney;
 }
 
 function requestRealMoneyBuyin() {
@@ -2916,7 +2888,7 @@ function requestRealMoneyBuyin() {
     `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${max.toLocaleString()}</b> sats</div>` +
     `<input id="rmBuyinSlider" class="wallet-slider" type="range" min="${min}" max="${max}" step="100" value="${max}">` +
     `<div class="wallet-slider-ends"><span>${min.toLocaleString()}</span><span>${max.toLocaleString()}</span></div>` +
-    `<button class="wallet-btn" data-action="generate-buyin-invoice">Generate invoice</button>`;
+    `<button class="wallet-btn" data-action="generate-buyin-invoice">Continue to payment</button>`;
   showWalletModal('Buy in', body);
   const slider = document.getElementById('rmBuyinSlider');
   const amt = document.getElementById('rmBuyinAmt');
@@ -2927,50 +2899,92 @@ function generateBuyinInvoice() {
   if (!socket || !mySessionToken) { handleNostrLoginThenSit(); return; }
   const slider = document.getElementById('rmBuyinSlider');
   const amountSats = slider ? parseInt(slider.value, 10) : undefined;
-  showWalletModal('Buy in', '<div class="wallet-status">Generating your Lightning invoice…</div>');
+  showWalletModal('Buy in', '<div class="wallet-status">Preparing your buy-in…</div>');
   socket.emit('buyin-request', { tableId: myTableId, sessionToken: mySessionToken, amountSats });
 }
 
 function showBuyinInvoice(bolt11, amountSats) {
-  const body =
-    `<div class="wallet-amount">Pay <b>${Number(amountSats).toLocaleString()} sats</b> to take your seat</div>` +
-    `<div id="walletQr" class="wallet-qr"></div>` +
-    `<textarea class="wallet-invoice" readonly>${bolt11}</textarea>` +
-    `<button class="wallet-btn" data-action="copy-invoice" data-invoice="${bolt11}">Copy invoice</button>` +
-    `<div class="wallet-status">Waiting for payment — you'll be seated automatically.</div>`;
-  showWalletModal('Buy in', body);
-  const qc = document.getElementById('walletQr');
-  if (qc && typeof QRCode !== 'undefined') {
-    try {
-      new QRCode(qc, { text: bolt11.toUpperCase(), width: 220, height: 220, colorDark: '#3d3228', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-    } catch (e) { /* QR optional */ }
-  }
+  activeBuyinInvoice = bolt11;
+  showWalletModal('Buy in',
+    `<div class="wallet-amount">Buy in for <b>${Number(amountSats).toLocaleString()} sats</b></div>` +
+    `<p class="wallet-status">Approve the payment in Sidecar or your connected Lightning wallet. Your seat appears when the server confirms it.</p>` +
+    `<button id="payBuyinBtn" class="wallet-btn" data-action="pay-buyin-wallet">Pay with Lightning wallet</button>`);
 }
 
-function startCashout() {
-  if (!socket || !gameState) return;
-  const me = (gameState.players || []).find(p => p && p.userId === myUserId);
-  const stack = me ? me.stack : 0;
-  if (!stack || stack <= 0) { handleStandUpPlain(); return; }
-  const addr = localStorage.getItem('ss_lud16') || '';
-  if (!addr) {
+async function fetchWalletState() {
+  const target = socket;
+  if (!target || !mySessionToken) throw new Error('Sign in before cashing out');
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { target.off('wallet-state', receive); reject(new Error('Balance request timed out — try again')); }, 10000);
+    function receive(state) { if (state.tableId !== myTableId) return; clearTimeout(timer); target.off('wallet-state', receive); resolve(state); }
+    target.on('wallet-state', receive);
+    target.emit('wallet-state-request', { tableId: myTableId, sessionToken: mySessionToken });
+  });
+}
+
+async function startCashout() {
+  if (walletBusy || !socket || !mySessionToken) return;
+  walletBusy = true;
+  try {
+    const me = gameState?.players.find(p => p && p.userId === myUserId);
+    // Stop being dealt in before wallet approval, so the three-second gap
+    // between hands is not the only opportunity to receive a cash-out.
+    if (me && !me.sittingOut && !me.sittingOutNextHand) socket.emit('sit-out', { tableId: myTableId });
+    const funds = await fetchWalletState();
+    if (funds.error) throw new Error(funds.error);
+    const stack = funds.availableSats;
+    if (!stack) {
+      const pending = (funds.payments || []).filter(p => ['reserved', 'in_flight', 'failed'].includes(p.status));
+      showWalletModal('Cash out', pending.length
+        ? `<p role="status">${fmt(pending.reduce((sum,p) => sum+p.amount_sats,0))} sats are pending. The server is checking the payment result. Reconnecting will not send it twice.</p>`
+        : '<p>No funds are available to cash out right now.</p>');
+      return;
+    }
     showWalletModal('Cash out',
-      `<div class="wallet-amount">Cash out <b>${stack.toLocaleString()} sats</b></div>` +
-      `<div class="wallet-status">Your Nostr profile has no Lightning address, so we can't send your sats automatically. Add a Lightning address (lud16) to your Nostr profile, then stand up again.</div>`);
-    return;
-  }
-  const body =
-    `<div class="wallet-amount">Cash out <b>${stack.toLocaleString()} sats</b></div>` +
-    `<div class="wallet-status">We'll send it straight to the Lightning address on your Nostr profile:</div>` +
-    `<div class="wallet-address">${addr}</div>` +
-    `<button class="wallet-btn" data-action="confirm-cashout">Cash out ${stack.toLocaleString()} sats</button>`;
-  showWalletModal('Cash out', body);
+      `<div class="wallet-amount">Return <b>${stack.toLocaleString()} sats</b> to your wallet</div>` +
+      `<p class="wallet-status">Your connected Lightning wallet receives your full balance.</p>` +
+      `<button class="wallet-btn" data-action="confirm-cashout">Cash out to wallet</button>`);
+  } catch (error) { showToast(error.message); }
+  finally { walletBusy = false; }
 }
 
-function confirmCashout() {
-  if (!socket || !mySessionToken) { showToast('Not connected'); return; }
-  showWalletModal('Cash out', '<div class="wallet-status">Sending your sats to your Lightning address…</div>');
-  socket.emit('cashout-request', { tableId: myTableId, sessionToken: mySessionToken });
+async function confirmCashout() {
+  if (walletBusy || !socket || !mySessionToken) return;
+  walletBusy = true;
+  try {
+    let bolt11;
+    {
+      if (!lightningWallet.isConnected()) await lightningWallet.connect();
+      if (localStorage.getItem('ss_authMethod') === 'nip07') await window.StacksProviders.assertIdentity(window.nostr, myPubkeyHex);
+      // Get the latest authoritative balance immediately before asking the wallet
+      // for an invoice. The server rechecks it before reserving any funds.
+      const funds = await fetchWalletState();
+      if (funds.error) throw new Error(funds.error);
+      bolt11 = await lightningWallet.invoice(funds.availableSats);
+    }
+
+    socket.emit('cashout-request', { tableId: myTableId, sessionToken: mySessionToken, ...(bolt11 ? { bolt11 } : {}) });
+    showWalletModal('Cash out', '<div class="wallet-status" role="status">Payment requested. An uncertain payment stays pending until the server confirms its result.</div>');
+  } catch (error) { showToast(error.message || 'Cash-out cancelled'); }
+  finally { walletBusy = false; updateWalletButtons(); }
+}
+
+async function payBuyinWithWallet() {
+  if (walletBusy || !activeBuyinInvoice) return;
+  walletBusy = true;
+  const button = $('payBuyinBtn');
+  if (button) { button.disabled = true; button.textContent = 'Approve in your wallet…'; }
+  try {
+    if (!lightningWallet.isConnected()) await lightningWallet.connect();
+    if (localStorage.getItem('ss_authMethod') === 'nip07') await window.StacksProviders.assertIdentity(window.nostr, myPubkeyHex);
+    await lightningWallet.pay(activeBuyinInvoice);
+    showToast('Payment sent. Waiting for the server to confirm your deposit.', 'info');
+  } catch (error) { showToast(error.message || 'Payment cancelled'); }
+  finally {
+    walletBusy = false;
+    updateWalletButtons();
+    if (button) { button.disabled = false; button.textContent = 'Pay with Lightning wallet'; }
+  }
 }
 
 function showWalletModal(title, bodyHtml) {
@@ -3180,6 +3194,7 @@ let pendingBuyIn = null;
 let buyinMode = 'sit'; // 'sit' or 'rebuy'
 
 function showBuyinDialog() {
+  if (isRealMoneyTable()) { requestRealMoneyBuyin(); return; }
   const overlay = $('buyinOverlay');
   const slider = $('buyinSlider');
   const display = $('buyinAmountDisplay');
@@ -3295,6 +3310,7 @@ async function init() {
   initMobileChat();
 
   // Try to restore existing NOSTR session
+  showWalletControls();
   const hasSession = await tryRestoreSession();
   if (hasSession) {
     hideLoginOverlay();
@@ -3326,7 +3342,10 @@ document.addEventListener('click', (e) => {
     case 'sit-back-in': handleSitBackIn(); break;
     case 'sit-out': handleSitOut(); break;
     case 'stand-up': handleStandUp(); break;
-    case 'connect-nwc': window.connectNWC(); break;
+    case 'connect-wallet': window.connectWallet(); break;
+    case 'sign-out': nostrLogout(); showToast('Signed out. Any funds remain recoverable with the same Nostr identity.', 'info'); break;
+    case 'pay-buyin-wallet': payBuyinWithWallet(); break;
+    case 'recover-funds': startCashout(); break;
     case 'copy-qr-link': copyQRLink(); break;
     case 'switch-to-bunker': switchToBunkerFromQR(); break;
     case 'login-go-back': loginGoBack(); break;
@@ -3348,9 +3367,6 @@ document.addEventListener('click', (e) => {
       waitlistPosition = null;
       break;
     case 'observer-sign-in': handleObserverSignIn(); break;
-    case 'copy-invoice':
-      navigator.clipboard.writeText(actionEl.dataset.invoice || '').then(() => showToast('Invoice copied', 'info')).catch(() => {});
-      break;
     case 'generate-buyin-invoice': generateBuyinInvoice(); break;
     case 'confirm-cashout': confirmCashout(); break;
     case 'close-wallet': closeWalletModal(); break;

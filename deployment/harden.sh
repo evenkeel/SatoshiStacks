@@ -16,7 +16,7 @@ exec > >(tee -a "$LOGFILE") 2>&1
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║  SatoshiStacks VPS Hardening  (v5.7)     ║"
-echo "║  satoshistacks.com/playmoney             ║"
+echo "║  satoshistacks.com/station100             ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "Started: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"

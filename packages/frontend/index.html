@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
@@ -13,10 +13,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=15">
+<link rel="stylesheet" href="/styles.css?v=16">
 <!-- CSS extracted to styles.css -->
 </head>
 <body>
+<header class="account-bar" aria-label="Account and wallet">
+  <div><strong>Station 100</strong><span id="tableModeLabel">50 / 100 · 6 seats</span></div>
+  <nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="walletConnectBtn" data-action="connect-wallet">Connect Lightning wallet</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Cash out / recover funds</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button></nav>
+</header>
 <div class="game-container">
 <!-- Corner Logo -->
 <div class="corner-logo"><img src="/img/logo-sm.png" alt="SatoshiStacks"></div>
@@ -109,9 +113,9 @@
 <span>Auto-Muck Losers</span>
 <div class="setting-toggle on" data-setting="autoMuck"></div>
 </div>
-<div class="setting-row nwc-row" id="nwcSettingRow" style="display:none">
+<div class="setting-row wallet-row" id="walletSettingRow" style="display:none">
 <span>⚡ Lightning Wallet</span>
-<button class="setting-btn nwc-btn" id="nwcConnectBtn" data-action="connect-nwc">Connect</button>
+<button class="setting-btn wallet-connect-btn" id="walletSettingsBtn" data-action="connect-wallet">Connect</button>
 </div>
 </div>
 <div class="chat-input-area" id="chatInputArea">
@@ -126,8 +130,8 @@
 <div class="login-logo">
 <img src="/img/logo.png" alt="Satoshi Stacks" class="login-logo-img">
 </div>
-<p class="login-subtitle">6-max No-Limit Hold'em on Lightning</p>
-<div class="login-status" id="loginStatus"></div>
+<h1 class="login-subtitle">Sign in to SatoshiStacks</h1>
+<div class="login-status" id="loginStatus" role="status" aria-live="polite"></div>
 <!-- Method Selection Screen -->
 <div class="login-methods" id="loginMethods">
   <!-- Dynamically populated by populateLoginMethods() -->
@@ -193,6 +197,7 @@
 <script type="module" src="/js/nip46-loader.js"></script>
 <!-- Socket.IO Client -->
 <script src="/socket.io/socket.io.js"></script>
-<script src="/js/app.js?v=15"></script>
+<script src="/js/providers.js?v=16"></script>
+<script src="/js/app.js?v=16"></script>
 </body>
 </html>

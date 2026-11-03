@@ -43,7 +43,6 @@ server {
         proxy_buffering off;
     }
 
-    # (playmoney included in table routes regex above)
 
     # ─── Socket.IO (WebSocket upgrade) ────────────────────────────────────
     location /socket.io/ {
@@ -114,8 +113,8 @@ server {
         proxy_pass http://satoshistacks_backend;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
-        expires 7d;
-        add_header Cache-Control "public, immutable";
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
         access_log off;
     }
 

@@ -1,157 +1,62 @@
 # SatoshiStacks
 
-6-max Texas Hold'em poker with NOSTR authentication. Built for Bitcoiners.
+Six-seat Texas Hold’em with Nostr sign-in and connected Lightning wallets.
 
-**Live:** [satoshistacks.com/playmoney](https://satoshistacks.com/playmoney)
+Table: [satoshistacks.com/station100](https://satoshistacks.com/station100).
 
-## Vision
+## Player flow
 
-Poker without custodial accounts, KYC, or rake. Sit down with sats, play, stand up with sats.
+1. Watch without signing in.
+2. Choose **Sign in with Nostr** and approve in Sidecar or another NIP-07 signer. Phone/NIP-46 signers remain available.
+3. Connect a Lightning wallet through WebLN. [Sidecar](https://sidecar.top) provides Nostr signing and a WebLN wallet backed by its wallet connection. Configure the wallet inside Sidecar; SatoshiStacks never requests an nsec or an NWC connection secret.
+4. Choose a buy-in and approve **Pay with Lightning wallet**. Seating occurs only after LND confirms settlement.
+5. Choose **Cash out to wallet** between hands. The wallet creates its receiving request in the background. Players never copy or paste invoices.
 
-**Today:** Play-money beta -- free chips, NOSTR login, zero friction.
+NIP-07 authenticates identity; WebLN connects the wallet. Signing in never authorizes payment. Browser payment success never credits chips without server confirmation. Wallets must support WebLN payments and receiving requests; verify your intended wallet before depositing.
 
-**Tomorrow:** Lightning-native poker. Deposit via Lightning invoice to buy in. When you leave the table, sats go straight back to your NOSTR-associated Lightning wallet. No stored balances, no withdrawal flow, no custodial risk. The house never holds your money. The goal is the simplest possible path from "I want to play poker" to cards in the air, powered by Bitcoin rails.
+## Funds and recovery
 
-## Features
+Real deposits go to the operator’s Lightning node while chips are in play. **This is a custodial table.** Failed payouts, idle exits, and unseated deposits remain recoverable balances until cash-out. The operator must cover all liabilities and payment fees.
 
-### Poker Engine
-- 6-max No-Limit Hold'em with proper blind structure (heads-up and multi-way)
-- Server-authoritative game engine -- all actions validated server-side, can't cheat from the browser
-- Crypto-secure deck shuffle (`crypto.randomBytes()`)
-- Side pots for multi-way all-ins
-- Full hand evaluation (straights, flushes, full houses, etc. with proper tiebreakers)
+Table mutations and snapshots commit in SQLite transactions, including idle tables and completed hands. A withdrawal reserves the balance and debited snapshot before sending. Definitive failures restore durable credit independently of seating and browser notifications. Unknown results remain pending until LND reconciliation; they are never automatically refunded on a timeout.
 
-### Timer & Time Bank
-- 15-second base action timer per turn
-- Independent pre-flop and post-flop time bank pools (15s each)
-- Time bank auto-activates when base timer expires and you have chips in the pot
-- Time bank grows +5s per 10 hands dealt at the table (capped at 60s)
-- Auto-check on timeout when possible, auto-fold when you owe chips
-- 1 timeout = sit out next hand (click "I'm Back" to rejoin)
+**Cash out / recover funds** works without a new seat or another deposit, including positive balances below the old minimum. Legacy `refund_pending` rows need operator reconciliation, not a blind retry.
 
-### NOSTR Authentication
-- Login via NIP-07 browser extensions (nos2x, Alby, etc.)
-- Profile names and avatars pulled from NOSTR identity
-- No accounts, no passwords, no email
+## Development
 
-### UI & Experience
-- Real-time multiplayer via WebSocket (Socket.IO)
-- Card deal animations (cards fly from dealer to players)
-- Chip fly animations with visual denomination breakdowns
-- Pot chip accumulation display
-- Action badges (Check, Call, Raise, Fold) with animations
-- Two-phase life bar timer (green/yellow/red for base, blue/purple for time bank)
-- Gentle two-note chime when it's your turn
-- Play-by-play hand log in real-time chat
-- Full hand history with copy-to-clipboard
-- Player profile popups with NOSTR info
-- Sit out / sit back in
-- Play-money auto-rebuy (10K chips when you bust) or manual rebuy
-- Mobile-responsive layout
+Use Node.js 24 (`.nvmrc`).
 
-### Admin Dashboard
-- Player management (view stats, ban/unban)
-- IP ban system
-- Abuse logging
-- Active table monitoring
-- Hand history search
-- Protected by admin token authentication
+```sh
+npm ci
+cp packages/backend/.env.example packages/backend/.env
+# Set a random ADMIN_TOKEN and local CORS_ORIGIN in .env.
+npm run dev
+```
+
+Visit `http://localhost:3001/station100`. `REALMONEY_ENABLED=false` starts a labeled demo with no LND requirement.
+
+```sh
+NODE_ENV=production npm test
+npm audit
+```
+
+Tests cover evaluation, betting, side pots, lifecycle, provider permissions, duplicate payouts, failed refund recovery, snapshot rollback, missed deposit settlement, and a 200-hand conservation simulation. Mocked-LND tests do not replace real signer/wallet and regtest verification.
 
 ## Architecture
 
-```
-packages/
-├── backend/           Node.js server (Express + Socket.IO + SQLite)
-│   ├── server.js          WebSocket server, NOSTR auth, admin API
-│   ├── poker-game.js      Game engine (timer, time bank, side pots, hand history)
-│   ├── database.js        SQLite persistence (players, hands, abuse log, IP bans)
-│   └── admin.html         Admin dashboard UI
-├── frontend/          Single-page game client (vanilla HTML/CSS/JS)
-│   └── index.html         Complete game UI (~3100 lines, no build step)
-└── shared/            Crypto-secure deck + hand evaluator
-    ├── deck.js            52-card deck, crypto shuffle
-    └── hand-evaluator.js  7-card evaluation, best 5-card hand
-```
+- `packages/backend`: Express, Socket.IO, SQLite, authoritative engine, LND adapter, payments, authentication, and admin endpoints.
+- `packages/frontend`: vanilla browser client, NIP-07 and WebLN adapters, NIP-46 fallback.
+- `packages/shared`: secure shuffle and hand evaluation.
+- `deployment`: provisioning, deployment, Nginx, and wallet release runbook.
 
-**Server = single source of truth.** Deck shuffled with `crypto.randomBytes()`. All actions validated server-side. Players only see their own hole cards until showdown.
+Public player responses use a safe field allowlist. Relay profile events require a valid signature and matching author. Payouts no longer depend on profile Lightning addresses or an LNURL resolver.
 
-## Quick Start
+## Release
 
-```bash
-cd packages/backend
-cp .env.example .env    # Edit with your ADMIN_TOKEN
-npm install
-npm start
-```
+Read [the wallet runbook](deployment/lightning-runbook.md). `/health` returns 503 when real-money mode lacks wallet readiness. `DEPOSITS_ENABLED` and `WITHDRAWALS_ENABLED` are independent switches applied on restart.
 
-Open `http://localhost:3001` with a NIP-07 browser extension installed.
+MVP scope: one Station 100 table, 50/100 blinds, 5,000–10,000-sat buy-in, watching, sign-in, poker, reconnect, and full-balance cash-out. Defer tournaments, additional tables, and framework migration.
 
-### Environment Variables
+Mainnet readiness still requires actual Sidecar sign-in/payment/return testing, regtest recovery exercises, reconciliation of pre-existing funds, backup/restore rehearsal, and an approved operator configuration. Unit-test success does not establish those checks.
 
-```bash
-PORT=3001                          # Server port
-NODE_ENV=production                # development or production
-CORS_ORIGIN=https://yourdomain.com # CORS allowed origins
-ADMIN_TOKEN=your-secret-token      # Admin dashboard access token
-```
-
-## Deployment
-
-Production runs on a Hetzner CPX11 VPS (~$5/month) with:
-- **PM2** process manager
-- **Nginx** reverse proxy with rate limiting
-- **Let's Encrypt** SSL
-- **UFW** firewall + **fail2ban** intrusion prevention
-- **Automated SQLite backups**
-- SSH key-only access with kernel hardening
-
-See `deployment/` for setup scripts:
-- `server-setup.sh` -- VPS provisioning (Node.js, PM2, Nginx, UFW, fail2ban)
-- `deploy-app.sh` -- App deployment
-- `nginx-config.template` -- Reverse proxy config
-- `setup-ssl.sh` -- SSL certificate setup
-- `harden.sh` -- Security hardening
-
-## Tech Stack
-
-Node.js, Express, Socket.IO, better-sqlite3, nostr-tools, vanilla JS frontend. No frameworks, no build step, no dependencies you don't need.
-
-## Roadmap
-
-**Done**
-- [x] Core poker engine (6-max NL Hold'em with HU support)
-- [x] NOSTR authentication (NIP-07)
-- [x] Play-money chips with auto-rebuy
-- [x] Hand history and pot tracking
-- [x] Card deal and chip fly animations
-- [x] Two-phase timer with time bank system
-- [x] Sit out / sit back in with auto-timeout
-- [x] Disconnect handling with 60s reconnect grace
-- [x] Admin dashboard (player management, abuse log, IP bans)
-- [x] Production deployment (Hetzner VPS, Nginx, SSL, PM2)
-- [x] Server hardening (UFW, fail2ban, SSH lockdown, kernel hardening)
-- [x] Automated SQLite backups
-
-- [x] Player chat (real-time with NIP-51 mute filtering)
-- [x] Spectator mode (auto-connect, random names, chat, click-to-sit)
-- [x] NIP-46 bunker/QR login (mobile + desktop)
-
-**Next**
-- [ ] Improve GUI (big time)
-- [ ] Multi-client soak testing (50+ hands, edge cases)
-- [ ] Mobile layout polish
-
-**Lightning Integration**
-- [ ] Buy-in via Lightning invoice (sit down, pay, play)
-- [ ] Auto-cashout on leave (sats to NOSTR Lightning wallet)
-- [ ] Error-only balance holding (no custodial accounts)
-- [ ] NIP-57 / LNURL-pay integration for payouts
-
-**Future**
-- [ ] Multi-table support
-- [ ] Tournament mode (SNGs, MTTs)
-- [ ] Mobile-native client
-
-## License
-
-UNLICENSED
+License: UNLICENSED.

@@ -258,6 +258,13 @@ function initDatabase() {
   `);
 
   console.log('[Database] Schema initialized successfully');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wallet_credits (
+      user_id TEXT NOT NULL, table_id TEXT NOT NULL,
+      amount_sats INTEGER NOT NULL DEFAULT 0 CHECK(amount_sats >= 0),
+      PRIMARY KEY(user_id, table_id)
+    );
+  `);
 }
 
 /**
@@ -746,6 +753,7 @@ function saveHandSnapshot(tableId, handId, snapshot) {
     stmt.run(tableId, handId, JSON.stringify(snapshot));
   } catch (error) {
     console.error('[Database] Error saving hand snapshot:', error);
+    throw error;
   }
 }
 
@@ -792,7 +800,7 @@ function deleteHandSnapshot(tableId) {
  *
  * All-or-nothing: if anything fails, nothing is persisted.
  */
-const settleHandTx = db.transaction((handData, playerUpdates) => {
+const settleHandTx = db.transaction((handData, playerUpdates, tableSnapshot) => {
   // 1. Insert hand record
   db.prepare(`
     INSERT INTO hands (
@@ -873,12 +881,13 @@ const settleHandTx = db.transaction((handData, playerUpdates) => {
   }
 
   // 4. Delete hand snapshot (hand completed successfully)
-  db.prepare('DELETE FROM hand_snapshots WHERE table_id = ?').run(handData.table_id);
+  if (tableSnapshot) saveHandSnapshot(handData.table_id, handData.hand_id, tableSnapshot);
+  else db.prepare('DELETE FROM hand_snapshots WHERE table_id = ?').run(handData.table_id);
 });
 
-function settleHand(handData, playerUpdates) {
+function settleHand(handData, playerUpdates, tableSnapshot) {
   try {
-    settleHandTx(handData, playerUpdates);
+    settleHandTx(handData, playerUpdates, tableSnapshot);
     console.log(`[Database] Settled hand ${handData.hand_id} (atomic)`);
     return { success: true };
   } catch (error) {
@@ -938,13 +947,14 @@ const settleDepositTx = db.transaction((paymentHash, amtPaidSat) => {
   const row = db.prepare(`SELECT * FROM ledger_entries WHERE payment_hash = ? AND direction = 'deposit'`).get(paymentHash);
   if (!row) return { status: 'unknown', row: null };
   if (row.status === 'settled' || row.status === 'settled_unseated') return { status: 'already_settled', row };
-  if (row.status !== 'pending') return { status: row.status, row }; // expired / canceled / amount_mismatch — never credit
+  if (!['pending', 'expired'].includes(row.status)) return { status: row.status, row };
   if (Number(amtPaidSat) !== row.amount_sats) {
-    db.prepare(`UPDATE ledger_entries SET status='amount_mismatch', updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
-    return { status: 'amount_mismatch', row: { ...row, status: 'amount_mismatch' } };
+    if (!Number.isSafeInteger(Number(amtPaidSat)) || Number(amtPaidSat) <= 0) throw new Error('Invalid settled amount');
+    db.prepare(`UPDATE ledger_entries SET status='settled_unseated', amount_sats=?, settled_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id=?`).run(Number(amtPaidSat), row.id);
+    return { status: 'amount_mismatch', row: { ...row, amount_sats: Number(amtPaidSat), status: 'settled_unseated' } };
   }
-  db.prepare(`UPDATE ledger_entries SET status='settled', settled_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
-  return { status: 'settled', row: { ...row, status: 'settled' } };
+  db.prepare(`UPDATE ledger_entries SET status='settled_unseated', settled_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
+  return { status: 'settled', row: { ...row, status: 'settled_unseated' } };
 });
 function settleDeposit(paymentHash, amtPaidSat) { return settleDepositTx(paymentHash, amtPaidSat); }
 
@@ -979,12 +989,13 @@ function getPendingLedger() {
   return db.prepare(`
     SELECT * FROM ledger_entries
     WHERE (direction='deposit' AND status='pending')
-       OR (direction='withdrawal' AND status IN ('reserved','in_flight'))
+       OR (direction='withdrawal' AND status IN ('reserved','in_flight','failed'))
     ORDER BY created_at ASC
   `).all();
 }
 function sumSettledDeposits() {
-  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit' AND status IN ('settled','settled_unseated')`).get().t;
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit'
+    AND status IN ('settled','settled_unseated','credited','withdrawn','refunded','refund_pending','amount_mismatch')`).get().t;
 }
 function sumSucceededWithdrawals() {
   return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='withdrawal' AND status='succeeded'`).get().t;
@@ -992,7 +1003,8 @@ function sumSucceededWithdrawals() {
 // Deposits we still hold for a player who isn't seated (owed back to them): not
 // yet seated/claimed, or a refund in progress. Part of the solvency "owed" total.
 function sumHeldDeposits() {
-  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit' AND status IN ('settled_unseated','refund_pending')`).get().t;
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries
+    WHERE direction='deposit' AND status IN ('settled_unseated','refund_pending','amount_mismatch')`).get().t;
 }
 function getRecentLedger(limit = 100) {
   return db.prepare(`SELECT * FROM ledger_entries ORDER BY created_at DESC, id DESC LIMIT ?`).all(Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500));
@@ -1007,6 +1019,29 @@ function getUnseatedDeposits(userId, tableId) {
 function getRefundableDeposits(graceSec) {
   const cutoff = Math.floor(Date.now() / 1000) - (graceSec || 120);
   return db.prepare(`SELECT * FROM ledger_entries WHERE direction='deposit' AND status='settled_unseated' AND settled_at IS NOT NULL AND settled_at < ? ORDER BY created_at ASC`).all(cutoff);
+}
+
+// Funds that remain withdrawable without a live seat: idle exits and failed
+// cash-outs. Never use players.current_chips (a play-money/statistics field).
+function getWalletCredit(userId, tableId) {
+  return db.prepare('SELECT amount_sats FROM wallet_credits WHERE user_id=? AND table_id=?').get(userId, tableId)?.amount_sats || 0;
+}
+function addWalletCredit(userId, tableId, amount) {
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error('Invalid wallet credit');
+  db.prepare(`INSERT INTO wallet_credits(user_id,table_id,amount_sats) VALUES(?,?,?)
+    ON CONFLICT(user_id,table_id) DO UPDATE SET amount_sats=amount_sats+excluded.amount_sats`).run(userId, tableId, amount);
+}
+function takeWalletCredit(userId, tableId, amount) {
+  const r = db.prepare('UPDATE wallet_credits SET amount_sats=amount_sats-? WHERE user_id=? AND table_id=? AND amount_sats>=?').run(amount, userId, tableId, amount);
+  if (amount && r.changes !== 1) throw new Error('Available funds changed — please retry');
+}
+function sumWalletCredits() {
+  return db.prepare('SELECT COALESCE(SUM(amount_sats),0) AS total FROM wallet_credits').get().total;
+}
+function getWalletPayments(userId, tableId) {
+  return db.prepare(`SELECT payment_hash, amount_sats, status FROM ledger_entries
+    WHERE user_id=? AND table_id=? AND direction='withdrawal'
+    ORDER BY id DESC LIMIT 5`).all(userId, tableId);
 }
 
 // Cleanup abuse log, expired challenges, and expired sessions every hour.
@@ -1076,4 +1111,9 @@ module.exports = {
   getRecentLedger,
   getUnseatedDeposits,
   getRefundableDeposits,
+  getWalletCredit,
+  addWalletCredit,
+  takeWalletCredit,
+  sumWalletCredits,
+  getWalletPayments,
 };

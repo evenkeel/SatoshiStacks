@@ -179,11 +179,11 @@ class PokerGame {
    * Remove player from table
    * If a hand is in progress, fold them and defer removal until hand ends
    */
-  removePlayer(userId) {
+  removePlayer(userId, { payoutReserved = false } = {}) {
     const idx = this.players.findIndex(p => p && p.userId === userId);
     if (idx === -1) return;
 
-    if (this.handInProgress) {
+    if (this.handInProgress && this.players[idx].participatedThisHand) {
       // Don't null the seat mid-hand — their committed chips stay in the pot
       const player = this.players[idx];
       player.folded = true;
@@ -208,7 +208,7 @@ class PokerGame {
       // Returns the freed stack so the cash-out path can confirm the amount removed.
       const player = this.players[idx];
       const freedStack = player ? player.stack : 0;
-      if (this.onPlayerLeaving && player) {
+      if (this.onPlayerLeaving && player && !payoutReserved) {
         this.onPlayerLeaving(player.userId, player.stack);
       }
       this.players[idx] = null;
@@ -226,7 +226,7 @@ class PokerGame {
   canCashOut(userId) {
     const player = this.players.find(p => p && p.userId === userId);
     if (!player) return { ok: false, error: 'Player not found' };
-    if (this.handInProgress && player.participatedThisHand && !player.folded) {
+    if (this.handInProgress && player.participatedThisHand) {
       return { ok: false, error: 'Cannot cash out during an active hand' };
     }
     return { ok: true, stack: player.stack };
@@ -700,7 +700,7 @@ class PokerGame {
     // Execute the chain, storing timeout refs for cleanup
     this.runoutTimeouts = [];
     steps.forEach(step => {
-      const t = setTimeout(step.action, step.delay);
+      const t = setTimeout(() => { step.action(); this.saveSnapshot(); }, step.delay);
       this.runoutTimeouts.push(t);
     });
   }
@@ -891,7 +891,8 @@ class PokerGame {
 
     // Schedule next hand
     const nextHandDelay = hadBust ? 5000 : 3000;
-    setTimeout(() => {
+    this.handStartTimeout = setTimeout(() => {
+      this.handStartTimeout = null;
       // Clean up players who left mid-hand — defer until just before next hand
       // so seats stay visually stable between hands
       this.cleanupPendingRemovals();
@@ -913,7 +914,7 @@ class PokerGame {
    */
   saveHandToDatabase(startTime, winners) {
     try {
-      const handId = `${this.tableId}-${Date.now()}`;
+      const handId = `${this.tableId}-${startTime}-${this.handCount}`;
       const completedAt = Math.floor(Date.now() / 1000);
       const startedAt = Math.floor(startTime / 1000);
 
@@ -970,9 +971,10 @@ class PokerGame {
       };
 
       // Atomic settlement — single transaction for everything
-      const result = db.settleHand(handData, playerUpdates);
+      const result = db.settleHand(handData, playerUpdates, this.realMoney ? this.serializeState() : undefined);
       if (!result.success) {
         console.error(`[Database] Settlement failed for hand ${handId}: ${result.error}`);
+        if (this.realMoney) throw new Error(`Hand settlement failed: ${result.error}`);
         return null;
       }
 
@@ -1006,6 +1008,7 @@ class PokerGame {
 
     } catch (error) {
       console.error('[Database] Error saving hand:', error);
+      if (this.realMoney) throw error;
       // Don't crash the game on DB errors
       return null;
     }
@@ -1638,7 +1641,10 @@ class PokerGame {
    * Restores all hand state so the game can resume after server restart.
    * Note: callbacks (onStateChange, onTimerStart, etc.) must be re-wired by the caller.
    */
-  static deserializeState(snapshot) {
+  static deserializeState(snapshot, { expectedRealMoney } = {}) {
+    if (typeof expectedRealMoney === 'boolean' && !!snapshot.realMoney !== expectedRealMoney) {
+      throw new Error('Snapshot money mode differs from configuration; reconcile before switching modes');
+    }
     const game = new PokerGame(snapshot.tableId, {
       smallBlind: snapshot.smallBlind || 50,
       bigBlind: snapshot.bigBlind || 100,
@@ -1707,14 +1713,47 @@ class PokerGame {
    * Called after every mutation (action, blind post, phase advance).
    */
   saveSnapshot() {
-    if (!this.handInProgress) return;
+    if (!this.handInProgress && !this.realMoney) return;
     const handId = `${this.tableId}-${this.handStartedAt}`;
     try {
       db.saveHandSnapshot(this.tableId, handId, this.serializeState());
     } catch (error) {
       console.error(`[PokerGame ${this.tableId}] Failed to save snapshot:`, error);
+      if (this.realMoney) throw error;
     }
   }
+}
+
+// Every monetary engine mutation and its table snapshot commit together. This
+// also covers idle tables and the last hand before a restart. SQLite nested
+// transactions compose with deposit consumption and withdrawal reservation.
+for (const name of ['addPlayer', 'removePlayer', 'cleanupPendingRemovals', 'startNewHand',
+  'processAction', 'advancePhase', 'endHand', 'voluntarySitOut', 'sitBackIn', 'handleTimeout']) {
+  const mutate = PokerGame.prototype[name];
+  if (!mutate) continue;
+  PokerGame.prototype[name] = function (...args) {
+    if (!this.realMoney) return mutate.apply(this, args);
+    if (this.persistenceFailed) throw new Error('Table paused: persistence needs operator attention');
+    if (name === 'addPlayer' && this.players.every(Boolean) && !this.players.some(p => p.userId === args[0])) {
+      throw new Error('Table is full (6/6 seats occupied)');
+    }
+    const before = this.serializeState();
+    try {
+      return db.db.transaction(() => {
+        const result = mutate.apply(this, args);
+        this.saveSnapshot();
+        return result;
+      })();
+    } catch (error) {
+      this.clearActionTimer();
+      this.clearRunoutTimeouts();
+      clearTimeout(this.handStartTimeout);
+      for (const timer of this.sitOutKickTimers.values()) clearTimeout(timer);
+      Object.assign(this, PokerGame.deserializeState(before));
+      this.persistenceFailed = true;
+      throw error;
+    }
+  };
 }
 
 module.exports = PokerGame;

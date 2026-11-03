@@ -50,7 +50,8 @@ router.get('/player/:userId', (req, res) => {
     if (!player) {
       return res.status(404).json({ success: false, error: 'Player not found' });
     }
-    res.json({ success: true, player });
+    const { user_id, username, npub, nostr_name, nostr_picture, hands_played, hands_won, first_seen } = player;
+    res.json({ success: true, player: { user_id, username, npub, nostr_name, nostr_picture, hands_played, hands_won, first_seen } });
   } catch (error) {
     console.error('[API] Error fetching player:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
