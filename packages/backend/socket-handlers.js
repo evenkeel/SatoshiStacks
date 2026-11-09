@@ -191,6 +191,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
   }
 
   function resumeExistingSeat(socket, userId, tableId, displayName) {
+    if (socket.data?.watchOnly) return false;
     const game = games.get(tableId);
     const seatIndex = game?.players.findIndex(player => player && player.userId === userId) ?? -1;
     if (seatIndex === -1 || db.isBanned(userId) || db.isIpBanned(socket.handshake.address)) return false;
@@ -212,6 +213,13 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
     socket.data ||= {};
+    // Phone play is paused. Keep this connection on public spectator state,
+    // even when it authenticates with an account that already has a seat.
+    socket.data.watchOnly = socket.handshake.auth?.watchOnly === true ||
+      /Android|iPhone|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(socket.handshake.headers?.['user-agent'] || '') ||
+      socket.handshake.headers?.['sec-ch-ua-mobile'] === '?1';
+    const playEvents = new Set(['join-table', 'join-waitlist', 'waitlist-accept',
+      'action', 'sit-back-in', 'sit-out', 'rebuy', 'buyin-request']);
     // Reject malformed packets before destructuring event payloads or hashing
     // tokens. A public observer must not be able to crash the process with null.
     const objectEvents = new Set(['observe-table', 'observer-authenticate', 'join-waitlist',
@@ -221,6 +229,10 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       if (objectEvents.has(event) && (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
           (payload.sessionToken !== undefined && (typeof payload.sessionToken !== 'string' || payload.sessionToken.length > 256)))) {
         socket.emit('error', { message: 'Invalid request payload' });
+        return;
+      }
+      if (socket.data.watchOnly && playEvents.has(event)) {
+        socket.emit('error', { message: 'Phones are watch-only for now. Use a desktop to play.' });
         return;
       }
       const seated = socketUsers.get(socket.id);

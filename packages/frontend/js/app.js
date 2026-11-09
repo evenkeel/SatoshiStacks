@@ -29,7 +29,7 @@ const isMobileDevice = (() => {
   const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
   const isMobileUA = /Android|iPhone|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(ua);
   const isSmallScreen = Math.min(window.screen.width, window.screen.height) <= 500;
-  return isTouchDevice && (isMobileUA || isSmallScreen);
+  return isMobileUA || (isTouchDevice && isSmallScreen);
 })();
 
 // Platform-specific detection for login method selection
@@ -44,7 +44,12 @@ const nip46Ready = new Promise(resolve => {
 });
 
 if (isMobileDevice) {
-  document.body.classList.add('is-mobile');
+  document.body.classList.add('is-mobile', 'watch-only');
+  const notice = document.createElement('div');
+  notice.className = 'phone-watch-notice';
+  notice.setAttribute('role', 'status');
+  notice.textContent = 'Watch-only on phones · Use a desktop to play';
+  document.body.appendChild(notice);
 
   // Track true visible height (accounts for Safari toolbar)
   const setMobileHeight = () => {
@@ -145,7 +150,7 @@ let prevGameState = null;    // Track previous state for animations
 let preAction = null;        // Pre-action selection
 let preActionToCall = null;  // Exact wager accepted when selecting Call
 let currentHandLog = [];     // Accumulates hand-log lines for current hand
-let renderedPotPileKey = ''; // Bounded representative pile, stable across repeated updates
+const potPile = window.StacksPotPile.create(); // Settled chips persist for the hand.
 let cachedHoleCards = null;    // Cache our hole cards so they survive state glitches
 let isObserver = false;       // True when watching without a seat
 let observerName = null;      // Random name assigned by server for observers
@@ -1001,12 +1006,12 @@ async function tryRestoreSession(retries = 2) {
 function connectAsObserver() {
   isObserver = true;
   if (socket) { socket.disconnect(); socket = null; }
-  socket = io(window.location.origin);
+  socket = io(window.location.origin, { auth: { watchOnly: isMobileDevice } });
   window.socket = socket;
 
   socket.on('connect', () => {
     // On connect AND reconnect: if we have a seat, rejoin as player; otherwise observe
-    if (mySeat && mySessionToken) {
+    if (!isMobileDevice && mySeat && mySessionToken) {
       console.log('[Socket] Reconnecting as seated player (seat', mySeat, ')');
       socket.emit('join-table', {
         tableId: myTableId,
@@ -1014,7 +1019,7 @@ function connectAsObserver() {
         buyIn: myTableConfig.maxBuyin
       });
     } else {
-      socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined, resumeSeat: !localStorage.getItem('ss_stoodUp') });
+      socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined, resumeSeat: !isMobileDevice && !localStorage.getItem('ss_stoodUp') });
       requestWalletState();
     }
   });
@@ -1034,6 +1039,7 @@ function connectAsObserver() {
 //  WEBSOCKET CONNECTION (authenticated player)
 // ============================================================
 function connectToServer() {
+  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   // If already connected as observer, reuse socket — just emit join-table
   if (socket && socket.connected) {
     isObserver = false;
@@ -1050,7 +1056,7 @@ function connectToServer() {
   }
 
   if (socket) { socket.disconnect(); socket = null; }
-  socket = io(window.location.origin);
+  socket = io(window.location.origin, { auth: { watchOnly: isMobileDevice } });
   window.socket = socket;
 
   socket.on('connect', () => {
@@ -1245,6 +1251,10 @@ function setupCommonSocketHandlers() {
   socket.on('hand-log', ({ line, type }) => {
     if (!line || !line.trim()) return;
     addPlayByPlay(line);
+    if (type === 'summary') {
+      const result = summarizeHandResult(line);
+      if (result) addChatMessage('Hand summary', result, true);
+    }
     currentHandLog.push(line);
 
     if (type === 'action' && gameState) {
@@ -1463,7 +1473,7 @@ function updateWaitlistUI() {
   let container = document.getElementById('waitlistUI');
 
   // Only show for observers (not seated players)
-  if (!gameState || mySeat) {
+  if (isMobileDevice || !gameState || mySeat) {
     if (container) container.style.display = 'none';
     return;
   }
@@ -1481,7 +1491,7 @@ function updateWaitlistUI() {
     container = document.createElement('div');
     container.id = 'waitlistUI';
     container.className = 'waitlist-ui';
-    document.getElementById('pokerTable').appendChild(container);
+    document.getElementById('dealerStation').prepend(container);
   }
   container.style.display = '';
 
@@ -1498,7 +1508,6 @@ function updateWaitlistUI() {
     `;
   } else {
     container.innerHTML = `
-      <div class="waitlist-status">Table is full (6/6)${waitlistCount > 0 ? ` \u2014 ${waitlistCount} waiting` : ''}</div>
       <button class="waitlist-btn join-wl" data-action="join-waitlist">Join Waitlist</button>
     `;
   }
@@ -1508,6 +1517,7 @@ function updateWaitlistUI() {
 //  SEAT OFFER PROMPT (waitlist)
 // ============================================================
 function showSeatOfferPrompt(timeoutMs) {
+  if (isMobileDevice) return;
   let remaining = Math.ceil(timeoutMs / 1000);
 
   let el = document.getElementById('seatOfferPrompt');
@@ -1564,8 +1574,8 @@ function renderSeats() {
 
     if (!player) {
       seatEl.className = `seat seat-${visualPos}`;
-      if (mySeat) {
-        // Hide empty seats when player is already seated — no seat-switching mid-game
+      if (isMobileDevice || mySeat) {
+        // Phones only watch; seated players cannot switch seats mid-game.
         seatEl.innerHTML = '';
       } else {
         // Render clickable empty seat avatar with "EMPTY SEAT" text
@@ -1798,13 +1808,10 @@ function updatePot() {
 
   const chipsEl = $('tablePotChips');
   if (!chipsEl) return;
-  const positions = window.StacksPotPile.layout(potChips);
-  const key = JSON.stringify(positions);
+  const handKey = gameState.handId || `${gameState.tableId}:${gameState.handCount}`;
+  const positions = potPile.update(potChips, handKey);
   chipsEl.classList.toggle('visible', positions.length > 0);
-  if (key !== renderedPotPileKey) {
-    chipsEl.innerHTML = window.StacksPotPile.render(positions, renderChipSVG);
-    renderedPotPileKey = key;
-  }
+  window.StacksPotPile.updateElement(chipsEl, positions, renderChipSVG, handKey);
 }
 
 // ============================================================
@@ -1856,7 +1863,7 @@ function renderControls() {
   if (!bc || !ca) return;
 
   const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
-  if (!myPlayer || !gameState.yourTurn || !gameState.handInProgress) {
+  if (isMobileDevice || !myPlayer || !gameState.yourTurn || !gameState.handInProgress) {
     ca.classList.remove('visible');
     bc.innerHTML = '';
     return;
@@ -1975,7 +1982,7 @@ function renderPreActions() {
   const isMyTurn = gameState.yourTurn;
 
   // Hide pre-actions when it's our turn, hand over, folded, or all-in
-  if (!myPlayer || isMyTurn || !gameState.handInProgress || myPlayer.folded || myPlayer.allIn) {
+  if (isMobileDevice || !myPlayer || isMyTurn || !gameState.handInProgress || myPlayer.folded || myPlayer.allIn) {
     bar.classList.remove('visible');
     if (!gameState.handInProgress || (myPlayer && myPlayer.folded)) {
       bar.innerHTML = '';
@@ -2057,7 +2064,7 @@ function executePreAction() {
 //  SEND ACTION TO SERVER
 // ============================================================
 function sendAction(action, amount) {
-  if (!socket) return;
+  if (isMobileDevice || !socket) return;
   // Immediately clear the timer/lifebar on the frontend — don't wait for server round-trip
   clearTimer();
   // Generate unique actionId for deduplication (prevents double-submit)
@@ -2187,7 +2194,20 @@ function clearTimer() {
 // ============================================================
 //  CHAT SYSTEM
 // ============================================================
-const chatSettings = { sound: 'all', playerChat: true, playByPlay: true, autoMuck: true };
+const chatSettings = { sound: 'all', playerChat: true, playByPlay: false, autoMuck: true };
+
+function summarizeHandResult(line) {
+  // The server's final seat summaries already aggregate split and side-pot
+  // payouts. Only summarize winners; never expose cards from a folded hand.
+  const shown = /^Seat [1-6]: (.+) showed \[[^\]]+\] and won \((\d+)\) with (.+)$/.exec(line);
+  const folded = /^Seat [1-6]: (.+) collected \((\d+)\)$/.exec(line);
+  const match = shown || folded;
+  if (!match) return null;
+  const name = match[1].replace(/(?: \((?:button|small blind|big blind)\))+$/, '');
+  const amount = Number(match[2]).toLocaleString('en-US');
+  return shown ? `${name} won ${amount} chips with ${match[3]}.` :
+    `${name} won ${amount} chips — everyone else folded.`;
+}
 
 function addChatMessage(author, text, isSystem) {
   const el = $('chatMessages');
@@ -2613,6 +2633,7 @@ function isRealMoneyTable() {
 }
 
 function requestRealMoneyBuyin() {
+  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (!socket) { showToast('Not connected — try again in a moment'); return; }
   if (!mySessionToken) { handleNostrLoginThenSit(); return; }
   const min = (gameState && gameState.minBuyin) || (myTableConfig && myTableConfig.minBuyin) || 5000;
@@ -2662,6 +2683,7 @@ function returnTableStack() {
 }
 
 async function generateBuyinInvoice() {
+  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (walletRequestPending) return;
   if (!socket?.connected || !mySessionToken) { showToast('Reconnect and sign in before paying.'); return; }
   walletRequestPending = true;
@@ -2743,7 +2765,7 @@ function renderCashoutState(state) {
   const invoice = $('cashoutInvoice')?.value;
   const withdrawalAmount = $('withdrawalAmount')?.value;
   walletView = 'cashout';
-  showWalletModal('Your SatoshiStacks account', window.StacksWalletUI.cashoutHTML(state));
+  showWalletModal('Your SatoshiStacks account', window.StacksWalletUI.cashoutHTML({ ...state, watchOnly: isMobileDevice }));
   if (withdrawalAmount && $('withdrawalAmount')) $('withdrawalAmount').value=withdrawalAmount;
   if (invoice && $('cashoutInvoice')) { $('cashoutInvoice').value=invoice; $('cashoutInvoice').closest('details').open=true; }
 }
@@ -2894,7 +2916,7 @@ function updateSitOutButton() { updateTableActions(); }
 // Delegated click handler for EMPTY seats
 document.addEventListener('click', (e) => {
   const emptySeatEl = e.target.closest('[data-empty-seat]');
-  if (!emptySeatEl) return;
+  if (!emptySeatEl || isMobileDevice) return;
 
   const seatIdx = parseInt(emptySeatEl.dataset.emptySeat, 10);
   if (isNaN(seatIdx) || seatIdx < 0 || seatIdx >= NUM_SEATS) return;
@@ -2941,6 +2963,7 @@ document.addEventListener('click', (e) => {
 });
 
 function showRebuyDialog() {
+  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (!gameState || !socket) return;
   // Real-money: you can't top up for free — cash out and buy back in instead.
   if (isRealMoneyTable()) {
@@ -3034,6 +3057,7 @@ let pendingBuyIn = null;
 let buyinMode = 'sit'; // 'sit' or 'rebuy'
 
 function showBuyinDialog() {
+  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (isRealMoneyTable()) { requestRealMoneyBuyin(); return; }
   const overlay = $('buyinOverlay');
   const slider = $('buyinSlider');

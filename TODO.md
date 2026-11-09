@@ -17,7 +17,7 @@ Before real-money beta:
 - [ ] Verify fees, channel liquidity, switches, exposure caps, and solvency against the intended node.
 - [ ] Reconcile pre-existing funds and legacy refund_pending rows without guessing.
 - [ ] Rehearse backup, restore, and rollback; record the release SHA.
-- [ ] Actual iOS/Android signer/wallet return tests.
+- [ ] Mobile gameplay is on hold. Phones are watch-only; revisit iOS/Android gameplay and signer/wallet return tests before enabling phone play.
 - [ ] Confirm monitoring, support ownership, launch terms, and approved audience.
 
 Until these checks are complete, keep the labeled demo with payments disabled. Defer tournaments and additional tables.

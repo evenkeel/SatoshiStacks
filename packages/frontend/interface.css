@@ -82,7 +82,7 @@
 .poker-app .chat-tab.active { background: #405b60; color: #fff8e8; box-shadow: inset 0 -2px var(--ui-gold); }
 .poker-app .chat-collapse-btn { top: 7px; right: 7px; width: 28px; height: 28px; font-size: 11px; border: 1px solid #536970; border-radius: 6px; color: var(--ui-text); background: #30464e; }
 .poker-app .chat-body { padding: 10px 12px; gap: 6px; }
-.poker-app .chat-body:empty::before { content: 'Table chat appears here.'; margin: auto; color: #acbfc1; font-size: 12px; font-weight: 600; }
+.poker-app .chat-body:empty::before { content: 'Hand summaries appear after each hand.'; margin: auto; color: #acbfc1; font-size: 12px; font-weight: 600; }
 .poker-app .chat-msg { color: #ebede5; line-height: 1.5; }
 .poker-app .chat-msg .chat-author { color: #b0d6c6; }
 .poker-app .chat-msg.system-msg, .poker-app .chat-msg.play-by-play { color: #b2c2c3; }

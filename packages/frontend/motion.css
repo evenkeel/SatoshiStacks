@@ -21,6 +21,11 @@
 .motion-card-back { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; backface-visibility: hidden; }
 .community-card > .card { backface-visibility: hidden; }
 /* A steady edge marks the turn without repeatedly inflating the avatar. */
+.pot-chip-arrival { animation: pot-chip-land 140ms ease-out 220ms backwards; }
+@keyframes pot-chip-land {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .poker-app .player-avatar-wrap { transition: box-shadow 180ms ease; border-radius: 50%; }
 .poker-app .player-avatar-wrap.active-turn { box-shadow: 0 0 0 2px #d7bc82b3, 0 0 18px #d7bc8226; }
 .poker-app .player-nameplate.active-np { border-color: #d7bc82a6; }
@@ -29,6 +34,7 @@
 .poker-app .np-action { transition: opacity 140ms ease; }
 .poker-app .table-pot-chips, .poker-app .player-bet, .poker-app .table-pot-label { transition: opacity 160ms ease; }
 @media (prefers-reduced-motion: reduce) {
+  .pot-chip-arrival { animation: none; }
   .table-motion-layer, .motion-card-back { display: none; }
   .poker-app .player-nameplate, .poker-app .player-avatar-wrap, .poker-app .card { transition: none; }
 }

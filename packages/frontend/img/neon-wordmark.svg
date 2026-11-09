@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" role="img" aria-labelledby="title desc">
+  <title id="title">Satoshi Stacks</title>
+  <desc id="desc">Orange and cyan neon sign with a Bitcoin poker chip and pink Open All Nite strip.</desc>
+  <defs>
+    <filter id="glow" x="-25%" y="-45%" width="150%" height="190%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="chip"><stop stop-color="#18373a"/><stop offset="1" stop-color="#091317"/></radialGradient>
+  </defs>
+  <!-- Backing, tubes, and caption remain separately editable. -->
+  <rect x="29" y="24" width="587" height="150" rx="23" fill="#0b151b" stroke="#795745" stroke-width="2"/>
+  <path d="M161 34H590M164 158H590" stroke="#344146" stroke-width="2"/>
+  <g filter="url(#glow)" fill="none">
+    <circle cx="95" cy="98" r="69" fill="url(#chip)" stroke="#f27631" stroke-width="4"/>
+    <circle cx="95" cy="98" r="59" stroke="#ffb564" stroke-width="9" stroke-dasharray="22 9"/>
+    <circle cx="95" cy="98" r="48" stroke="#ffb564" stroke-width="2"/>
+    <!-- Bitcoin symbol is a path, independent of fonts. -->
+    <path d="M83 61V73M96 61V73M83 123V135M96 123V135M81 73V123M73 73H98C123 73 123 97 98 97H81M98 97C127 97 127 123 98 123H73" stroke="#67fff0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <g font-family="Arial, Helvetica, sans-serif" font-weight="700" stroke-linejoin="round" paint-order="stroke fill">
+      <text x="177" y="80" font-size="57" textLength="413" lengthAdjust="spacingAndGlyphs" fill="#542713" stroke="#ffaf63" stroke-width="2">SATOSHI</text>
+      <text x="177" y="139" font-size="61" textLength="413" lengthAdjust="spacingAndGlyphs" fill="#103e41" stroke="#7afff1" stroke-width="2">STACKS</text>
+    </g>
+    <path d="M176 163H218M551 163H591" stroke="#ff72a9" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <text x="384" y="169" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" letter-spacing="2" fill="#ffe5ef">OPEN ALL NITE</text>
+</svg>

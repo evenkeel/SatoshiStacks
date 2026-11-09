@@ -60,7 +60,8 @@
     }
     function capture() {
       return {seats:Array.from({length:6},(_,i)=>center(seatElement(i))),
-        bets:Array.from({length:6},(_,i)=>center(betElement(i))), pot:center(table.querySelector('#tablePotChips'))};
+        bets:Array.from({length:6},(_,i)=>center(betElement(i))), pot:center(table.querySelector('#tablePotChips')),
+        potChipCount:table.querySelector('#tablePotChips .pot-chip-pile')?.children.length || 0};
     }
     function own(element) { transient.add(element); return element; }
     function remove(element) { transient.delete(element); element.remove(); }
@@ -126,7 +127,12 @@
         }
       }
       for (const {seat,amount} of plan.bets) fly({html:chipHTML(amount),from:before?.seats[seat],to:after.bets[seat],delay:0});
-      for (const {seat,amount} of plan.collect) fly({html:chipHTML(amount),from:before?.bets[seat],to:pot,duration:280});
+      const potChips = table.querySelector('#tablePotChips .pot-chip-pile');
+      const additions = [...(potChips?.children || [])].slice(before?.potChipCount || 0);
+      for (const [i,{seat,amount}] of plan.collect.entries()) {
+        const landing = additions[Math.floor(i * additions.length / plan.collect.length)];
+        fly({html:chipHTML(amount),from:before?.bets[seat],to:center(landing) || pot,duration:280});
+      }
       const payoutDelay = plan.collect.length ? 210 : 70;
       for (const [i,{seat,amount}] of plan.winners.entries()) {
         for (let packet=0;packet<3;packet++) fly({html:chipHTML(Math.max(1,Math.floor(amount/3))),from:before?.pot || pot,

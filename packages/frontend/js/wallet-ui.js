@@ -11,7 +11,7 @@
     if (state.deposits?.some(row=>row.status==='pending' && !row.bolt11)) body += '<p class="wallet-status" role="status">We are checking your deposit invoice. Retry the deposit request to recover the same invoice. Your existing balance is unchanged.</p>';
     if (state.depositsEnabled) body += '<button class="wallet-btn secondary" data-action="account-deposit">Deposit sats</button>';
     if (state.seated) body += `<p class="wallet-status">At this table: ${fmt(state.tableStackSats)} sats. ${state.canReturnStack ? 'Return your stack to your account before withdrawing these sats.' : 'Finish the current hand before returning your stack.'}</p><button class="wallet-btn secondary" data-action="return-table-stack">Return table stack to account</button>`;
-    else if (state.availableSats > 0) body += '<button class="wallet-btn secondary" data-action="account-buyin">Buy in at this table</button>';
+    else if (!state.watchOnly && state.availableSats > 0) body += '<button class="wallet-btn secondary" data-action="account-buyin">Buy in at this table</button>';
 
     if (state.error) body += `<p class="wallet-status" role="status">${esc(state.error)}</p><p class="wallet-status">If you are playing a hand, finish it first. You are marked to sit out of the next hand.</p>`;
     else if (!state.withdrawalsEnabled) body += '<p class="wallet-status" role="status">Withdrawals are temporarily unavailable. Your balance stays recorded. This view will check again automatically.</p>';

@@ -42,6 +42,15 @@ npm run dev
 
 Visit `http://localhost:3001/station100`. `REALMONEY_ENABLED=false` starts a labeled demo with no LND requirement.
 
+For six persistent demo opponents, run `DEMO_ORIGIN=http://127.0.0.1:3001 npm run demo:bots`
+in another terminal (use port 39006 for the visual preview). Bots use their own
+private cards, hand strength, wager size, and varied aggression to bet, raise,
+call, check, and fold on every street. They automatically rebuy after busting
+and play until stopped with Ctrl-C, which releases their seats. They only connect
+to loopback HTTP servers with an explicitly play-money table. The initial
+10-second pause and roughly 1–2-second decisions respect the shared IP rate limit.
+These are demonstration opponents, not a competitive poker AI.
+
 ```sh
 NODE_ENV=production npm test
 npm audit

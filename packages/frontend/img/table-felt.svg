@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-24 -24 1048 728" role="img" aria-label="Dark teal bunker poker felt">
+  <defs>
+    <radialGradient id="felt" cx="50%" cy="42%" r="65%"><stop stop-color="#234c50"/><stop offset=".7" stop-color="#15363c"/><stop offset="1" stop-color="#0a222a"/></radialGradient>
+    <pattern id="weave" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 0H2V2H0ZM2 2H4V4H2Z" fill="#a7e1d1" opacity=".025"/></pattern>
+  </defs>
+  <rect width="1000" height="680" rx="500" ry="340" fill="url(#felt)"/>
+  <rect width="1000" height="680" rx="500" ry="340" fill="url(#weave)"/>
+  <rect x="16" y="14" width="968" height="652" rx="484" ry="326" fill="none" stroke="#77bab2" stroke-opacity=".3" stroke-dasharray="3 6"/>
+</svg>

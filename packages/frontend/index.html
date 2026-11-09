@@ -11,17 +11,18 @@
 <title>Satoshi Stacks</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/img/brand-icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/styles.css?v=23">
-<link rel="stylesheet" href="/interface.css?v=3">
+<link rel="stylesheet" href="/styles.css?v=24">
+<link rel="stylesheet" href="/interface.css?v=4">
 <link rel="stylesheet" href="/club.css?v=4">
-<link rel="stylesheet" href="/motion.css?v=1">
-<link rel="stylesheet" href="/table-layout.css?v=6">
+<link rel="stylesheet" href="/motion.css?v=2">
+<link rel="stylesheet" href="/table-layout.css?v=8">
+<link rel="stylesheet" href="/bunker.css?v=6">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
 <header class="account-bar" aria-label="Account and wallet">
   <div class="table-identity">
-    <a class="brand-link" href="/" aria-label="Satoshi Stacks home"><img class="brand-wordmark" src="/img/brand-wordmark.svg" alt="Satoshi Stacks" width="166" height="42"><img class="brand-symbol" src="/img/brand-mark.svg" alt="" width="32" height="34"></a>
+    <a class="brand-link" href="/" aria-label="Satoshi Stacks home"><img class="brand-wordmark" src="/img/neon-wordmark.svg" alt="Satoshi Stacks" width="166" height="52"><img class="brand-symbol" src="/img/brand-mark.svg" alt="" width="32" height="34"></a>
     <div class="table-meta"><div class="table-title"><strong>Station 100</strong><span class="seat-count" id="seatCount">0 / 6 seated</span></div><span id="tableModeLabel">50 / 100 · 6 seats</span></div>
   </div>
 <nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="editProfileBtn" data-action="edit-profile" hidden>Edit profile</button><button id="walletConnectBtn" data-action="connect-wallet">Connect Lightning wallet</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Account balance</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button></nav>
@@ -30,10 +31,14 @@
 <div class="middle-row">
 <div class="table-area" id="tableArea">
 <div class="poker-table is-waiting" id="pokerTable">
+<div class="table-art" aria-hidden="true"><img class="table-felt" src="/img/table-felt.svg" alt=""><img class="table-rail" src="/img/table-rail.svg" alt=""></div>
+<div class="table-neon-sign" role="img" aria-label="Satoshi Stacks — Open all nite"></div>
+<div class="dealer-station" id="dealerStation">
 <button type="button" class="dealer-tray" id="dealerTray" data-action="table-options" aria-label="Open table options" aria-haspopup="dialog" aria-controls="tableOptions">
   <span class="dealer-tray-rack" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
   <span class="dealer-tray-caption">Table options <span aria-hidden="true">⚙</span></span>
 </button>
+</div>
 <div id="tableMarkers" aria-label="Dealer position"></div>
 <!-- Hole cards have their own space on the felt, independent of player labels. -->
 <div class="player-cards cards-pos-1" id="playerCards-1"></div>
@@ -98,7 +103,7 @@
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer" style="position:fixed;top:10px;right:220px;z-index:1001;display:flex;flex-direction:column;align-items:flex-end;gap:8px;"></div>
 <!-- Chat Box -->
-<div class="chat-box" id="chatBox">
+<div class="chat-box hide-pbp" id="chatBox">
 <button class="chat-collapse-btn" id="chatCollapseBtn" aria-label="Collapse chat panel" aria-expanded="true" aria-controls="chatMessages chatHistory chatSettings chatInputArea">&#x25BC;</button>
 <div class="chat-tabs" id="chatTabs" role="group" aria-label="Table panel views">
 <button type="button" class="chat-tab active" data-tab="chat" aria-pressed="true">Chat</button>
@@ -128,7 +133,7 @@
 </div>
 <div class="setting-row">
 <span>Play-by-Play</span>
-<button type="button" class="setting-toggle on" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="true"></button>
+<button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button>
 </div>
 <div class="setting-row">
 <span>Auto-Muck Losers</span>
@@ -147,9 +152,11 @@
 <dialog class="table-options" id="tableOptions" aria-labelledby="tableOptionsTitle">
   <div class="table-options-heading"><div><span class="options-eyebrow">STATION 100</span><h2 id="tableOptionsTitle">Table options</h2></div><button type="button" data-action="close-table-options" aria-label="Close table options">×</button></div>
   <p class="table-options-summary" id="tableOptionsSummary"></p>
+  <div class="setting-row"><label for="tableTheme">Room theme</label><select class="theme-select" id="tableTheme"><option value="bunker">Neon bunker</option><option value="midnight">Midnight station</option><option value="classic">Classic club</option></select></div>
+  <p class="theme-status" id="themeStatus" role="status" aria-live="polite"></p>
   <div class="setting-row"><span>Sounds</span><button type="button" class="setting-cycle" data-setting="sound" data-value="all" aria-label="Sounds: All">All</button></div>
   <div class="setting-row"><span>Player chat</span><button type="button" class="setting-toggle on" data-setting="playerChat" role="switch" aria-label="Player chat" aria-checked="true"></button></div>
-  <div class="setting-row"><span>Play-by-play</span><button type="button" class="setting-toggle on" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="true"></button></div>
+  <div class="setting-row"><span>Play-by-play</span><button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button></div>
   <button type="button" class="table-options-history" data-action="table-hand-history">View hand history <span aria-hidden="true">↗</span></button>
   <p class="table-options-hint">D · Dealer &nbsp; SB · Small blind &nbsp; BB · Big blind</p>
 </dialog>
@@ -158,7 +165,7 @@
 <div class="login-card">
 <button class="login-close-btn" data-action="login-cancel" aria-label="Close">&times;</button>
 <div class="login-logo">
-<img src="/img/brand-wordmark.svg" alt="Satoshi Stacks" class="login-logo-img">
+<img src="/img/neon-wordmark.svg" alt="Satoshi Stacks" class="login-logo-img">
 </div>
 <h1 class="login-subtitle" id="loginHeading">Sign in to Satoshi Stacks</h1>
 <div class="login-status" id="loginStatus" role="status" aria-live="polite"></div>
@@ -261,7 +268,7 @@
       <path d="M36 60 L40 54 M36 60 L30 58" stroke="var(--mustard)" stroke-width="2" stroke-linecap="round"/>
     </svg>
     <div class="rotate-text">Rotate your phone to landscape</div>
-    <div class="rotate-subtext">This game plays best in landscape mode</div>
+    <div class="rotate-subtext">Phones are watch-only for now. Use a desktop to play.</div>
   </div>
 </div>
 <!-- QR Code Library (for NIP-46 login) -->
@@ -272,11 +279,13 @@
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/providers.js?v=21"></script>
 <script src="/js/cards.js?v=22"></script>
-<script src="/js/wallet-ui.js?v=3"></script>
+<script src="/js/wallet-ui.js?v=4"></script>
 <script src="/js/local-account.js?v=2"></script>
 <script src="/js/profile.js?v=2"></script>
-<script src="/js/table-motion.js?v=2"></script>
-<script src="/js/pot-pile.js?v=1"></script>
-<script src="/js/app.js?v=33"></script>
+<script src="/js/table-motion.js?v=3"></script>
+<script src="/js/pot-pile.js?v=3"></script>
+<script src="/js/app.js?v=38"></script>
+<script src="/js/desktop-table.js?v=2"></script>
+<script src="/js/table-themes.js?v=1"></script>
 </body>
 </html>

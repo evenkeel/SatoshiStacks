@@ -1881,3 +1881,17 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 #connectionStatus { top: 86px !important; right: 20px !important; }
 #toastContainer { top: 86px !important; right: 20px !important; }
 @media (max-width:600px) { #connectionStatus, #toastContainer { top: 140px !important; right: 10px !important; } }
+
+/* Phone gameplay is paused; keep the live table and spectator chat available. */
+.phone-watch-notice {
+  position: fixed; bottom: max(12px, env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%); z-index: 100; width: max-content; max-width: calc(100vw - 24px);
+  box-sizing: border-box; padding: 8px 14px; border: 1px solid #60767c;
+  border-radius: 8px; background: #21343d; color: #fff; text-align: center; font-size: 12px;
+  pointer-events: none;
+}
+body.watch-only .controls-area, body.watch-only .pre-action-bar,
+body.watch-only .table-actions-bar, body.watch-only #sitBackInBtn,
+body.watch-only .waitlist-ui, body.watch-only .seat-offer-prompt {
+  display: none !important;
+}

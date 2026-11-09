@@ -35,3 +35,9 @@ test('an uncertain withdrawal explains that closing the window does not cancel i
   const html=cashoutHTML({availableSats:0,payments:[{amount_sats:1000,status:'in_flight'}]});
   assert.match(html,/timeout does not mean it failed/);assert.match(html,/close this window/);
 });
+
+test('phone spectators can withdraw without being offered a table buy-in',()=>{
+  const html=cashoutHTML({watchOnly:true,withdrawalsEnabled:true,availableSats:5000});
+  assert.doesNotMatch(html,/account-buyin/);
+  assert.match(html,/confirm-cashout/);
+});
