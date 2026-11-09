@@ -61,8 +61,10 @@ grouped bets and pot collection, and payouts to every winner. Repeated updates
 and reconnects do not replay animations. Motion never delays actions; reduced-motion
 preferences, tab visibility, resizing, and a new hand cancel transient overlays.
 Player labels and avatars sit around the rail, separate from hole cards and
-labeled wagers on the felt. Dealer and blind markers follow the engine's posted
-positions. The top-center chip tray opens sound/chat settings and hand history.
+labeled wagers on the felt. The dealer button follows the dealer's seat; blind
+markers are omitted. The pot uses a bounded sample of up to 24 chip icons above
+the board, with the exact amount shown below it. The top-center chip tray opens
+sound/chat settings and hand history.
 
 Public player responses use a safe field allowlist. Relay profile events require a valid signature and matching author. Payouts no longer depend on profile Lightning addresses or an LNURL resolver.
 
