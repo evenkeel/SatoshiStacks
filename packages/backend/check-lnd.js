@@ -5,7 +5,7 @@
  *   REALMONEY_ENABLED=true LIGHTNING_NETWORK=regtest \
  *   LND_HOST=127.0.0.1 LND_PORT=10009 \
  *   LND_MACAROON_PATH=/path/to/poker.macaroon LND_TLS_CERT_PATH=/path/to/tls.cert \
- *   LND_OWN_PUBKEY=<identity_pubkey> HOT_WALLET_CAP_SATS=1000000 MAX_WITHDRAWAL_SATS=100000 \
+ *   LND_OWN_PUBKEY=<identity_pubkey> HOT_WALLET_CAP_SATS=1000000 MAX_WITHDRAWAL_SATS=1000000 \
  *   ADMIN_TOKEN=anything node check-lnd.js
  *
  * Verifies the poker backend can authenticate to LND and read node info + balance,
@@ -23,17 +23,19 @@ const { createLightning } = require('./services/lightning');
   const ln = createLightning(config.LIGHTNING);
   try {
     const pubkey = await ln.connect();
-    const spendable = await ln.getSpendableSats();
-    console.log('✅ Connected to LND');
-    console.log('   network:           ', config.LIGHTNING.network);
-    console.log('   node pubkey:        ' + pubkey);
-    console.log('   channel spendable:  ' + spendable + ' sats');
-    if (config.LIGHTNING.ownPubkey && config.LIGHTNING.ownPubkey !== pubkey) {
-      console.warn('⚠️  LND_OWN_PUBKEY (' + config.LIGHTNING.ownPubkey + ') does not match the node pubkey above.');
-      console.warn('    Fix it — the self-pay-loop guard compares against it.');
-    } else if (!config.LIGHTNING.ownPubkey) {
-      console.warn('⚠️  LND_OWN_PUBKEY is not set. Set it to: ' + pubkey);
-    }
+    const diagnostics = await ln.getDiagnostics();
+    console.log(JSON.stringify({
+      configuredNetwork: config.LIGHTNING.network,
+      ...diagnostics,
+      feePolicy: {
+        baseSats: config.LIGHTNING.withdrawalFeeBaseSats,
+        ratePpm: config.LIGHTNING.withdrawalFeeRatePpm,
+        capSats: config.LIGHTNING.withdrawalFeeLimitSats,
+        reserveSats: config.LIGHTNING.feeReserveSats,
+        maxPaths: config.LIGHTNING.maxPaymentPaths,
+      },
+      note: 'Read-only check. Verify returned chain IDs against the intended network. Liquidity estimates do not guarantee routes or receiving capacity. No payment was made.',
+    }, null, 2));
     process.exit(0);
   } catch (e) {
     console.error('❌ Could not connect to LND:', e.message);

@@ -50,6 +50,31 @@ async function publishToRelays(event) {
   return published;
 }
 
+// A profile is published only after a relay explicitly acknowledges its ID.
+async function publishProfile(event) {
+  const WebSocket = (await import('ws')).default;
+  const results = await Promise.all(config.RELAYS.map(url => new Promise(resolve => {
+    let ws, timer, finished = false;
+    const finish = accepted => {
+      if (finished) return;
+      finished = true; clearTimeout(timer);
+      try { ws?.close(); } catch (_) {}
+      resolve(accepted ? 1 : 0);
+    };
+    timer = setTimeout(() => finish(false), 3000);
+    try {
+      ws = new WebSocket(url);
+      ws.on('open', () => ws.send(JSON.stringify(['EVENT',event])));
+      ws.on('message', data => {
+        try { const reply = JSON.parse(data.toString()); if (reply[0] === 'OK' && reply[1] === event.id) finish(reply[2] === true); } catch (_) {}
+      });
+      ws.on('error', () => finish(false));
+      ws.on('close', () => finish(false));
+    } catch (_) { finish(false); }
+  })));
+  return results.reduce((sum,count) => sum + count, 0);
+}
+
 // ==================== NIP-58 BADGE SYSTEM ====================
 
 function checkAndAwardBadges(userId, stats, { userSockets, io, games, broadcastGameState }) {
@@ -168,7 +193,7 @@ function isValidProfileEvent(event, pubkeyHex) {
     if (event.created_at > Math.floor(Date.now() / 1000) + 60) return false;
     const profile = JSON.parse(event.content);
     return profile && typeof profile === 'object' && !Array.isArray(profile) &&
-      ['name', 'display_name', 'picture', 'lud16'].every(key =>
+      ['name', 'display_name', 'picture', 'lud16', 'about', 'website', 'nip05'].every(key =>
         profile[key] === undefined || profile[key] === null ||
         (typeof profile[key] === 'string' && profile[key].length <= 2048));
   } catch (_) { return false; }
@@ -210,7 +235,8 @@ async function fetchNostrProfile(pubkeyHex, { games, userSockets, io, broadcastG
                 resolved = true;
                 clearTimeout(timeout);
 
-                db.upsertNostrPlayer(pubkeyHex, npubEncode(pubkeyHex), name, picture, lud16);
+                // Never let a delayed relay reply overwrite a newer edit.
+                if (!db.saveNostrProfile(msg[2])) { resolve({ name, picture, lud16 }); return; }
                 console.log(`[Auth] Relay profile fetched: ${name} (${pubkeyHex.slice(0, 8)}...)${lud16 ? ` lud16: ${lud16}` : ''}`);
 
                 for (const [tableId, game] of games) {
@@ -353,6 +379,7 @@ function publishStartupEvents() {
 }
 
 module.exports = {
+  publishProfile,
   isValidProfileEvent,
   hasServerKey,
   serverPk,

@@ -3,7 +3,7 @@
 Implemented on the MVP branch:
 
 - NIP-07-first sign-in, Sidecar guidance, and phone/bunker fallback.
-- Actual WebLN connection, buy-in, and cash-out; no manual invoice entry or stored NWC secret.
+- WebLN connection, account deposits, account-funded table buy-ins, internal table returns, and partial withdrawals through WebLN or a pasted receiving invoice; no stored NWC secret.
 - Removed profile-address payouts, LNURL resolver/refunds, and unused development browser tooling.
 - Exclusive cash-out, durable idle snapshots, recoverable credits, deposit idempotency, and periodic LND reconciliation.
 - Regression tests, 200-hand conservation simulation, Node 24, patched dependencies, deployment failure checks.
@@ -20,4 +20,4 @@ Before real-money beta:
 - [ ] Actual iOS/Android signer/wallet return tests.
 - [ ] Confirm monitoring, support ownership, launch terms, and approved audience.
 
-If the gates are not met Friday, release the labeled demo with payments disabled. Defer tournaments and additional tables.
+Until these checks are complete, keep the labeled demo with payments disabled. Defer tournaments and additional tables.

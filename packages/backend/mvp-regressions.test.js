@@ -21,14 +21,14 @@ afterEach(() => {
 });
 function fixture({ stack = 10000, onRefund = () => {}, onSeatPlayer } = {}) {
   const game = new PokerGame('station100', { realMoney: true }); games.push(game);
-  const io = { on() {}, to() { return { emit() {} }; }, sockets: { sockets: new Map([['socket', { join() {} }]]) } };
+  const io = { on() {}, to() { return { emit() {} }; }, sockets: { sockets: new Map() } };
   const handlers = setup(io, new Map([['station100', game]]), new Map([['u0', 'socket']]), new Map(), new Map(), () => {}, new Map());
   handlers.wireGame('station100', game);
   if (stack !== null) game.addPlayer('u0', 'Synthetic', { initialStack: stack });
   const sends = [];
   let invoices = 0;
   const lnd = {
-    async createInvoice({ amountSats }) { invoices++; return { bolt11: `mock:${amountSats}:dep${invoices}`, paymentHash: `dep${invoices}` }; },
+    async createInvoice({ amountSats,secret }) { invoices++; const paymentHash=require('node:crypto').createHash('sha256').update(Buffer.from(secret,'hex')).digest('hex');return { bolt11: `mock:${amountSats}:${paymentHash}`, paymentHash }; },
     async decodeInvoice(invoice) { const [, amount, hash] = invoice.split(':'); return { amountSats: Number(amount), paymentHash: hash, destination: 'peer' }; },
     async sendPayment(payment) { sends.push(payment); return { status: 'SUCCEEDED' }; },
     async trackPayment() { return { status: 'SUCCEEDED' }; },
@@ -84,9 +84,28 @@ test('idle exit atomically moves the stack to independently withdrawable credit'
   const { game, payments } = fixture();
   game.startSitOutKickTimer('u0', 1);
   await new Promise(resolve => setTimeout(resolve, 15));
-  assert.equal(game.players[0], null); assert.equal(db.getWalletCredit('u0','station100'), 10000);
+  assert.equal(game.players[0], null); assert.equal(db.getAccountBalance('u0'), 10000);
   assert.equal(db.getHandSnapshot('station100').snapshot.players[0], null);
-  assert.equal(payments.availableFunds('u0','station100').stack, 10000);
+  assert.equal(payments.availableFunds('u0',db.ACCOUNT).stack, 10000);
+});
+test('departing and buying another seat cancels the previous idle kick', async () => {
+  const { game } = fixture();
+  game.startSitOutKickTimer('u0', 5);
+  game.removePlayer('u0');
+  assert.equal(game.sitOutKickTimers.has('u0'), false);
+  game.addPlayer('u0', 'Returned', { initialStack: 5000 });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(game.players[0].stack, 5000);
+  assert.equal(db.getAccountBalance('u0'), 10000);
+});
+test('an empty table cannot retain a scheduled hand that later overwrites its replacement snapshot', () => {
+  const { game } = fixture();
+  game.addPlayer('u1', 'Other', { initialStack: 5000 });
+  assert.ok(game.handStartTimeout);
+  game.removePlayer('u0');
+  game.removePlayer('u1');
+  assert.equal(game.handStartTimeout, null);
+  assert.ok(game.players.every(p => p === null));
 });
 test('failed payout preserves money despite a broken notification callback, with exactly-once refund', async () => {
   const { payments, lnd, game } = fixture({ onRefund() { throw new Error('notification failed'); } });
@@ -101,11 +120,12 @@ test('failed payout preserves money despite a broken notification callback, with
 test('additional settled payment for an occupied seat is held, then credited exactly once', () => {
   const { game, handlers, payments } = fixture();
   const row = deposit('additional'); handlers.seatFromDeposit(row);
-  assert.equal(db.getLedgerById(row.id).status, 'settled_unseated'); assert.equal(game.players[0].stack, 10000);
+  assert.equal(db.getLedgerById(row.id).status, 'credited'); assert.equal(game.players[0].stack, 10000);
   db.db.prepare('UPDATE ledger_entries SET settled_at=1 WHERE id=?').run(row.id);
   payments.releaseUnseatedDeposits(); payments.releaseUnseatedDeposits();
-  assert.equal(db.getWalletCredit('u0','station100'), 5000);
-  assert.equal(payments.availableFunds('u0','station100').stack, 15000);
+  assert.equal(db.getAccountBalance('u0'), 5000);
+  assert.equal(payments.availableFunds('u0',db.ACCOUNT).stack, 5000);
+  assert.equal(game.players[0].stack,10000);
 });
 test('settlement survives a seating callback failure as an unconsumed liability', async () => {
   const { payments } = fixture({ stack: null, onSeatPlayer() { throw new Error('seating failed'); } });
@@ -123,11 +143,11 @@ test('duplicate and concurrent buy-in requests reuse one invoice', async () => {
 });
 test('deposit exposure cap includes invoice creation currently awaiting LND', async () => {
   const { payments, lnd, config } = fixture({ stack: null }); config.LIGHTNING.hotWalletCapSats=5000;
-  let finish;
-  lnd.createInvoice = () => new Promise(resolve => { finish=resolve; });
+  let finish, secret;
+  lnd.createInvoice = args => new Promise(resolve => { finish=resolve;secret=args.secret; });
   const first=payments.createDepositInvoice({userId:'u0',tableId:'station100',amountSats:5000});
   await assert.rejects(payments.createDepositInvoice({userId:'u1',tableId:'station100',amountSats:5000}),/exposure/);
-  finish({bolt11:'mock',paymentHash:'cap'}); await first;
+  finish({bolt11:'mock',paymentHash:require('node:crypto').createHash('sha256').update(Buffer.from(secret,'hex')).digest('hex')}); await first;
 });
 test('a full positive remaining stack below the old minimum can cash out', async () => {
   const { payments }=fixture({stack:500});
@@ -138,8 +158,8 @@ test('missed deposit settlement is recovered from LND lookup after restart', asy
   db.createDepositRow({userId:'u0',tableId:'station100',amountSats:5000,paymentHash:'offline',bolt11:'mock'});
   lnd.lookupInvoice=async()=>({confirmed:true,amountSats:5000});
   await payments.reconcilePending(); await payments.reconcilePending();
-  assert.equal(db.getHandSnapshot('station100').snapshot.players[0].stack,5000);
-  assert.equal(db.getLedgerByHash('offline','deposit').status,'settled');
+  assert.equal(db.getAccountBalance('u0'),5000);
+  assert.equal(db.getLedgerByHash('offline','deposit').status,'credited');
 });
 test('snapshot failure rolls back the payout reservation and sends no payment', async () => {
   const { game,payments,sends }=fixture();
@@ -154,6 +174,17 @@ test('amount mismatch retains the actual received funds without seating', async 
   db.createDepositRow({userId:'u0',tableId:'station100',amountSats:5000,paymentHash:'mismatch',bolt11:'mock'});
   payments.creditDeposit('mismatch',6000);
   assert.equal(game.players[0],null); assert.equal(payments.availableFunds('u0','station100').stack,6000);
+});
+test('public hand pagination never turns a negative limit into an unlimited query', () => {
+  const api = require('./routes/api');
+  const handler = api.stack.find(layer => layer.route?.path === '/hands/:userId').route.stack[0].handle;
+  const original = db.getPlayerHands;
+  const limits = [];
+  db.getPlayerHands = (_, limit) => { limits.push(limit); return []; };
+  try {
+    for (const limit of ['-1', '5000', 'nonsense']) handler({ params: { userId: 'u0' }, query: { limit } }, { json() {} });
+  } finally { db.getPlayerHands = original; }
+  assert.deepEqual(limits, [1, 200, 50]);
 });
 test('public player response excludes session and balance metadata', () => {
   const api=require('./routes/api');

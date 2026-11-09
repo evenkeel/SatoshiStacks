@@ -16,9 +16,12 @@ const PokerGame = require('./poker-game');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
+const { createProfileRoutes, nip05Lookup } = require('./routes/profile');
+const {createLightningAddressHandler} = require('./services/lightning-address');
 const socketHandlers = require('./socket-handlers');
 const { createLightning } = require('./services/lightning');
 const { createPayments } = require('./services/payments');
+const { authenticatedSocketId } = require('./socket-session');
 
 // ==================== EXPRESS & SOCKET.IO SETUP ====================
 
@@ -80,7 +83,7 @@ function broadcastGameState(tableId) {
   // Send personalized state to each seated player
   game.players.forEach((player) => {
     if (!player) return;
-    const socketId = userSockets.get(player.userId);
+    const socketId = authenticatedSocketId(io, userSockets, player.userId);
     if (!socketId) return;
     io.to(socketId).emit('game-state', addBadgesToState(game.getGameState(player.userId)));
   });
@@ -104,19 +107,8 @@ function broadcastGameState(tableId) {
 // ==================== MIDDLEWARE & ROUTES ====================
 
 // NIP-05 identifier (must be before static middleware)
-app.get('/.well-known/nostr.json', (req, res) => {
-  const name = (req.query.name || '').toLowerCase().trim();
-  const identifiers = {
-    'allen': '8a3a9236d0eae6bc92eb17782d57e828a01f03cd28d3c68297c7e19d374b9419'
-  };
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-cache');
-  if (name && identifiers[name]) {
-    res.json({ names: { [name]: identifiers[name] } });
-  } else {
-    res.json({ names: identifiers });
-  }
-});
+app.get('/.well-known/nostr.json', nip05Lookup);
+app.get('/.well-known/lnurlp/:name', createLightningAddressHandler());
 
 // Security headers (helmet) — required dependency
 app.use(helmet({
@@ -176,6 +168,27 @@ app.get('/api/tables', (req, res) => {
 app.use('/api', apiRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/profile', createProfileRoutes({
+  canPurchase: () => config.REALMONEY_ENABLED && walletReady && !!payments && !payments.breakerState().tripped,
+  onUpdate(pubkey, profile) {
+  const name = profile.display_name || profile.name || pubkey.slice(0,12);
+  for (const [tableId, game] of games) {
+    const player = game.players.find(p => p?.userId === pubkey);
+    if (player) {
+      Object.assign(player, {username:name,nostrName:name,nostrPicture:profile.picture || null,lud16:profile.lud16 || null});
+      broadcastGameState(tableId);
+    }
+  }
+  for (const [socketId, observer] of observerSockets) {
+    if (observer.userId === pubkey) {
+      Object.assign(observer,{observerName:name,nostrName:name,nostrPicture:profile.picture || null});
+      io.to(socketId).emit('profile-updated',{name,picture:profile.picture || null,lud16:profile.lud16 || null});
+    }
+  }
+  for (const entries of waitlists.values()) for (const entry of entries) if (entry.userId === pubkey) entry.observerName = name;
+  const socketId = userSockets.get(pubkey);
+  if (socketId) io.to(socketId).emit('profile-updated',{name,picture:profile.picture || null,lud16:profile.lud16 || null});
+} }));
 
 // Admin dashboard HTML
 app.get('/admin', (req, res) => {
@@ -265,11 +278,13 @@ console.log(`[Server] Seeded ${Object.keys(config.TABLE_CONFIGS).length} table c
 // REALMONEY_ENABLED master switch is on).
 let lightning = null;
 let payments = null;
+let accountPayments = null;
 let walletReady = false;
 
 const walletHandlers = socketHandlers.setup(
   io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists,
   () => payments,
+  () => accountPayments,
 );
 recoverInProgressHands();
 
@@ -297,8 +312,10 @@ if (config.REALMONEY_ENABLED) {
     liveStacksTotal,
     onSeatPlayer: (row) => walletHandlers.seatFromDeposit(row),
     onRefund: (row) => walletHandlers.refundToPlayer(row),
+    onDeposit: (row) => { if (row.table_id === db.ACCOUNT) walletHandlers.seatFromDeposit(row); },
     alert: (m) => console.error('[Wallet][ALERT]', m),
   });
+  accountPayments = connectedPayments;
   let subscription = null;
   let maintenanceRunning = false;
   async function maintainWallet() {

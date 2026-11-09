@@ -7,6 +7,7 @@ const config = require('./config');
 const db = require('./database');
 const PokerGame = require('./poker-game');
 const nostr = require('./services/nostr');
+const { authenticatedSocketId } = require('./socket-session');
 
 function generateObserverName() {
   const adj = config.OBSERVER_ADJECTIVES[Math.floor(Math.random() * config.OBSERVER_ADJECTIVES.length)];
@@ -25,12 +26,7 @@ function generateObserverName() {
  * @param {Function} broadcastGameState - broadcasts state to all at a table
  * @param {Map} waitlists - tableId -> [{ socketId, userId, observerName, offeredAt }]
  */
-function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists, getPayments = () => null) {
-
-  // paymentHash -> socket.id of the player who requested that buy-in. Lets a
-  // settled deposit seat the exact requesting socket instantly, without relying
-  // on a userId->socket lookup that can miss if the observer entry is anonymous.
-  const buyinSockets = new Map();
+function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists, getPayments = () => null, getAccountPayments = getPayments) {
 
   // ==================== WAITLIST HELPER ====================
 
@@ -99,6 +95,20 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     game.onStateChange = () => {
       game.saveSnapshot();
+      // Idle kicks and deferred departures also need to release the socket's
+      // seat mapping so it continues receiving the public table state.
+      for (const [socketId, seated] of socketUsers) {
+        if (seated.tableId !== tableId || game.players.some(p => p?.userId === seated.userId)) continue;
+        socketUsers.delete(socketId);
+        if (userSockets.get(seated.userId) === socketId) userSockets.delete(seated.userId);
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          const player = db.getPlayerBySession(socket.data?.sessionToken);
+          observerSockets.set(socketId, { tableId, userId: player?.pubkey_hex || null,
+            observerName: player?.nostr_name || player?.username || generateObserverName(),
+            nostrName: player?.nostr_name || null, nostrPicture: player?.nostr_picture || null });
+        }
+      }
       console.log(`[Server] Broadcasting state for table ${tableId}`);
       broadcastGameState(tableId);
       checkWaitlist(tableId);
@@ -122,16 +132,16 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     };
 
     game.onDealCards = (userId, line) => {
-      const socketId = userSockets.get(userId);
+      const socketId = authenticatedSocketId(io, userSockets, userId);
       if (socketId) {
         io.to(socketId).emit('hand-log', { line, type: 'deal' });
       }
     };
 
-    game.onHandComplete = (userId, historyText) => {
-      const socketId = userSockets.get(userId);
+    game.onHandComplete = (userId, historyText, handId) => {
+      const socketId = authenticatedSocketId(io, userSockets, userId);
       if (socketId) {
-        io.to(socketId).emit('hand-complete', { history: historyText });
+        io.to(socketId).emit('hand-complete', { history: historyText, handId });
       }
     };
 
@@ -140,7 +150,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       // never write a real-sat stack into the play-money column (keeps the two worlds
       // strictly separate so a play-money bug can't touch real funds).
       if (game.realMoney) {
-        db.addWalletCredit(userId, tableId, stack);
+        db.creditAccount(userId, tableId, 'table_cashout', stack);
         return;
       }
       try {
@@ -180,19 +190,63 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
   }
 
+  function resumeExistingSeat(socket, userId, tableId, displayName) {
+    const game = games.get(tableId);
+    const seatIndex = game?.players.findIndex(player => player && player.userId === userId) ?? -1;
+    if (seatIndex === -1 || db.isBanned(userId) || db.isIpBanned(socket.handshake.address)) return false;
+    const previousSocket = userSockets.get(userId);
+    if (previousSocket && previousSocket !== socket.id) socketUsers.delete(previousSocket);
+    observerSockets.delete(socket.id);
+    removeFromWaitlist(socket.id, tableId);
+    userSockets.set(userId, socket.id);
+    socketUsers.set(socket.id, { userId, tableId, seatIndex });
+    game.setDisconnected(userId, false);
+    socket.join(`table-${tableId}`);
+    socket.emit('seat-assigned', { seatIndex, displayName });
+    broadcastGameState(tableId);
+    return true;
+  }
+
   // ==================== CONNECTION HANDLER ====================
 
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
+    socket.data ||= {};
     // Reject malformed packets before destructuring event payloads or hashing
     // tokens. A public observer must not be able to crash the process with null.
     const objectEvents = new Set(['observe-table', 'observer-authenticate', 'join-waitlist',
       'leave-waitlist', 'waitlist-accept', 'chat-message', 'join-table', 'action',
-      'sit-back-in', 'sit-out', 'rebuy', 'buyin-request', 'cashout-request', 'wallet-state-request']);
+      'sit-back-in', 'sit-out', 'rebuy', 'buyin-request', 'cashout-request', 'wallet-state-request', 'account-deposit-request', 'table-cashout-request']);
     socket.use(([event, payload], next) => {
       if (objectEvents.has(event) && (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
           (payload.sessionToken !== undefined && (typeof payload.sessionToken !== 'string' || payload.sessionToken.length > 256)))) {
         socket.emit('error', { message: 'Invalid request payload' });
+        return;
+      }
+      const seated = socketUsers.get(socket.id);
+      if (seated && payload?.sessionToken !== undefined &&
+          db.getPlayerBySession(payload.sessionToken)?.pubkey_hex !== seated.userId) {
+        socket.emit('auth-error', { message: 'Reconnect before switching accounts.' });
+        return;
+      }
+      if (seated && event === 'observe-table') {
+        // Repeated observation must not turn a seated connection into a second
+        // observer channel or leave its old seat attached to an anonymous page.
+        if (db.getPlayerBySession(payload.sessionToken)?.pubkey_hex !== seated.userId || payload.tableId !== seated.tableId) {
+          socket.emit('auth-error', { message: 'Reconnect before changing tables or accounts.' });
+          return;
+        }
+      }
+      const actor = seated || (event === 'chat-message' ? observerSockets.get(socket.id) : null);
+      if (['action','sit-back-in','sit-out','rebuy','leave-table','chat-message'].includes(event) && actor?.userId) {
+        const player = db.getPlayerBySession(socket.data.sessionToken);
+        if (!player || player.pubkey_hex !== actor.userId) {
+          socket.emit('auth-error', { message: 'Session expired or signed out. Sign in again to resume.' });
+          return;
+        }
+      }
+      if (seated && ['action','sit-back-in','sit-out','rebuy'].includes(event) && payload.tableId !== seated.tableId) {
+        socket.emit('error', { message: 'Invalid table for this seat' });
         return;
       }
       next();
@@ -200,7 +254,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== OBSERVE ====================
 
-    socket.on('observe-table', ({ tableId, sessionToken }) => {
+    socket.on('observe-table', ({ tableId, sessionToken, resumeSeat = true }) => {
       // Validate table exists
       if (!config.TABLE_CONFIGS[tableId]) {
         socket.emit('error', { message: 'Invalid table' });
@@ -216,6 +270,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       if (sessionToken) {
         const playerData = db.getPlayerBySession(sessionToken);
         if (playerData) {
+          socket.data.sessionToken = sessionToken;
           userId = playerData.pubkey_hex;
           nostrName = playerData.nostr_name;
           nostrPicture = playerData.nostr_picture;
@@ -225,7 +280,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         // If session is invalid, silently fall back to anonymous observer
       }
 
-      observerSockets.set(socket.id, { observerName, tableId, userId, nostrName, nostrPicture });
+      observerSockets.set(socket.id, { observerName, tableId, userId, nostrName, nostrPicture, resumeSeat });
       socket.join(`table-${tableId}`);
       console.log(`Observer ${observerName} (${socket.id}) watching table ${tableId}`);
 
@@ -237,12 +292,14 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         ensureGameExists(tableId);
       }
 
+      if (userId && resumeSeat !== false && resumeExistingSeat(socket, userId, tableId, observerName)) return;
+
       // Broadcast updated observer count to all clients
       if (games.has(tableId)) broadcastGameState(tableId);
 
       // Real-money: if they already paid a buy-in but weren't seated (socket churned
       // while paying in a wallet app), claim it now that they're connected.
-      if (userId && config.isRealMoney(tableId)) claimDeposits(userId, tableId, socket.id);
+      if (userId && config.isRealMoney(tableId)) db.getAccountBalance(userId);
     });
 
     // Observer authenticates while already watching
@@ -258,6 +315,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         return;
       }
 
+      socket.data.sessionToken = sessionToken;
       // Update observer entry with auth info
       obs.userId = playerData.pubkey_hex;
       obs.nostrName = playerData.nostr_name;
@@ -273,8 +331,10 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
       console.log(`[Observer] ${obs.observerName} authenticated while observing ${obs.tableId}`);
 
+      if (obs.resumeSeat !== false && resumeExistingSeat(socket, obs.userId, obs.tableId, obs.observerName)) return;
+
       // Now that we know who they are, claim any settled-but-unseated deposit.
-      if (config.isRealMoney(obs.tableId)) claimDeposits(obs.userId, obs.tableId, socket.id);
+      if (config.isRealMoney(obs.tableId)) db.getAccountBalance(obs.userId);
 
       // Update waitlist entry if applicable
       const wl = waitlists.get(obs.tableId);
@@ -386,6 +446,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           return;
         }
 
+        socket.data.sessionToken = sessionToken;
         const userId = playerData.pubkey_hex;
         const displayName = playerData.nostr_name || playerData.username;
         const nostrName = playerData.nostr_name;
@@ -436,28 +497,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         }
         removeFromWaitlist(socket.id, tableId);
 
-        // Handle reconnection
-        const game0 = games.get(tableId);
-        if (game0) {
-          const existingSeatIdx = game0.players.findIndex(p => p && p.userId === userId);
-          if (existingSeatIdx !== -1) {
-            const oldSocketId = userSockets.get(userId);
-            if (oldSocketId && oldSocketId !== socket.id) {
-              socketUsers.delete(oldSocketId);
-            }
-            userSockets.set(userId, socket.id);
-            socketUsers.set(socket.id, { userId, tableId, seatIndex: existingSeatIdx });
-            socket.join(`table-${tableId}`);
-
-            const player = game0.players[existingSeatIdx];
-            player.disconnected = false;
-            console.log(`${displayName} reconnected to table ${tableId} (seat ${existingSeatIdx + 1})`);
-
-            socket.emit('seat-assigned', { seatIndex: existingSeatIdx, displayName });
-            broadcastGameState(tableId);
-            return;
-          }
-        }
+        // A refresh or a new signed session resumes the funded seat without
+        // issuing another invoice or losing the personal game-state channel.
+        if (resumeExistingSeat(socket, userId, tableId, displayName)) return;
 
         // Real-money tables: you cannot take a fresh seat for free — chips must be
         // backed by a paid Lightning deposit. (Reconnection to an existing seat was
@@ -494,7 +536,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
         const reconnectedPlayer = game.players[assignedSeat];
         if (reconnectedPlayer && reconnectedPlayer.disconnected) {
-          reconnectedPlayer.disconnected = false;
+          game.setDisconnected(userId, false);
           console.log(`${displayName} reconnected via addPlayer path — cleared disconnected flag`);
         }
 
@@ -514,7 +556,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== ACTION ====================
 
-    socket.on('action', ({ tableId, action, amount, actionId }) => {
+    socket.on('action', ({ tableId, action, amount, actionId, handCount }) => {
       const user = socketUsers.get(socket.id);
       if (!user) {
         socket.emit('error', { message: 'Not authenticated' });
@@ -534,23 +576,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         return;
       }
 
-      // Deduplication guard: if actionId was already processed, silently re-broadcast
-      // current state (idempotent) instead of processing again
-      if (actionId && game.processedActionIds && game.processedActionIds.has(actionId)) {
-        console.log(`[Server] Duplicate action ${actionId} from ${user.userId.slice(0, 8)}... — ignoring`);
-        broadcastGameState(tableId);
-        return;
-      }
-
-      const result = game.processAction(user.userId, action, amount);
+      // The engine snapshots action IDs with the mutation, so recovery cannot
+      // apply a previously committed action for a second time.
+      const result = game.processAction(user.userId, action, amount, { actionId, handCount });
       if (!result.valid) {
         socket.emit('error', { message: result.error });
         return;
-      }
-
-      // Record actionId to prevent duplicate processing
-      if (actionId && game.processedActionIds) {
-        game.processedActionIds.add(actionId);
       }
 
       broadcastGameState(tableId);
@@ -571,14 +602,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       const leavingTableId = user.tableId;
       const game = games.get(leavingTableId);
 
-      // Real-money: you cannot just walk away from chips — that would orphan real
-      // sats. You must cash out your stack (which routes the payout). Leaving is
-      // only allowed once your stack is empty (e.g. you busted).
       if (game && config.isRealMoney(leavingTableId)) {
-        const p = game.players.find(x => x && x.userId === user.userId);
-        if (p && p.stack > 0) {
-          socket.emit('error', { message: 'Cash out your stack to leave this table.' });
-          if (ack) ack({ ok: false, error: 'cashout-required' });
+        const funds = game.canCashOut(user.userId);
+        if (!funds.ok) {
+          game.voluntarySitOut(user.userId);
+          socket.emit('error', { message: 'Finish this hand before returning your stack to your account.' });
+          if (ack) ack({ ok: false, error: 'hand-in-progress' });
           return;
         }
       }
@@ -675,6 +704,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         if (!payments) { socket.emit('error', { message: 'Real-money is not available right now' }); return; }
         const playerData = sessionToken ? db.getPlayerBySession(sessionToken) : null;
         if (!playerData) { socket.emit('auth-error', { message: 'Sign in to buy in' }); return; }
+        socket.data.sessionToken = sessionToken;
         const userId = playerData.pubkey_hex;
         const clientIp = socket.handshake.address;
         if (db.isIpBanned(clientIp) || db.isBanned(userId)) { socket.emit('error', { message: 'Not allowed' }); return; }
@@ -687,22 +717,11 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         const obs = observerSockets.get(socket.id);
         db.logAction(userId, clientIp, 'buyin-request');
         if (obs) obs.userId = userId;
-        // If they already paid a buy-in that wasn't seated (reconnected after paying),
-        // claim it instead of issuing a NEW invoice — prevents accidental double payment.
-        if (claimDeposits(userId, tableId, socket.id)) {
-          console.log(`[Wallet] Claimed existing unseated deposit for ${userId.slice(0, 8)}... — no new invoice issued`);
-          return;
-        }
-        const tc = config.TABLE_CONFIGS[tableId];
-        // Honor the player's chosen buy-in, clamped to the table's [min,max] range.
-        const requested = Math.floor(Number(amountSats));
-        const amt = (Number.isFinite(requested) && requested > 0)
-          ? Math.max(tc.minBuyin, Math.min(tc.maxBuyin, requested))
-          : tc.maxBuyin;
-        const inv = await payments.createDepositInvoice({ userId, tableId, amountSats: amt });
-        buyinSockets.set(inv.paymentHash, socket.id); // seat THIS socket when it settles
-        socket.emit('buyin-invoice', { bolt11: inv.bolt11, paymentHash: inv.paymentHash, amountSats: inv.amountSats });
-        console.log(`[Wallet] Buy-in invoice ${inv.paymentHash.slice(0, 12)}... for ${inv.amountSats} sats (${userId.slice(0, 8)}...)`);
+        ensureGameExists(tableId);
+        const seatIndex = payments.buyInFromAccount({ userId, tableId, amountSats, player: playerData });
+        resumeExistingSeat(socket, userId, tableId, playerData.nostr_name || playerData.username);
+        socket.emit('account-buyin-confirmed', { tableId, seatIndex, amountSats });
+        nostr.scheduleLiveActivityUpdate(tableId, games);
       } catch (e) {
         socket.emit('error', { message: e.message });
       }
@@ -710,44 +729,74 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
     // ==================== REAL-MONEY: CASH-OUT ====================
 
+    socket.on('account-deposit-request', async ({ tableId, sessionToken, amountSats }) => {
+      try {
+        if (!config.isRealMoney(tableId)) throw new Error('Real-money accounts are unavailable in demo mode');
+        const player = sessionToken && db.getPlayerBySession(sessionToken);
+        if (!player) { socket.emit('auth-error', { message: 'Sign in to deposit' }); return; }
+        const userId = player.pubkey_hex;
+        if (db.isBanned(userId) || db.isIpBanned(socket.handshake.address)) throw new Error('Not allowed');
+        if (db.isRateLimited(userId, socket.handshake.address, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions)) throw new Error('Too many requests. Please wait.');
+        db.logAction(userId, socket.handshake.address, 'account-deposit-request');
+        const payments = getPayments();
+        if (!payments) throw new Error('Account wallet is temporarily unavailable');
+        const invoice = await payments.createDepositInvoice({ userId, tableId: db.ACCOUNT, amountSats });
+        socket.emit('buyin-invoice', { ...invoice, userId, tableId });
+      } catch (error) { socket.emit('error', { message: error.message }); }
+    });
+
+    socket.on('table-cashout-request', ({ tableId, sessionToken }) => {
+      try {
+        const player = sessionToken && db.getPlayerBySession(sessionToken);
+        if (!player) { socket.emit('auth-error', { message: 'Sign in to return your stack' }); return; }
+        const payments = getAccountPayments();
+        if (!payments) throw new Error('Account wallet is temporarily unavailable');
+        const game = games.get(tableId);
+        if (game?.handInProgress && game.players.some(p => p && p.userId === player.pubkey_hex && p.participatedThisHand && !p.sittingOutNextHand && !p.sittingOut)) game.voluntarySitOut(player.pubkey_hex);
+        const result = payments.returnStackToAccount({ userId: player.pubkey_hex, tableId });
+        const seatedSocket = userSockets.get(player.pubkey_hex);
+        if (socketUsers.get(seatedSocket)?.tableId === tableId) {
+          socketUsers.delete(seatedSocket);
+          userSockets.delete(player.pubkey_hex);
+          io.to(seatedSocket).emit('account-table-cashout', { tableId, ...result });
+        }
+        if (seatedSocket !== socket.id) socket.emit('account-table-cashout', { tableId, ...result });
+        broadcastGameState(tableId);
+        checkWaitlist(tableId);
+        nostr.scheduleLiveActivityUpdate(tableId, games);
+      } catch (error) { socket.emit('error', { message: error.message }); }
+    });
+
     socket.on('cashout-request', async ({ tableId, sessionToken, bolt11 }) => {
       try {
-        if (!config.isRealMoney(tableId)) { socket.emit('error', { message: 'Not a real-money table' }); return; }
+        if (!config.isRealMoney(tableId)) throw new Error('Real-money accounts are unavailable in demo mode');
+        const player = sessionToken && db.getPlayerBySession(sessionToken);
+        if (!player) { socket.emit('auth-error', { message: 'Sign in to withdraw' }); return; }
         const payments = getPayments();
-        if (!payments) { socket.emit('error', { message: 'Real-money is not available right now' }); return; }
-        const playerData = sessionToken ? db.getPlayerBySession(sessionToken) : null;
-        if (!playerData) {
-          socket.emit('error', { message: 'Sign in to cash out' }); return;
-        }
-        const userId = playerData.pubkey_hex;
-        // Cash out the current stack to the Lightning address on their Nostr profile.
-        if (typeof bolt11 !== 'string' || bolt11.length > 10000) throw new Error('Your connected wallet did not supply a valid receiving request');
-        const res = await payments.requestWithdrawal({ userId, tableId, bolt11 });
-        socket.emit('cashout-result', res);
-        if (['succeeded', 'in_flight', 'failed'].includes(res.status)) {
-          // requestWithdrawal already removed the player from the game.
-          socket.leave(`table-${tableId}`);
-          userSockets.delete(userId);
-          socketUsers.delete(socket.id);
-          broadcastGameState(tableId);
-          nostr.scheduleLiveActivityUpdate(tableId, games);
-        }
-        // 'failed' -> refundToPlayer re-seated them; mappings handled there.
-      } catch (e) {
-        socket.emit('error', { message: e.message });
-      }
+        if (!payments) throw new Error('Account wallet is temporarily unavailable');
+        const result = await payments.requestWithdrawal({ userId: player.pubkey_hex, tableId: db.ACCOUNT, bolt11,
+          onReserved: summary => socket.emit('cashout-pending', summary) });
+        socket.emit('cashout-result', result);
+      } catch (error) { socket.emit('error', { message: error.message }); }
     });
 
     socket.on('wallet-state-request', ({ tableId, sessionToken } = {}) => {
       const player = sessionToken && db.getPlayerBySession(sessionToken);
       if (!player || !config.TABLE_CONFIGS[tableId]) return;
-      const payments = getPayments();
-      const funds = payments?.availableFunds(player.pubkey_hex, tableId);
-      socket.emit('wallet-state', { tableId, availableSats: funds?.ok ? funds.stack : 0,
-        error: funds?.error || (!payments ? 'The table wallet is temporarily unavailable. Your funds remain reserved.' : undefined),
-        payments: db.getWalletPayments(player.pubkey_hex, tableId),
-        creditSats: db.getWalletCredit(player.pubkey_hex, tableId),
-        withdrawalsEnabled: !!payments?.withdrawalsEnabled() });
+      try {
+        const payments = getPayments();
+        const availableSats = db.getAccountBalance(player.pubkey_hex);
+        const stack = games.get(tableId)?.players.find(p => p && p.userId === player.pubkey_hex);
+        const tableFunds = stack && games.get(tableId).canCashOut(player.pubkey_hex);
+        socket.emit('wallet-state', { tableId, userId: player.pubkey_hex, availableSats,
+          tableStackSats: stack?.stack || 0, seated: !!stack, canReturnStack: !!tableFunds?.ok,
+          error: !payments ? 'Account wallet is temporarily unavailable. Your balance remains recorded.' : undefined,
+          payments: db.db.prepare("SELECT payment_hash,amount_sats,status FROM ledger_entries WHERE user_id=? AND direction='withdrawal' ORDER BY id DESC LIMIT 20").all(player.pubkey_hex),
+          deposits: db.getWalletDeposits(player.pubkey_hex, db.ACCOUNT).map(row => ({ ...row, expiresAt: row.expires_at || row.created_at + config.LIGHTNING.invoiceExpirySec })),
+          transfers: db.getAccountHistory(player.pubkey_hex),
+          depositsEnabled: !!payments?.depositsEnabled(),
+          creditSats: availableSats, withdrawalsEnabled: !!payments?.withdrawalsEnabled() });
+      } catch (error) { socket.emit('error', { message: error.message }); }
     });
 
     // ==================== DISCONNECT ====================
@@ -769,7 +818,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         if (game) {
           const player = game.players.find(p => p && p.userId === user.userId);
           if (player) {
-            player.disconnected = true;
+            game.setDisconnected(user.userId, true);
             console.log(`${user.userId} disconnected from table ${user.tableId} (socket ${socket.id})`);
 
             socketUsers.delete(socket.id);
@@ -815,104 +864,32 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
   // scope because they act across sockets, not on a single connection.
 
   function findSocketId(userId) {
-    let socketId = userSockets.get(userId) || null;
+    let socketId = authenticatedSocketId(io, userSockets, userId);
     if (!socketId) {
-      for (const [sid, obs] of observerSockets) { if (obs.userId === userId) { socketId = sid; break; } }
+      for (const [sid, obs] of observerSockets) {
+        if (obs.userId === userId && db.getPlayerBySession(io.sockets.sockets.get(sid)?.data?.sessionToken)?.pubkey_hex === userId) {
+          socketId = sid;
+          break;
+        }
+      }
     }
     return socketId;
   }
 
-  // Seat a player after their deposit settles. If their socket isn't connected at
-  // the settlement instant (e.g. they switched to a wallet app to pay and the
-  // socket churned), hold as settled_unseated — it will be CLAIMED automatically
-  // when they reconnect / observe / re-request a buy-in (see claimDeposits).
+  // Legacy table invoices issued before this upgrade settle into the account.
   function seatFromDeposit(row) {
-    // Prefer the exact socket that requested this buy-in; fall back to a userId lookup.
-    const socketId = (buyinSockets.get(row.payment_hash) && io.sockets.sockets.has(buyinSockets.get(row.payment_hash)))
-      ? buyinSockets.get(row.payment_hash)
-      : findSocketId(row.user_id);
-    if (!socketId) {
-      db.updateLedgerStatus(row.id, 'settled_unseated');
-      console.error(`[Wallet] Deposit ${row.payment_hash} settled but ${row.user_id.slice(0, 8)}... not connected yet — held as settled_unseated; will auto-seat on reconnect.`);
-      return;
-    }
-    buyinSockets.delete(row.payment_hash);
-    seatDepositRow(row, socketId);
+    db.getAccountBalance(row.user_id);
+    const socketId = findSocketId(row.user_id);
+    if (socketId) io.to(socketId).emit('account-deposit-confirmed', { amountSats: row.amount_sats });
   }
 
-  // Core seating: put `userId` from a settled deposit `row` into a seat using
-  // `socketId`. Idempotent — if already seated, just marks the row consumed.
-  // Returns true if the player is seated. Used by seatFromDeposit AND claimDeposits.
-  function seatDepositRow(row, socketId) {
-    const { user_id: userId, table_id: tableId, amount_sats: amount } = row;
-    if (!socketId) return false;
-    const playerData = db.getPlayerByPubkey(userId);
-    const displayName = (playerData && (playerData.nostr_name || playerData.username)) || userId.slice(0, 8);
-    ensureGameExists(tableId);
-    const game = games.get(tableId);
-
-    // A second payment is a separate liability, not evidence of a first seating.
-    if (game.players.find(p => p && p.userId === userId)) {
-      return false;
-    }
-
-    let assignedSeat;
-    const beforePlayers = game.players.slice();
-    try {
-      assignedSeat = db.db.transaction(() => {
-      const fresh = db.getLedgerById(row.id);
-      if (!fresh || fresh.status !== 'settled_unseated') return null;
-      const seat = game.addPlayer(userId, displayName, {
-        initialStack: amount,
-        nostrName: playerData && playerData.nostr_name,
-        nostrPicture: playerData && playerData.nostr_picture,
-        lud16: (playerData && playerData.lud16) || null,
-        preferredSeat: typeof row.seat_index === 'number' ? row.seat_index : undefined,
-      });
-      db.updateLedgerStatus(row.id, 'settled');
-      return seat;
-      })();
-      if (assignedSeat === null) return false;
-    } catch (e) {
-      game.players = beforePlayers;
-      io.to(socketId).emit('error', { message: 'Table is full — your deposit will be refunded.' });
-      console.error(`[Wallet][ALERT] Deposit ${row.payment_hash}: seating failed (${e.message}) — settled_unseated`);
-      return false;
-    }
-
-    const sock = io.sockets.sockets.get(socketId);
-    if (sock) sock.join(`table-${tableId}`);
-    observerSockets.delete(socketId);
-    userSockets.set(userId, socketId);
-    socketUsers.set(socketId, { userId, tableId, seatIndex: assignedSeat });
-    io.to(socketId).emit('seat-assigned', { seatIndex: assignedSeat, displayName });
-    io.to(socketId).emit('deposit-confirmed', { tableId, amountSats: amount, paymentHash: row.payment_hash });
-    broadcastGameState(tableId);
-    nostr.scheduleLiveActivityUpdate(tableId, games);
-    console.log(`[Wallet] Seated ${displayName} at ${tableId} seat ${assignedSeat + 1} from deposit ${row.payment_hash.slice(0, 12)}... (${amount} sats)`);
-    return true;
-  }
-
-  // Seat the player from any settled-but-unseated deposit they have on this table.
-  // Called when an authenticated user (re)connects/observes a real-money table or
-  // re-requests a buy-in — makes seating resilient to socket churn while paying.
-  function claimDeposits(userId, tableId, socketId) {
-    if (!config.isRealMoney(tableId) || !userId || !socketId) return false;
-    let claimed = false;
-    for (const row of db.getUnseatedDeposits(userId, tableId)) {
-      if (seatDepositRow(row, socketId)) claimed = true;
-    }
-    return claimed;
-  }
-
-  // Re-credit a player after a DEFINITIVE failed withdrawal — their chips were
-  // removed when the cash-out reserved, so re-seat them with the amount.
+  // A definitive failed payment is restored to the account before notification.
   function refundToPlayer(row) {
     const { user_id: userId, table_id: tableId, amount_sats: amount } = row;
     const socketId = findSocketId(userId);
     if (socketId) io.to(socketId).emit('cashout-failed', { tableId, amountSats: amount,
-      message: 'Payment failed. Your funds are available in Cash out; no new buy-in is needed.' });
-    broadcastGameState(tableId);
+      message: 'Payment failed. Your funds are available in your account balance.' });
+    if (config.TABLE_CONFIGS[tableId]) broadcastGameState(tableId);
   }
 
   return { seatFromDeposit, refundToPlayer, wireGame };

@@ -18,6 +18,12 @@ if (!process.env.ADMIN_TOKEN) {
 const REALMONEY_ENABLED = process.env.REALMONEY_ENABLED === 'true';
 // Kill switch for outbound payments (default ON; set to 'false' to freeze cash-outs).
 const WITHDRAWALS_ENABLED = process.env.WITHDRAWALS_ENABLED !== 'false';
+function integerSetting(name, fallback, min, max = Number.MAX_SAFE_INTEGER) {
+  const raw = process.env[name];
+  const value = raw === undefined ? fallback : /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`Invalid ${name}: expected an integer from ${min} to ${max}`);
+  return value;
+}
 
 const LIGHTNING = {
   network: process.env.LIGHTNING_NETWORK || 'regtest', // regtest | signet | mainnet
@@ -28,13 +34,20 @@ const LIGHTNING = {
   ownPubkey: process.env.LND_OWN_PUBKEY || null, // self-pay-loop guard
   hotWalletCapSats: parseInt(process.env.HOT_WALLET_CAP_SATS || '0', 10),
   maxWithdrawalSats: parseInt(process.env.MAX_WITHDRAWAL_SATS || '0', 10),
-  withdrawalFeeLimitSats: parseInt(process.env.WITHDRAWAL_FEE_LIMIT_SATS || '50', 10),
+  withdrawalFeeLimitSats: integerSetting('WITHDRAWAL_FEE_LIMIT_SATS', 500, 0),
+  withdrawalFeeBaseSats: integerSetting('WITHDRAWAL_FEE_BASE_SATS', 50, 0),
+  withdrawalFeeRatePpm: integerSetting('WITHDRAWAL_FEE_RATE_PPM', 2000, 0, 1000000),
+  feeReserveSats: integerSetting('ROUTING_FEE_RESERVE_SATS', 5000, 0),
+  maxPaymentPaths: integerSetting('LIGHTNING_MAX_PAYMENT_PATHS', 8, 1, 16),
+  paymentTimeoutSec: integerSetting('LIGHTNING_PAYMENT_TIMEOUT_SEC', 60, 1, 300),
+  readTimeoutMs: integerSetting('LND_READ_TIMEOUT_MS', 10000, 100, 60000),
   invoiceExpirySec: parseInt(process.env.INVOICE_EXPIRY_SEC || '600', 10),
 };
 
 // Startup guard: a real-money node must have its Lightning wiring + exposure caps
 // configured. This NEVER trips on the default play-money deploy (REALMONEY_ENABLED unset).
 if (REALMONEY_ENABLED) {
+  if (LIGHTNING.feeReserveSats < LIGHTNING.withdrawalFeeLimitSats) throw new Error('ROUTING_FEE_RESERVE_SATS must cover at least one maximum withdrawal routing fee');
   const required = {
     LND_MACAROON_PATH: LIGHTNING.macaroonPath,
     LND_TLS_CERT_PATH: LIGHTNING.tlsCertPath,
@@ -67,7 +80,7 @@ module.exports = {
   LIGHTNING,
   // True only when the master switch is on AND this table is flagged for real money.
   isRealMoney(tableId) {
-    return REALMONEY_ENABLED && !!(this.TABLE_CONFIGS[tableId] && this.TABLE_CONFIGS[tableId].realMoney);
+    return REALMONEY_ENABLED && typeof tableId === 'string' && Object.hasOwn(this.TABLE_CONFIGS, tableId) && !!this.TABLE_CONFIGS[tableId].realMoney;
   },
   PORT: process.env.PORT || 3001,
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
@@ -78,13 +91,13 @@ module.exports = {
   NUM_SEATS: 6,
 
   // Table definitions
-  TABLE_CONFIGS: {
+  TABLE_CONFIGS: Object.assign(Object.create(null), {
     station100: {
       id: 'station100', route: '/station100', name: 'Station 100', emoji: '',
       smallBlind: 50, bigBlind: 100, minBuyin: 5000, maxBuyin: 10000,
       mode: 'open', minPlayersToStart: 2, realMoney: true,
     },
-  },
+  }),
   DEFAULT_TABLE: 'station100',
 
   // Anti-rathole

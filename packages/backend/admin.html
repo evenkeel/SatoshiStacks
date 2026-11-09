@@ -514,7 +514,8 @@
       <div class="card">
         <h2>Hand History Viewer</h2>
         <div class="search-bar">
-          <input type="text" id="handSearch" placeholder="Enter userId to view their hand history..." />
+          <select id="handSearchType" aria-label="Search histories by"><option value="hand">Hand ID</option><option value="player">Player ID</option></select>
+          <input type="text" id="handSearch" placeholder="Paste a hand ID…" />
           <button class="btn btn-search" onclick="searchHands()">Search</button>
         </div>
         <div id="handHistory"></div>
@@ -863,17 +864,20 @@
     async function searchHands() {
       const userId = document.getElementById('handSearch').value.trim();
       if (!userId) {
-        alert('Please enter a userId');
+        alert('Please enter a hand ID or player ID');
         return;
       }
       
       try {
-        const resp = await fetch(`/api/hands/${userId}`).then(r => r.json());
-        const hands = resp.hands || []; // Unwrap { success, hands } envelope
+        const byHand = document.getElementById('handSearchType').value === 'hand';
+        const response = byHand ? await adminFetch(`/api/admin/hand/${encodeURIComponent(userId)}`) : await fetch(`/api/hands/${encodeURIComponent(userId)}`);
+        const resp = await response.json();
+        if (!response.ok) throw new Error(resp.error || 'History lookup failed');
+        const hands = byHand ? (resp.hand ? [resp.hand] : []) : (resp.hands || []); // Unwrap { success, hands } envelope
         const historyEl = document.getElementById('handHistory');
 
         if (!hands || hands.length === 0) {
-          historyEl.innerHTML = '<div class="empty-state">No hand history found for this user</div>';
+          historyEl.innerHTML = '<div class="empty-state">No matching hand history found</div>';
           return;
         }
 
@@ -881,6 +885,8 @@
           <div class="card">
             <h3>Hand #${esc(hand.hand_id)}</h3>
             <div class="hand-history">${esc(hand.hand_history)}</div>
+            ${hand.players ? `<details><summary>Private cards and player records</summary><pre>${esc(JSON.stringify(hand.players,null,2))}</pre></details>` : ''}
+            ${hand.events ? `<details><summary>Timestamped audit events</summary><pre>${esc(JSON.stringify(hand.events,null,2))}</pre></details>` : ''}
           </div>
         `).join('');
       } catch (error) {
@@ -891,6 +897,7 @@
     // View player hands
     function viewPlayerHands(userId) {
       switchTab('hands'); // Programmatic call — no event, finds tab by onclick attr
+      document.getElementById('handSearchType').value = 'player';
       document.getElementById('handSearch').value = userId;
       searchHands();
     }

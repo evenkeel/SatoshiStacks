@@ -58,8 +58,12 @@ router.post('/challenge', (req, res) => {
     const nonce = crypto.randomBytes(32).toString('hex');
     const expiresAt = Math.floor(Date.now() / 1000) + 300;
 
-    db.createChallenge(challengeId, nonce, expiresAt);
-    res.json({ success: true, challengeId, nonce });
+    const origin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
+    const allowed = config.CORS_ORIGIN.split(',').map(value => value.trim());
+    if (config.CORS_ORIGIN !== '*' && !allowed.includes(origin)) return res.status(403).json({ success: false, error: 'Sign in from the table website' });
+    db.createChallenge(challengeId, nonce, expiresAt, origin);
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, challengeId, nonce, expiresAt });
   } catch (error) {
     console.error('[Auth] Challenge generation error:', error);
     res.status(500).json({ success: false, error: 'Failed to generate challenge' });
@@ -97,6 +101,11 @@ router.post('/verify', validateBody(schemas.authVerify), (req, res) => {
       return res.status(401).json({ success: false, error: 'Challenge nonce mismatch' });
     }
 
+    const siteTag = signedEvent.tags.find(t => Array.isArray(t) && t[0] === 'relay');
+    if (!siteTag || siteTag[1] !== challenge.origin || (req.get('origin') && req.get('origin') !== challenge.origin)) {
+      return res.status(401).json({ success: false, error: 'Sign-in request belongs to a different site' });
+    }
+
     // 4. Verify timestamp (within 5 minutes)
     const now = Math.floor(Date.now() / 1000);
     if (Math.abs(now - signedEvent.created_at) > 300) {
@@ -126,6 +135,7 @@ router.post('/verify', validateBody(schemas.authVerify), (req, res) => {
     }
 
     db.upsertNostrPlayer(pubkeyHex, npub, nostrName, nostrPicture);
+    db.addWalletCredit(pubkeyHex, db.ACCOUNT, 0);
 
     // Generate session token (24h expiry)
     const sessionToken = crypto.randomBytes(32).toString('hex');
@@ -136,6 +146,7 @@ router.post('/verify', validateBody(schemas.authVerify), (req, res) => {
 
     console.log(`[Auth] NOSTR login: ${nostrName || npub.slice(0, 12) + '...'} (${pubkeyHex.slice(0, 8)}...)`);
 
+    res.set('Cache-Control', 'no-store');
     res.json({
       success: true,
       sessionToken,
@@ -145,6 +156,7 @@ router.post('/verify', validateBody(schemas.authVerify), (req, res) => {
         name: player.nostr_name || player.username,
         picture: player.nostr_picture,
         lud16: player.lud16 || null,
+        availableSats: db.getAccountBalance(player.pubkey_hex),
         chips: player.current_chips
       }
     });
@@ -164,7 +176,14 @@ router.post('/verify', validateBody(schemas.authVerify), (req, res) => {
 /**
  * GET /api/auth/session — validate existing session token
  */
+router.post('/logout', (req, res) => {
+  db.revokeSession(req.get('x-session-token'));
+  res.set('Cache-Control', 'no-store');
+  res.json({ success: true });
+});
+
 router.get('/session', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     const token = req.headers['x-session-token'];
     if (!token) {
@@ -184,6 +203,7 @@ router.get('/session', (req, res) => {
         name: player.nostr_name || player.username,
         picture: player.nostr_picture,
         lud16: player.lud16 || null,
+        availableSats: db.getAccountBalance(player.pubkey_hex),
         chips: player.current_chips
       }
     });

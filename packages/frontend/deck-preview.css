@@ -1,0 +1,19 @@
+body.deck-preview { margin: 0; display: block; height: auto; min-height: 100vh; overflow: auto; background: radial-gradient(ellipse at 50% 15%, #263d43, #111e28 75%); color: #f5eedc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; }
+.deck-preview main { max-width: 1120px; margin: auto; padding: 48px 32px 64px; }
+.deck-preview header { position: relative; margin-bottom: 40px; }
+.deck-preview .eyebrow { font-size: 10px; letter-spacing: 3px; color: #d1b67d; }
+.deck-preview h1 { font: 44px Georgia, serif; margin: 14px 0; letter-spacing: -1px; }
+.deck-preview p { color: #b1c5bc; font-size: 13px; line-height: 1.6; }
+.deck-preview a { color: #d1b67d; font-size: 12px; }
+.deck-preview h2 { font: 22px Georgia, serif; margin: 0 0 8px; }
+.deck-feature { display: flex; flex-wrap: wrap; gap: 16px; padding: 32px; background: #0c251e40; border: 1px solid #b9d6b51a; border-radius: 16px; }
+.deck-feature .card { width: 100px; height: 145px; box-shadow: 0 8px 16px #0004; }
+.deck-detail { display: flex; gap: 64px; flex-wrap: wrap; margin: 36px 0; padding-bottom: 32px; border-bottom: 1px solid #b9d6b526; }
+.deck-compact, .deck-phone { display: flex; gap: 6px; }
+.deck-compact .card.small { width: 38px; height: 55px; }
+.deck-phone .card { width: 42px; height: 61px; border-radius: 4px; }
+.deck-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.deck-row .card { width: 70px; height: 101.5px; border-radius: 5px; }
+@media(max-width:600px) { .deck-preview main { padding: 24px 16px; } .deck-preview h1 { font-size: 34px; } .deck-feature { padding: 18px; gap: 10px; } .deck-feature .card { width: 76px; height: 110.2px; } .deck-row .card { width: 56px; height: 81.2px; } }
+
+.deck-preview .deck-brand { display: block; width: 180px; height: auto; margin-bottom: 28px; }

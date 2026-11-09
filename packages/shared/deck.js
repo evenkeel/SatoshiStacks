@@ -20,15 +20,12 @@ function createDeck() {
 
 /**
  * Cryptographically secure shuffle (server-side only)
- * Uses crypto.randomBytes() instead of Math.random()
+ * Uses crypto.randomInt() with rejection sampling to avoid index bias
  */
 function shuffleSecure(deck) {
   const crypto = require('crypto');
   for (let i = deck.length - 1; i > 0; i--) {
-    // Generate secure random index
-    const buf = crypto.randomBytes(4);
-    const rand = buf.readUInt32LE(0) / 0x100000000; // 0.0 to 1.0
-    const j = Math.floor(rand * (i + 1));
+    const j = crypto.randomInt(i + 1);
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
   return deck;

@@ -5,6 +5,8 @@
 
 const { createDeck, shuffleSecure, evaluateHand } = require('../shared');
 const db = require('./database');
+const { randomUUID } = require('node:crypto');
+const { playerHistory } = require('./hand-history');
 
 const NUM_SEATS = 6;
 const BASE_ACTION_MS = 15000;     // 15-second base action timer
@@ -64,6 +66,8 @@ class PokerGame {
 
     // Hand history tracking
     this.currentHandLog = [];
+    this.currentHandEvents = [];
+    this.currentHandId = null;
     this.histSbIdx = -1;
     this.histBbIdx = -1;
 
@@ -77,8 +81,34 @@ class PokerGame {
    * Emit a hand log line — pushes to currentHandLog AND calls onHandLog callback
    * for real-time play-by-play in the client chat
    */
+  getHandId() {
+    return this.currentHandId || (this.handStartedAt ? `${this.tableId}-${this.handStartedAt}-${this.handCount}` : null);
+  }
+
+  recordEvent(type, details = {}) {
+    if (!this.getHandId()) return;
+    this.currentHandEvents.push({ sequence: this.currentHandEvents.length + 1,
+      timestamp: new Date().toISOString(), phase: this.phase, type, ...details });
+  }
+
+  logPlayerStatus(player, text) {
+    if (this.handInProgress && player.participatedThisHand) this.emitLog(`${player.username}: ${text}`, 'status');
+  }
+
+  setDisconnected(userId, disconnected) {
+    const player = this.players.find(p => p && p.userId === userId);
+    if (!player || !!player.disconnected === disconnected) return;
+    player.disconnected = disconnected;
+    if (this.handInProgress && player.participatedThisHand) {
+      this.emitLog(`${player.username}: ${disconnected ? 'disconnected' : 'reconnected'}`, 'connection');
+      this.recordEvent('connection', { userId, disconnected });
+    }
+  }
+
   emitLog(line, type) {
+    line = String(line).replace(/[\r\n\u0000-\u001f\u007f\u2028\u2029]/g, ' ');
     this.currentHandLog.push(line);
+    this.recordEvent('log', { text: line, category: type || 'log' });
     if (this.onHandLog) {
       this.onHandLog(line, type || 'log');
     }
@@ -117,6 +147,11 @@ class PokerGame {
       return existing;
     }
 
+    const initialStack = opts.initialStack ?? this.maxBuyin;
+    if (!Number.isSafeInteger(initialStack) || initialStack < 0) {
+      throw new Error('Initial stack must be a non-negative safe integer');
+    }
+
     // Find seat: use preferred seat if available, otherwise first empty
     let seatIndex = -1;
     if (typeof opts.preferredSeat === 'number' && opts.preferredSeat >= 0 && opts.preferredSeat < NUM_SEATS && this.players[opts.preferredSeat] === null) {
@@ -137,7 +172,7 @@ class PokerGame {
       nostrName: opts.nostrName || null,
       nostrPicture: opts.nostrPicture || null,
       lud16: opts.lud16 || null,
-      stack: opts.initialStack || this.maxBuyin,
+      stack: initialStack,
       holeCards: [],
       folded: joinedMidHand,            // folded if joining mid-hand
       allIn: false,
@@ -154,6 +189,7 @@ class PokerGame {
       sittingOutNextHand: false                // deferred sit-out after timeout
     };
 
+    if (joinedMidHand) this.recordEvent('seat-joined', {userId,username,seatIndex,stack:initialStack});
     console.log(`[PokerGame ${this.tableId}] Assigned ${username} to seat ${seatIndex + 1} (index ${seatIndex})`);
 
     // Start hand if enough players (2+) and no hand scheduled/in progress
@@ -186,17 +222,26 @@ class PokerGame {
     if (this.handInProgress && this.players[idx].participatedThisHand) {
       // Don't null the seat mid-hand — their committed chips stay in the pot
       const player = this.players[idx];
-      player.folded = true;
+      // All-in hands stay live even when their owner leaves.
+      if (!player.folded && !player.allIn && this.phase !== 'showdown') {
+        player.folded = true;
+        player._foldPhase = this.phase;
+        const actionRecord = { action: 'fold', phase: this.phase, amount:0, betTotal:player.currentBet, stackAfter:player.stack, reason:'leave', timestamp:new Date().toISOString() };
+        player.actions.push(actionRecord);
+        this.recordEvent('action', {userId, ...actionRecord});
+        this.emitLog(`${player.username}: folds [left table]`, 'action');
+      }
+      this.emitLog(`${player.username}: leaves table${player.allIn ? ' (all-in hand remains live)' : ''}`, 'status');
       player.sittingOut = true;
       player.disconnected = true;
       player._pendingRemoval = true;
       console.log(`[PokerGame ${this.tableId}] ${player.username} marked for removal after hand`);
 
       // If it was their turn, advance to next player or next phase
-      if (this.currentPlayerIndex === idx) {
+      if (this.phase !== 'showdown' && (this.currentPlayerIndex === idx || this.getActivePlayers().length <= 1 || this.isRoundDone())) {
         this.clearActionTimer();
         this.currentPlayerIndex = this.nextActing(idx);
-        if (this.currentPlayerIndex === -1 || this.isRoundDone()) {
+        if (this.getActivePlayers().length <= 1 || this.currentPlayerIndex === -1 || this.isRoundDone()) {
           this.advancePhase();
         } else {
           this.startActionTimer();
@@ -211,7 +256,14 @@ class PokerGame {
       if (this.onPlayerLeaving && player && !payoutReserved) {
         this.onPlayerLeaving(player.userId, player.stack);
       }
+      if (this.handInProgress) this.recordEvent('seat-left', {userId,seatIndex:idx,stack:freedStack});
       this.players[idx] = null;
+      clearTimeout(this.sitOutKickTimers.get(userId));
+      this.sitOutKickTimers.delete(userId);
+      if (!this.handInProgress && this.players.every(p => p === null)) {
+        clearTimeout(this.handStartTimeout);
+        this.handStartTimeout = null;
+      }
       return freedStack;
     }
     return null; // mid-hand: seat not freed yet (deferred to cleanupPendingRemovals)
@@ -219,8 +271,7 @@ class PokerGame {
 
   /**
    * Whether a player may cash out right now. Withdrawable == their live stack, and
-   * only when NOT committed to a live hand (same predicate as rebuy). Folded players
-   * may cash out (their committed bets already left their stack into the pot).
+   * only when not participating in a live hand, including after folding.
    * @returns {{ok: boolean, stack?: number, error?: string}}
    */
   canCashOut(userId) {
@@ -243,6 +294,8 @@ class PokerGame {
           this.onPlayerLeaving(this.players[i].userId, this.players[i].stack);
         }
         console.log(`[PokerGame ${this.tableId}] Removing ${this.players[i].username} (post-hand cleanup)`);
+        clearTimeout(this.sitOutKickTimers.get(this.players[i].userId));
+        this.sitOutKickTimers.delete(this.players[i].userId);
         this.players[i] = null;
       }
     }
@@ -252,6 +305,9 @@ class PokerGame {
    * Start new hand
    */
   startNewHand() {
+    if (this.handInProgress) return;
+    clearTimeout(this.handStartTimeout);
+    this.handStartTimeout = null;
     // Apply deferred sit-outs FIRST (before setting handInProgress)
     // so the active-count check is accurate and we never deadlock
     this.players.forEach(p => {
@@ -276,6 +332,7 @@ class PokerGame {
     this.handInProgress = true;
     this.handCount++;
     this.handStartedAt = Date.now();
+    this.currentHandId = `SS-${randomUUID()}`;
     this.pot = 0;
     this.potChips = [];
     this.communityCards = [];
@@ -284,6 +341,7 @@ class PokerGame {
     this.lastRaise = this.bigBlind;
     this.lastAggressor = -1;
     this.currentHandLog = [];
+    this.currentHandEvents = [];
 
     // Create and shuffle deck (crypto-secure)
     this.deck = shuffleSecure(createDeck());
@@ -301,6 +359,8 @@ class PokerGame {
         p._hasBet = false;
         p._histShare = 0;
         p.wonPot = false;
+        p.hand = null;
+        p._actedBet = null;
         if (p.sittingOut || p.stack <= 0) {
           p.folded = true;
           p.participatedThisHand = false;
@@ -310,8 +370,8 @@ class PokerGame {
           // Grow time bank every N hands
           p.handsDealtCount = (p.handsDealtCount || 0) + 1;
           if (p.handsDealtCount % TIME_BANK_GROWTH_HANDS === 0) {
-            p.timeBankPreflop = Math.min((p.timeBankPreflop || DEFAULT_TIME_BANK_MS) + TIME_BANK_GROWTH_MS, TIME_BANK_CAP_MS);
-            p.timeBankPostflop = Math.min((p.timeBankPostflop || DEFAULT_TIME_BANK_MS) + TIME_BANK_GROWTH_MS, TIME_BANK_CAP_MS);
+            p.timeBankPreflop = Math.min((p.timeBankPreflop ?? DEFAULT_TIME_BANK_MS) + TIME_BANK_GROWTH_MS, TIME_BANK_CAP_MS);
+            p.timeBankPostflop = Math.min((p.timeBankPostflop ?? DEFAULT_TIME_BANK_MS) + TIME_BANK_GROWTH_MS, TIME_BANK_CAP_MS);
             console.log(`[PokerGame ${this.tableId}] ${p.username} time bank grew to ${p.timeBankPreflop}ms pre / ${p.timeBankPostflop}ms post`);
           }
         }
@@ -353,7 +413,7 @@ class PokerGame {
     const now = new Date();
     const yr = now.getFullYear(), mo = String(now.getMonth()+1).padStart(2,'0'), dy = String(now.getDate()).padStart(2,'0');
     const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0'), ss = String(now.getSeconds()).padStart(2,'0');
-    this.emitLog(`Satoshi Stacks Hand #${this.handCount}: Hold'em No Limit (${this.smallBlind}/${this.bigBlind}) - ${yr}/${mo}/${dy} ${hh}:${mm}:${ss}`, 'header');
+    this.emitLog(`Satoshi Stacks Hand #${this.getHandId()}: Hold'em No Limit (${this.smallBlind}/${this.bigBlind}) - ${yr}/${mo}/${dy} ${hh}:${mm}:${ss}`, 'header');
     this.emitLog(`Table 'Satoshi Stacks' 6-max Seat #${this.dealerSeat + 1} is the button`, 'header');
     for (let i = 0; i < NUM_SEATS; i++) {
       const p = this.players[i];
@@ -367,6 +427,7 @@ class PokerGame {
     if (sbP) { this.emitLog(`${sbP.username}: posts small blind ${Math.min(this.smallBlind, sbP.stack + sbP.currentBet)}`, 'action'); sbP._hasBet = true; }
     if (bbP) { this.emitLog(`${bbP.username}: posts big blind ${Math.min(this.bigBlind, bbP.stack + bbP.currentBet)}`, 'action'); bbP._hasBet = true; }
     this.emitLog(`*** HOLE CARDS ***`, 'phase');
+    this.recordEvent('deal', { players: this.players.filter(p => p?.participatedThisHand).map(p => ({userId:p.userId,seat:p.seatIndex,cards:[...p.holeCards],startingStack:p.startingStack})) });
     // Emit per-player "Dealt to" lines (each player only sees their own cards)
     if (this.onDealCards) {
       this.players.forEach((p, i) => {
@@ -383,13 +444,14 @@ class PokerGame {
     // Heads-up: dealer/SB acts first preflop
     // Multi-way: player after BB acts first preflop
     if (isHeadsUp) {
-      this.currentPlayerIndex = sbSeat; // dealer/SB acts first in HU
+      this.currentPlayerIndex = this.players[sbSeat].allIn ? this.nextActing(sbSeat) : sbSeat;
     } else {
       this.currentPlayerIndex = this.nextActing(bbSeat);
     }
 
-    // Start action timer for first player
-    this.startActionTimer();
+    // Forced blinds can exhaust every stack before anyone acts.
+    if (this.currentPlayerIndex === -1 || this.isRoundDone()) this.advancePhase();
+    else this.startActionTimer();
 
     // Snapshot for crash recovery (after blinds posted, before first action)
     this.saveSnapshot();
@@ -399,11 +461,21 @@ class PokerGame {
    * Process player action
    * @returns {object} { valid: boolean, error?: string }
    */
-  processAction(userId, action, amount = 0) {
+  processAction(userId, action, amount = 0, { actionId, handCount } = {}) {
+    if (handCount !== undefined && handCount !== this.handCount) {
+      return { valid: false, error: 'Action belongs to a different hand' };
+    }
+    if (actionId !== undefined && (typeof actionId !== 'string' || !actionId || actionId.length > 128)) {
+      return { valid: false, error: 'Invalid action ID' };
+    }
+    const actionKey = actionId === undefined ? null : `${userId}:${actionId}`;
+    if (actionKey && this.processedActionIds.has(actionKey)) return { valid: true };
+
     if (!this.handInProgress) return { valid: false, error: 'No hand in progress' };
+    if (this.phase === 'showdown') return { valid: false, error: 'Betting is closed' };
 
     // Sanitize amount — must be a finite non-negative number
-    amount = Number(amount);
+    if (typeof amount !== 'number') return { valid: false, error: 'Invalid action amount' };
     if (!Number.isFinite(amount) || amount < 0) amount = 0;
     amount = Math.floor(amount);
 
@@ -418,7 +490,13 @@ class PokerGame {
 
     const idx = player.seatIndex;
     const maxBet = this.getMaxBet();
+    const betBeforeAction = player.currentBet;
     const prevMaxBet = maxBet; // capture before action for history logging
+    if (action === 'raise') {
+      amount = Math.min(amount, player.currentBet + player.stack);
+      if ((amount <= maxBet && amount === player.currentBet + player.stack) ||
+          (amount > maxBet && !this.players.some(p => p && p !== player && !p.folded && !p.allIn && !p.sittingOut))) action = 'call';
+    }
 
     // Validate action BEFORE touching timers — invalid actions must not
     // reset the timer (prevents stall exploit via repeated bad actions)
@@ -433,6 +511,9 @@ class PokerGame {
       case 'call':
         break; // always valid if it's your turn
       case 'raise': {
+        if (!this.canPlayerRaise(player)) {
+          return { valid: false, error: 'Betting has not reopened; call or fold' };
+        }
         let raiseTotal = amount;
         if (raiseTotal <= maxBet) {
           return { valid: false, error: 'Raise must be higher than current bet' };
@@ -453,6 +534,8 @@ class PokerGame {
       default:
         return { valid: false, error: 'Invalid action' };
     }
+
+    if (actionKey) this.processedActionIds.add(actionKey);
 
     // Action is valid — now deduct time bank and clear timer
     this.deductTimeBank(player);
@@ -529,7 +612,7 @@ class PokerGame {
 
         // Only reopen action if the raise meets the minimum increment.
         // A short all-in above the current bet but below the min raise
-        // does NOT reopen — previous actors are not forced to act again.
+        // does not reopen raising, but previous actors must still call or fold.
         const raiseIncrement = player.currentBet - maxBet;
         const minRaiseIncrement = Math.max(this.bigBlind, this.lastRaise);
         if (raiseIncrement >= minRaiseIncrement) {
@@ -538,14 +621,19 @@ class PokerGame {
           this.actedThisRound = [player.seatIndex]; // Reset — full raise reopens
         }
         // If short all-in: lastRaise/lastAggressor/actedThisRound stay as-is,
-        // so players who already acted are NOT forced to act again.
+        // so their raise rights depend on the cumulative increase faced.
         break;
       }
     }
 
     // Record action for hand history / analytics
-    player.actions.push({ action, phase: this.phase });
+    const actionRecord = { action, phase: this.phase, amount: player.currentBet - betBeforeAction,
+      betTotal: player.currentBet, stackAfter: player.stack, allIn: player.allIn,
+      timestamp: new Date().toISOString() };
+    player.actions.push(actionRecord);
+    this.recordEvent('action', { userId, ...actionRecord });
 
+    player._actedBet = Math.max(maxBet, player.currentBet);
     this.actedThisRound.push(player.seatIndex);
 
     // If only one player remains (everyone else folded), end immediately
@@ -580,6 +668,7 @@ class PokerGame {
     p.stack -= actualAmount;
     p.currentBet += actualAmount;
     p.totalInvested += actualAmount;
+    this.recordEvent('chips-committed', {userId:p.userId, amount:actualAmount, betTotal:p.currentBet, stackAfter:p.stack});
 
     if (p.stack === 0) {
       p.allIn = true;
@@ -590,6 +679,7 @@ class PokerGame {
    * Advance to next phase
    */
   advancePhase() {
+    if (!this.handInProgress || this.phase === 'showdown') return;
     this.collectBetsToPot();
     this.actedThisRound = [];
     this.lastRaise = this.bigBlind;
@@ -649,6 +739,9 @@ class PokerGame {
    * Reveals hole cards first, then deals each street with delays.
    */
   dramaticRunOut() {
+    if (!this.handInProgress || this.runoutTimeouts?.length) return;
+    this.clearActionTimer();
+    this.currentPlayerIndex = -1;
     const prevLen = this.communityCards.length;
 
     // Phase 0: Set showdown phase to reveal hole cards to all players
@@ -719,6 +812,8 @@ class PokerGame {
    * End hand and award pot
    */
   endHand() {
+    if (!this.handInProgress) return;
+    this.currentPlayerIndex = -1;
     this.handInProgress = false;
     this.clearActionTimer(); // Clear any pending timeout
     this.clearRunoutTimeouts(); // Clear any dramatic runout timeouts
@@ -734,6 +829,7 @@ class PokerGame {
       if (active.length === 1) {
         const winAmount = this.pot;
         active[0].stack += this.pot;
+        this.recordEvent('payout', {userId:active[0].userId, amount:this.pot, pot:'pot', stackAfter:active[0].stack});
         active[0]._histShare = winAmount;
         winners = [active[0]];
         this.emitLog(`${active[0].username} collected ${winAmount} from pot`, 'winner');
@@ -763,14 +859,15 @@ class PokerGame {
 
         // Sort winners by seat position left of dealer for remainder distribution
         const sorted = [...potWinners].sort((a, b) => {
-          const aDist = (a.seatIndex - this.dealerSeat + NUM_SEATS) % NUM_SEATS;
-          const bDist = (b.seatIndex - this.dealerSeat + NUM_SEATS) % NUM_SEATS;
+          const aDist = (a.seatIndex - this.dealerSeat - 1 + NUM_SEATS) % NUM_SEATS;
+          const bDist = (b.seatIndex - this.dealerSeat - 1 + NUM_SEATS) % NUM_SEATS;
           return aDist - bDist;
         });
 
         sorted.forEach((w, i) => {
           const extra = i < remainder ? 1 : 0;
           w.stack += share + extra;
+          this.recordEvent('payout', {userId:w.userId, amount:share+extra, pot:potName, stackAfter:w.stack});
           w._histShare = (w._histShare || 0) + share + extra;
           if (!winners.includes(w)) winners.push(w);
         });
@@ -790,8 +887,8 @@ class PokerGame {
       potResults.forEach(({ pot, potWinners, share, potName }) => {
         const remainder = pot.amount - share * potWinners.length;
         const sorted = [...potWinners].sort((a, b) => {
-          const aDist = (a.seatIndex - this.dealerSeat + NUM_SEATS) % NUM_SEATS;
-          const bDist = (b.seatIndex - this.dealerSeat + NUM_SEATS) % NUM_SEATS;
+          const aDist = (a.seatIndex - this.dealerSeat - 1 + NUM_SEATS) % NUM_SEATS;
+          const bDist = (b.seatIndex - this.dealerSeat - 1 + NUM_SEATS) % NUM_SEATS;
           return aDist - bDist;
         });
         sorted.forEach((w, i) => {
@@ -852,17 +949,13 @@ class PokerGame {
 
     // === Finish hand history — emit personalized log per player ===
     // Insert "Dealt to <name> [cards]" after "*** HOLE CARDS ***" for each player
+    this.recordEvent('settlement', {players:this.players.filter(p => p?.participatedThisHand).map(p => ({userId:p.userId,startingStack:p.startingStack,endingStack:p.stack,invested:p.totalInvested}))});
     const baseLog = [...this.currentHandLog];
     this.emitLog('', 'finish'); // blank line separator
     if (this.onHandComplete) {
-      const holeIdx = baseLog.findIndex(l => l === '*** HOLE CARDS ***');
       this.players.forEach(p => {
         if (!p || !p.participatedThisHand || p.holeCards.length !== 2) return;
-        const personalLog = [...baseLog];
-        if (holeIdx !== -1) {
-          personalLog.splice(holeIdx + 1, 0, `Dealt to ${p.username} ${this.cardsStr(p.holeCards)}`);
-        }
-        this.onHandComplete(p.userId, personalLog.join('\n'));
+        this.onHandComplete(p.userId, playerHistory(baseLog.join('\n'), {username:p.username,hole_cards:p.holeCards}), this.getHandId());
       });
     }
 
@@ -900,10 +993,9 @@ class PokerGame {
       const stillActive = this.players.filter(p => p !== null && p.stack > 0 && !p.sittingOut);
       if (stillActive.length >= 2) {
         this.startNewHand();
-        if (this.onStateChange) {
-          this.onStateChange();
-        }
       }
+      if (this.onStateChange) this.onStateChange();
+      if (this.onTableMaybeEmpty) this.onTableMaybeEmpty();
     }, nextHandDelay);
   }
 
@@ -914,7 +1006,7 @@ class PokerGame {
    */
   saveHandToDatabase(startTime, winners) {
     try {
-      const handId = `${this.tableId}-${startTime}-${this.handCount}`;
+      const handId = this.getHandId();
       const completedAt = Math.floor(Date.now() / 1000);
       const startedAt = Math.floor(startTime / 1000);
 
@@ -967,6 +1059,7 @@ class PokerGame {
         rake: 0,
         community_cards: this.communityCards,
         hand_history: handHistoryText,
+        events: this.currentHandEvents,
         players: playerData
       };
 
@@ -1027,8 +1120,8 @@ class PokerGame {
    */
   getPositionName(seatIndex) {
     if (seatIndex === this.dealerSeat) return 'BTN';
-    if (seatIndex === (this.dealerSeat + 1) % NUM_SEATS) return 'SB';
-    if (seatIndex === (this.dealerSeat + 2) % NUM_SEATS) return 'BB';
+    if (seatIndex === this.histSbIdx) return 'SB';
+    if (seatIndex === this.histBbIdx) return 'BB';
     return `UTG+${(seatIndex - this.dealerSeat - 3 + NUM_SEATS) % NUM_SEATS}`;
   }
 
@@ -1063,6 +1156,11 @@ class PokerGame {
       prevLevel = level;
     }
 
+    // Departures can forfeit a matched side pot after every contributor has
+    // folded. Keep that dead money with the highest remaining live tier.
+    const invested = this.players.reduce((sum, p) => sum + (p?.totalInvested || 0), 0);
+    const allocated = pots.reduce((sum, pot) => sum + pot.amount, 0);
+    if (pots.length && invested > allocated) pots[pots.length - 1].amount += invested - allocated;
     return pots;
   }
 
@@ -1122,6 +1220,21 @@ class PokerGame {
    * Every chip is always accounted for.
    */
   collectBetsToPot() {
+    // An unmatched portion is returned, never counted as a side-pot win.
+    const bettors = this.players.filter(p => p && p.currentBet > 0)
+      .sort((a, b) => b.currentBet - a.currentBet);
+    if (bettors.length) {
+      const player = bettors[0];
+      const uncalled = player.currentBet - (bettors[1]?.currentBet || 0);
+      if (uncalled > 0 && !player.folded) {
+        player.currentBet -= uncalled;
+        player.totalInvested -= uncalled;
+        player.stack += uncalled;
+        player.allIn = player.stack === 0;
+        this.recordEvent('refund', {userId:player.userId, amount:uncalled, stackAfter:player.stack});
+        this.emitLog(`Uncalled bet (${uncalled}) returned to ${player.username}`, 'action');
+      }
+    }
     for (const p of this.players) {
       if (p && p.currentBet > 0) {
         const chips = PokerGame.getChipBreakdown(p.currentBet);
@@ -1142,8 +1255,14 @@ class PokerGame {
    * @returns {object} Filtered game state
    */
   getGameState(userId) {
+    const own = this.players.find(p => p && p.userId === userId && p.participatedThisHand);
+    const history = this.currentHandLog.join('\n').trimEnd();
     return {
       tableId: this.tableId,
+      handId: this.getHandId(),
+      handStartedAt: this.handStartedAt,
+      currentHandHistoryPersonal: !!own,
+      currentHandHistory: own ? playerHistory(history, {username:own.username,hole_cards:own.holeCards}) : history,
       players: this.players.map((p, idx) => {
         if (!p) return null;
         
@@ -1170,29 +1289,35 @@ class PokerGame {
             ? p.holeCards
             : p.holeCards.length > 0 ? ['??', '??'] : [],
           hand: (this.phase === 'showdown' && !p.folded) ? p.hand : null,
-          wonPot: p.wonPot || false
+          wonPot: p.wonPot || false,
+          canRaise: this.handInProgress && this.phase !== 'showdown' && this.canPlayerRaise(p)
         };
       }),
       communityCards: this.communityCards,
       pot: this.pot,
       potChips: this.potChips, // Individual chip denomination objects for visual pile
       dealerSeat: this.dealerSeat,
+      smallBlindSeat: this.histSbIdx,
+      bigBlindSeat: this.histBbIdx,
       currentPlayerIndex: this.currentPlayerIndex,
       phase: this.phase,
       handInProgress: this.handInProgress,
+      handCount: this.handCount,
       smallBlind: this.smallBlind,
       bigBlind: this.bigBlind,
       minBuyin: this.minBuyin,
       maxBuyin: this.maxBuyin,
       realMoney: this.realMoney,
       lastRaise: this.lastRaise,
-      yourTurn: this.players[this.currentPlayerIndex]?.userId === userId
+      currentBetToCall: this.getMaxBet(),
+      yourTurn: this.handInProgress && this.phase !== 'showdown' && this.players[this.currentPlayerIndex]?.userId === userId
     };
   }
 
   // Helper methods
   getMaxBet() {
-    return Math.max(...this.players.filter(p => p).map(p => p.currentBet), 0);
+    return Math.max(...this.players.filter(p => p).map(p => p.currentBet),
+      this.handInProgress && this.phase === 'preflop' ? this.bigBlind : 0);
   }
 
   getActivePlayers() {
@@ -1229,20 +1354,28 @@ class PokerGame {
       const idx = (current + i) % NUM_SEATS;
       const p = this.players[idx];
       if (p && !p.folded && !p.allIn && !p.sittingOut) {
-        // Check if this player has already acted this round
-        if (this.actedThisRound.includes(p.seatIndex) && this.lastAggressor !== -1) {
-          continue;
-        }
-        return idx;
+        if (!this.actedThisRound.includes(p.seatIndex) || p.currentBet < this.getMaxBet()) return idx;
       }
     }
     return -1; // No one left to act
+  }
+
+  canPlayerRaise(player) {
+    if (player.folded || player.allIn || player.sittingOut) return false;
+    const maxBet = this.getMaxBet();
+    const opponentCanBet = this.players.some(p => p && p !== player && !p.folded && !p.allIn && !p.sittingOut);
+    if (!opponentCanBet || player.stack + player.currentBet <= maxBet) return false;
+    return !this.actedThisRound.includes(player.seatIndex) || player._actedBet === 0 ||
+      maxBet - (player._actedBet ?? player.currentBet) >= Math.max(this.bigBlind, this.lastRaise);
   }
 
   isRoundDone() {
     const acting = this.getActingPlayers();
     const maxBet = this.getMaxBet();
     
+    // No betting into a dry side pot: the lone actor only responds if owing chips.
+    if (acting.length <= 1) return acting.every(p => p.currentBet >= maxBet);
+
     // Round is done if all acting players have:
     // 1. Acted this round
     // 2. Matched the current bet
@@ -1262,10 +1395,10 @@ class PokerGame {
     this.clearActionTimer();
 
     const playerIndex = this.currentPlayerIndex;
-    if (playerIndex === -1) return;
+    if (!this.handInProgress || this.phase === 'showdown' || playerIndex === -1) return;
 
     const player = this.players[playerIndex];
-    if (!player || player.sittingOut) return;
+    if (!player || player.sittingOut || player.folded || player.allIn) return;
 
     // Determine which time bank pool to use
     const isPreflop = this.phase === 'preflop';
@@ -1375,6 +1508,7 @@ class PokerGame {
    * 1 timeout = sit out next hand.
    */
   handleTimeout(playerIndex) {
+    if (!this.handInProgress || this.phase === 'showdown') return;
     // SAFETY GUARD: Verify this is actually the current player
     if (this.currentPlayerIndex !== playerIndex) {
       console.log(`[PokerGame ${this.tableId}] handleTimeout called for seat ${playerIndex} but current is ${this.currentPlayerIndex} — ignoring stale callback`);
@@ -1399,10 +1533,15 @@ class PokerGame {
       this.emitLog(`${player.username}: folds [timeout]`, 'action');
     }
 
+    const actionRecord = { action: canCheck ? 'check' : 'fold', phase: this.phase, amount: 0, betTotal: player.currentBet, stackAfter: player.stack, timeout: true, timestamp: new Date().toISOString() };
+    player.actions.push(actionRecord);
+    this.recordEvent('action', {userId: player.userId, ...actionRecord});
+
     // 1 timeout = sit out next hand
     player.sittingOutNextHand = true;
     console.log(`[PokerGame ${this.tableId}] ${player.username} will sit out next hand (timeout)`);
 
+    player._actedBet = maxBet;
     this.actedThisRound.push(player.seatIndex);
 
     // If only one player remains after a timeout fold, end immediately
@@ -1463,6 +1602,7 @@ class PokerGame {
     if (!player.sittingOut) return { success: false, error: 'Not sitting out' };
 
     player.sittingOut = false;
+    this.logPlayerStatus(player, 'returns to table for next hand');
     player.sitOutTime = null;
     player.sittingOutNextHand = false; // Cancel pending sit-out too
 
@@ -1500,6 +1640,7 @@ class PokerGame {
     // Toggle: if already set to sit out next hand, cancel it
     if (player.sittingOutNextHand) {
       player.sittingOutNextHand = false;
+      this.logPlayerStatus(player, 'cancels sit out next hand');
       console.log(`[PokerGame ${this.tableId}] ${player.username} cancelled voluntary sit-out`);
       return { success: true, cancelled: true };
     }
@@ -1507,12 +1648,14 @@ class PokerGame {
     // If hand is in progress and player is still active, defer to next hand
     if (this.handInProgress && player.participatedThisHand && !player.folded) {
       player.sittingOutNextHand = true;
+      this.logPlayerStatus(player, 'will sit out next hand');
       console.log(`[PokerGame ${this.tableId}] ${player.username} will sit out next hand (voluntary)`);
       return { success: true, deferred: true };
     }
 
     // Otherwise sit out immediately
     player.sittingOut = true;
+    this.logPlayerStatus(player, 'sits out');
     player.sitOutTime = Date.now();
     this.startSitOutKickTimer(userId);
     console.log(`[PokerGame ${this.tableId}] ${player.username} sat out (voluntary)`);
@@ -1544,8 +1687,14 @@ class PokerGame {
       return { success: false, error: 'Stack is already at or above max buy-in' };
     }
 
+    if (amount !== undefined && (!Number.isSafeInteger(amount) || amount < 0)) {
+      return { success: false, error: 'Buy-in must be a non-negative safe integer' };
+    }
     const buyIn = typeof amount === 'number' ? Math.max(this.minBuyin, Math.min(this.maxBuyin, Math.floor(amount))) : this.maxBuyin;
+    if (buyIn <= player.stack) return { success: false, error: 'Buy-in must increase your stack' };
+    const addedChips = buyIn - player.stack;
     player.stack = buyIn;
+    this.logPlayerStatus(player, `adds ${addedChips} chips (stack ${buyIn})`);
     player.busted = false;
     player.sittingOut = false;
     // Cancel kick timer since player is back
@@ -1604,6 +1753,7 @@ class PokerGame {
           participatedThisHand: p.participatedThisHand,
           startingStack: p.startingStack,
           actions: p.actions,
+          _actedBet: p._actedBet,
           _foldPhase: p._foldPhase,
           _hasBet: p._hasBet,
           _histShare: p._histShare,
@@ -1630,6 +1780,8 @@ class PokerGame {
       handStartedAt: this.handStartedAt,
       lastAggressor: this.lastAggressor,
       currentHandLog: [...this.currentHandLog],
+      currentHandId: this.getHandId(),
+      currentHandEvents: this.currentHandEvents.map(event => structuredClone(event)),
       histSbIdx: this.histSbIdx,
       histBbIdx: this.histBbIdx,
       processedActionIds: [...(this.processedActionIds || [])],
@@ -1674,13 +1826,14 @@ class PokerGame {
         participatedThisHand: p.participatedThisHand,
         startingStack: p.startingStack,
         actions: p.actions || [],
+        _actedBet: p._actedBet,
         _foldPhase: p._foldPhase,
         _hasBet: p._hasBet,
         _histShare: p._histShare,
         wonPot: p.wonPot || false,
         _pendingRemoval: p._pendingRemoval || false,
-        timeBankPreflop: p.timeBankPreflop || DEFAULT_TIME_BANK_MS,
-        timeBankPostflop: p.timeBankPostflop || DEFAULT_TIME_BANK_MS,
+        timeBankPreflop: p.timeBankPreflop ?? DEFAULT_TIME_BANK_MS,
+        timeBankPostflop: p.timeBankPostflop ?? DEFAULT_TIME_BANK_MS,
         handsDealtCount: p.handsDealtCount || 0,
         sittingOutNextHand: p.sittingOutNextHand || false,
         busted: p.busted || false
@@ -1701,6 +1854,8 @@ class PokerGame {
     game.handStartedAt = snapshot.handStartedAt || Date.now();
     game.lastAggressor = snapshot.lastAggressor;
     game.currentHandLog = snapshot.currentHandLog || [];
+    game.currentHandId = snapshot.currentHandId || (snapshot.handStartedAt ? `${snapshot.tableId}-${snapshot.handStartedAt}-${snapshot.handCount}` : null);
+    game.currentHandEvents = snapshot.currentHandEvents || [];
     game.histSbIdx = snapshot.histSbIdx;
     game.histBbIdx = snapshot.histBbIdx;
     game.processedActionIds = new Set(snapshot.processedActionIds || []);
@@ -1714,7 +1869,7 @@ class PokerGame {
    */
   saveSnapshot() {
     if (!this.handInProgress && !this.realMoney) return;
-    const handId = `${this.tableId}-${this.handStartedAt}`;
+    const handId = this.getHandId() || `${this.tableId}-idle`;
     try {
       db.saveHandSnapshot(this.tableId, handId, this.serializeState());
     } catch (error) {
@@ -1728,7 +1883,7 @@ class PokerGame {
 // also covers idle tables and the last hand before a restart. SQLite nested
 // transactions compose with deposit consumption and withdrawal reservation.
 for (const name of ['addPlayer', 'removePlayer', 'cleanupPendingRemovals', 'startNewHand',
-  'processAction', 'advancePhase', 'endHand', 'voluntarySitOut', 'sitBackIn', 'handleTimeout']) {
+  'processAction', 'advancePhase', 'endHand', 'voluntarySitOut', 'sitBackIn', 'handleTimeout', 'setDisconnected']) {
   const mutate = PokerGame.prototype[name];
   if (!mutate) continue;
   PokerGame.prototype[name] = function (...args) {

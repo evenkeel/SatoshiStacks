@@ -162,17 +162,19 @@ test('rejects a sub-minimum raise when the player keeps chips behind', () => {
   assert.match(res.error, /minimum raise is 200/i);
 });
 
-test('a short all-in below a full raise does NOT reopen action', () => {
-  // button raises to 200, SB calls, BB jams all-in to 250 (increment 50 < the
-  // 100 minimum increment). The already-acted button/SB are NOT given the
-  // option to re-raise — the preflop round closes and the hand reaches the flop.
-  const g = startedGame([250, 10000, 10000]); // seat0 (BB) total = 250
+test('a short all-in requires calls without reopening raises', () => {
+  const g = startedGame([250, 10000, 10000]);
   assert.equal(actAs(g, 1, 'raise', 200).valid, true);
   assert.equal(actAs(g, 2, 'call').valid, true);
-  const res = actAs(g, 0, 'raise', 250);
-  assert.equal(res.valid, true);
-  assert.equal(g.players[0].allIn, true);
-  assert.equal(g.phase, 'flop', 'preflop betting closed without reopening');
+  assert.equal(actAs(g, 0, 'raise', 250).valid, true);
+  assert.equal(g.phase, 'preflop', 'players still owe 50');
+  assert.equal(g.currentPlayerIndex, 1);
+  assert.match(actAs(g, 1, 'raise', 400).error, /not reopened/i);
+  assert.equal(actAs(g, 1, 'call').valid, true);
+  assert.equal(g.currentPlayerIndex, 2);
+  assert.equal(actAs(g, 2, 'call').valid, true);
+  assert.equal(g.phase, 'flop');
+  assert.equal(g.pot, 750);
 });
 
 test('a full re-raise DOES reopen action for players who already acted', () => {
