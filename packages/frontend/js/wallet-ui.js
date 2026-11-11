@@ -2,7 +2,7 @@
 (function(root) {
   'use strict';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const fmt = value => Number(value || 0).toLocaleString();
+  const fmt = (typeof module === 'object' && module.exports ? require('./amounts') : root.StacksAmounts).format;
   const labels = { reserved:'Preparing payment', in_flight:'Payment pending', succeeded:'Paid', failed:'Restoring balance', refunded:'Returned to your balance' };
   function cashoutHTML(state) {
     const history = (state.payments || []).slice(0,5);

@@ -16,14 +16,14 @@
 <link rel="stylesheet" href="/club.css?v=4">
 <link rel="stylesheet" href="/motion.css?v=2">
 <link rel="stylesheet" href="/table-layout.css?v=8">
-<link rel="stylesheet" href="/bunker.css?v=12">
+<link rel="stylesheet" href="/bunker.css?v=16">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
 <header class="account-bar" aria-label="Account and wallet">
   <div class="table-identity">
     <a class="brand-link" href="/" aria-label="Satoshi Stacks home"><img class="brand-wordmark" src="/img/table-wordmark.svg?v=7" alt="Satoshi Stacks" width="156" height="66"></a>
-    <div class="table-meta"><div class="table-title"><strong>Station 100</strong><span class="seat-count" id="seatCount">0 / 6 seated</span></div><span id="tableModeLabel">50 / 100 · 6 seats</span></div>
+    <div class="table-meta"><div class="table-title"><strong>Station 100</strong><span class="seat-count" id="seatCount">0 / 6 seated</span></div><span id="tableModeLabel">₿ 50 / ₿ 100 · 6 seats</span></div>
   </div>
 <nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="editProfileBtn" data-action="edit-profile" hidden>Edit profile</button><button id="walletConnectBtn" data-action="connect-wallet">Connect Lightning wallet</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Account balance</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button></nav>
 </header>
@@ -56,7 +56,7 @@
 <div class="table-pot-chips" id="tablePotChips"></div>
 <div class="community-cards" id="communityCards"></div>
 <div class="table-pot-label" id="tablePotLabel">
-<span class="pot-label">Pot: <span id="tablePotAmount">0</span></span>
+<span class="pot-label">Pot: <span id="tablePotAmount">₿ 0</span></span>
 </div>
 <!-- Player nameplates -->
 <div class="player-nameplate np-pos-1 empty-np" id="nameplate-1"></div>
@@ -233,7 +233,7 @@
     <div id="profilePurchaseFields" hidden>
       <p class="profile-note" id="profilePurchaseInfo"></p>
       <p class="profile-note" id="profilePurchaseAvailability"></p>
-      <label class="login-backup-check"><input id="profilePurchaseConfirm" type="checkbox"> I authorize a one-time payment of 10,000 sats from my account balance for this username.</label>
+      <label class="login-backup-check"><input id="profilePurchaseConfirm" type="checkbox"> I authorize a one-time payment of ₿ 10,000 sats from my account balance for this username.</label>
       <button class="wallet-btn secondary" type="button" id="profileFund" hidden>Add sats to account</button>
     </div>
     <label for="profilelightningAddress">Receive Lightning payments (optional)</label>
@@ -250,7 +250,7 @@
 <div class="buyin-card">
 <div class="buyin-title" id="buyinHeading">Choose your buy-in</div>
 <div class="buyin-subtitle">Slide to set your starting stack</div>
-<div class="buyin-amount" id="buyinAmountDisplay">10,000</div>
+<div class="buyin-amount" id="buyinAmountDisplay">₿ 10,000</div>
 <div class="buyin-unit">playsats</div>
 <input type="range" class="buyin-slider" id="buyinSlider" aria-label="Starting stack" min="2000" max="10000" step="500" value="10000">
 <div class="buyin-btns">
@@ -279,13 +279,14 @@
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/providers.js?v=21"></script>
 <script src="/js/cards.js?v=22"></script>
-<script src="/js/wallet-ui.js?v=4"></script>
+<script src="/js/amounts.js?v=2"></script>
+<script src="/js/wallet-ui.js?v=5"></script>
 <script src="/js/local-account.js?v=2"></script>
-<script src="/js/profile.js?v=2"></script>
+<script src="/js/profile.js?v=4"></script>
 <script src="/js/table-motion.js?v=3"></script>
 <script src="/js/pot-pile.js?v=3"></script>
-<script src="/js/app.js?v=38"></script>
-<script src="/js/desktop-table.js?v=2"></script>
+<script src="/js/app.js?v=42"></script>
+<script src="/js/desktop-table.js?v=3"></script>
 <script src="/js/table-themes.js?v=6"></script>
 </body>
 </html>

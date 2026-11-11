@@ -277,7 +277,8 @@ const tableMotion = window.StacksTableMotion.create({
   chipHTML: amount => renderChipStack(amount, 24, 3),
 });
 
-function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : '0'; }
+function fmt(n) { return window.StacksAmounts.format(n); }
+function fmtNumber(n) { return Number(n || 0).toLocaleString(); }
 
 // ============================================================
 //  GUI ROTATION — player always sees themselves at position 3
@@ -888,7 +889,7 @@ function updateWalletButtons() {
   const account = $('accountSignIn');
   if (account) { account.textContent = myUserId ? myUsername : 'Sign in with Nostr'; account.disabled = !!myUserId; }
   const cashout = $('recoverFundsBtn');
-  if (cashout) { cashout.hidden = !myUserId || !isRealMoneyTable(); cashout.textContent = `Account · ${Number(availableCashoutSats || 0).toLocaleString()} sats`; }
+  if (cashout) { cashout.hidden = !myUserId || !isRealMoneyTable(); cashout.textContent = `Account · ${fmt(availableCashoutSats || 0)} sats`; }
   const signOut = $('accountSignOut');
   if (signOut) signOut.hidden = !myUserId;
   if ($('editProfileBtn')) $('editProfileBtn').hidden = !myUserId;
@@ -1155,7 +1156,7 @@ function setupCommonSocketHandlers() {
     tableMotion.play(prevGameState, gameState, motionBefore);
     updateWalletButtons();
     const mode = $('tableModeLabel');
-    if (mode) mode.textContent = `${state.realMoney ? 'Real sats' : 'Demo chips'} · ${state.smallBlind} / ${state.bigBlind} · Buy-in ${fmt(state.minBuyin)}–${fmt(state.maxBuyin)}`;
+    if (mode) mode.textContent = `${state.realMoney ? 'Real sats' : 'Demo chips'} · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)} · Buy-in ${fmt(state.minBuyin)}–${fmt(state.maxBuyin)}`;
     requestWalletState();
   });
 
@@ -1201,7 +1202,7 @@ function setupCommonSocketHandlers() {
     walletStateRequestedAt = 0;
     showWalletModal('Your SatoshiStacks account', '<p role="status">Checking your balance…</p>');
     connectAsObserver();
-    showToast(`${Number(amountSats).toLocaleString()} sats returned to your account.`, 'info');
+    showToast(`${fmt(amountSats)} sats returned to your account.`, 'info');
   });
   socket.on('account-deposit-confirmed', () => requestWalletState());
   socket.on('cashout-pending', () => {
@@ -1869,19 +1870,9 @@ function renderControls() {
     return;
   }
 
-  // Position controls
-  const tableEl = $('pokerTable');
-  if (tableEl) {
-    if (isMobileDevice) {
-      // On mobile, controls overlay the bottom of the table
-      ca.style.maxHeight = '';
-    } else {
-      const tRect = tableEl.getBoundingClientRect();
-      const tableBottom = tRect.bottom + 22;
-      const availHeight = window.innerHeight - tableBottom;
-      ca.style.maxHeight = Math.max(availHeight, 60) + 'px';
-    }
-  }
+  // The desktop fitter reserves space for the complete action panel. A height
+  // limit derived from the previous table size can clip buttons before it fits.
+  ca.style.maxHeight = '';
   ca.classList.add('visible');
 
   const maxBet = gameState.currentBetToCall ?? Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
@@ -1900,7 +1891,7 @@ function renderControls() {
   const allOpponentsAllIn = opponents.length > 0 && opponents.every(p => p.allIn);
   const canRaise = myPlayer.canRaise !== false && !allOpponentsAllIn && myPlayer.stack > toCall;
 
-  const callText = canCheck ? 'Check' : (toCall >= myPlayer.stack ? 'All In' : `Call ${fmt(toCall)}`);
+  const callText = canCheck ? 'Check' : (toCall >= myPlayer.stack ? 'All In' : `Call ${fmtNumber(toCall)}`);
   const rLabel = maxBet === 0 ? 'Bet' : 'Raise';
 
   // Non-linear slider mapping
@@ -1926,14 +1917,14 @@ function renderControls() {
       <button class="bet-preset" data-amt="${maxR}">All In</button>
     </div>
     <div class="slider-row">
-      <input type="range" class="bet-slider" id="betSlider" aria-label="Raise amount" aria-valuetext="${fmt(minR)}" min="0" max="${SLIDER_STEPS}" value="0" step="1">
+      <input type="range" class="bet-slider" id="betSlider" aria-label="Raise amount" aria-valuetext="${fmtNumber(minR)}" min="0" max="${SLIDER_STEPS}" value="0" step="1">
       <input type="number" class="bet-amount-input" id="betInput" aria-label="Bet or raise total" min="${minR}" max="${maxR}" value="${minR}">
     </div>` : ''}
     <div class="action-buttons">
       <button class="action-btn btn-fold" id="foldBtn">Fold</button>
       <button class="action-btn btn-check-call" id="ccBtn">${callText}</button>
-      ${canRaise && maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmt(minR)}</button>` :
-       (canRaise && toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmt(myPlayer.stack)}</button>` : '')}
+      ${canRaise && maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmtNumber(minR)}</button>` :
+       (canRaise && toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmtNumber(myPlayer.stack)}</button>` : '')}
     </div>
   `;
 
@@ -1944,9 +1935,9 @@ function renderControls() {
   const rb = $('raiseBtn'), sl = $('betSlider'), bi = $('betInput');
   function updateBetUI(v) {
     v = Math.max(minR, Math.min(maxR, Math.round(v)));
-    if (sl) { sl.value = betToSlider(v); sl.setAttribute('aria-valuetext', fmt(v)); }
+    if (sl) { sl.value = betToSlider(v); sl.setAttribute('aria-valuetext', fmtNumber(v)); }
     if (bi) bi.value = v;
-    if (rb) rb.textContent = `${v >= maxR ? 'All In' : rLabel} ${fmt(v)}`;
+    if (rb) rb.textContent = `${v >= maxR ? 'All In' : rLabel} ${fmtNumber(v)}`;
   }
   rb?.addEventListener('click', () => {
     const bet = sl ? sliderToBet(parseInt(sl.value)) : (bi ? parseInt(bi.value) : minR);
@@ -1958,8 +1949,8 @@ function renderControls() {
     const v = parseInt(bi.value);
     if (!isNaN(v)) {
       const clamped = Math.max(minR, Math.min(maxR, Math.round(v)));
-      if (sl) { sl.value = betToSlider(clamped); sl.setAttribute('aria-valuetext', fmt(clamped)); }
-      if (rb) rb.textContent = `${clamped >= maxR ? 'All In' : rLabel} ${fmt(clamped)}`;
+      if (sl) { sl.value = betToSlider(clamped); sl.setAttribute('aria-valuetext', fmtNumber(clamped)); }
+      if (rb) rb.textContent = `${clamped >= maxR ? 'All In' : rLabel} ${fmtNumber(clamped)}`;
     }
   });
   bi?.addEventListener('blur', () => updateBetUI(parseInt(bi.value) || minR));
@@ -2018,7 +2009,7 @@ function renderPreActions() {
   // Only rebuild DOM if buttons don't exist yet
   if (!bar.children.length) {
     const callAmt = Math.min(toCall, myPlayer.stack);
-    const callLabel = callAmt >= myPlayer.stack ? 'Call All-In' : `Call ${fmt(callAmt)}`;
+    const callLabel = callAmt >= myPlayer.stack ? 'Call All-In' : `Call ${fmtNumber(callAmt)}`;
     let buttonsHTML = '';
     buttonsHTML += `<button class="pre-action-btn" data-pa="call">${callLabel}</button>`;
     buttonsHTML += '<button class="pre-action-btn" data-pa="fold">Fold</button>';
@@ -2204,7 +2195,7 @@ function summarizeHandResult(line) {
   const match = shown || folded;
   if (!match) return null;
   const name = match[1].replace(/(?: \((?:button|small blind|big blind)\))+$/, '');
-  const amount = Number(match[2]).toLocaleString('en-US');
+  const amount = '₿\u00a0' + Number(match[2]).toLocaleString('en-US');
   return shown ? `${name} won ${amount} chips with ${match[3]}.` :
     `${name} won ${amount} chips — everyone else folded.`;
 }
@@ -2640,15 +2631,15 @@ function requestRealMoneyBuyin() {
   const max = (gameState && gameState.maxBuyin) || (myTableConfig && myTableConfig.maxBuyin) || 10000;
   const body =
     `<p id="buyinAccountBalance" role="status">Checking account balance…</p><div class="wallet-amount">Choose your buy-in</div>` +
-    `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${max.toLocaleString()}</b> sats</div>` +
+    `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${fmt(max)}</b> sats</div>` +
     `<input id="rmBuyinSlider" class="wallet-slider" aria-label="Buy-in amount in sats" type="range" min="${min}" max="${max}" step="100" value="${max}">` +
-    `<div class="wallet-slider-ends"><span>${min.toLocaleString()}</span><span>${max.toLocaleString()}</span></div>` +
+    `<div class="wallet-slider-ends"><span>${fmt(min)}</span><span>${fmt(max)}</span></div>` +
     `<button class="wallet-btn" data-action="generate-buyin-invoice">Buy in from account</button><button class="wallet-btn secondary" data-action="account-deposit">Deposit sats</button>`;
   showWalletModal('Buy in', body);
-  fetchWalletState().then(state => { const label=$('buyinAccountBalance'); if (label) label.textContent=`Available in your account: ${Number(state.availableSats).toLocaleString()} sats`; }).catch(error=>showToast(error.message));
+  fetchWalletState().then(state => { const label=$('buyinAccountBalance'); if (label) label.textContent=`Available in your account: ${fmt(state.availableSats)} sats`; }).catch(error=>showToast(error.message));
   const slider = document.getElementById('rmBuyinSlider');
   const amt = document.getElementById('rmBuyinAmt');
-  if (slider && amt) slider.addEventListener('input', () => { amt.textContent = Number(slider.value).toLocaleString(); });
+  if (slider && amt) slider.addEventListener('input', () => { amt.textContent = fmt(Number(slider.value)); });
 }
 
 function showAccountDeposit(defaultAmount = 10000) {
@@ -3022,7 +3013,7 @@ function showPlayerProfile(userId) {
     <div style="margin-bottom:12px;">${avatarHTML}</div>
     <div style="font-size:18px;font-weight:800;color:var(--warm-white);margin-bottom:4px;">${safeDisplayName}</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:monospace;">${esc(npubShort)}</div>
-    <div style="font-size:14px;color:var(--warm-white);margin-bottom:16px;">Stack: ${player.stack.toLocaleString()}</div>
+    <div style="font-size:14px;color:var(--warm-white);margin-bottom:16px;">Stack: ${fmt(player.stack)}</div>
     <div style="display:flex;gap:8px;justify-content:center;">
       <button data-action="view-nostr-profile" data-user-id="${safeUserId}"
         style="padding:8px 16px;border-radius:8px;border:2px solid var(--outline);background:var(--navy);color:var(--warm-white);font-weight:700;font-size:13px;cursor:pointer;">
@@ -3078,7 +3069,7 @@ function showBuyinDialog() {
   slider.max = myTableConfig.maxBuyin;
   slider.step = Math.max(500, Math.floor(myTableConfig.minBuyin / 2));
   slider.value = myTableConfig.maxBuyin;
-  if (display) display.textContent = myTableConfig.maxBuyin.toLocaleString();
+  if (display) display.textContent = fmt(myTableConfig.maxBuyin);
 
   overlay.classList.remove('hidden');
   focusDialog(overlay);
@@ -3099,7 +3090,7 @@ function initBuyinDialog() {
 
   if (slider && display) {
     slider.addEventListener('input', () => {
-      display.textContent = parseInt(slider.value).toLocaleString();
+      display.textContent = fmt(parseInt(slider.value));
     });
   }
 

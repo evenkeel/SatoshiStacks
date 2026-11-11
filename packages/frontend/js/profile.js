@@ -4,6 +4,7 @@
   else root.StacksProfile = api;
 })(typeof window === 'object' ? window : globalThis, function() {
   'use strict';
+  const fmt = (typeof module === 'object' && module.exports ? require('./amounts') : window.StacksAmounts).format;
   function metadata(previous, fields, claimName) {
     const profile = { ...previous, name:fields.name.trim(), display_name:fields.name.trim(), about:fields.about.trim(), picture:fields.picture.trim(), website:fields.website.trim() };
     if (claimName) profile.nip05 = `${claimName}@satoshistacks.com`;
@@ -36,11 +37,11 @@
       $('profilePurchaseConfirm').required = buying;
       $('profilePurchaseFields').hidden = !buying;
       $('profileClaimFields').hidden = !wants;
-      $('profileSave').textContent = buying ? 'Buy username for 10,000 sats & save' : 'Save public profile';
+      $('profileSave').textContent = buying ? 'Buy username for ₿\u00a010,000 sats & save' : 'Save public profile';
       $('profileSave').disabled = disabled || (buying && (!data?.purchasesEnabled || data.availableSats < data.priceSats || !$('profilePurchaseConfirm').checked));
       $('profileFund').hidden = !buying || !data?.purchasesEnabled || data.availableSats >= data.priceSats;
       $('profileFund').disabled = disabled;
-      $('profilePurchaseInfo').textContent = data ? `One-time price: 10,000 sats. Available account balance: ${Number(data.availableSats).toLocaleString()} sats.` : '';
+      $('profilePurchaseInfo').textContent = data ? `One-time price: ₿\u00a010,000 sats. Available account balance: ${fmt(data.availableSats)} sats.` : '';
       $('profilePurchaseAvailability').textContent = data && !data.purchasesEnabled ? 'Identifier purchases are temporarily unavailable. You can save your profile without buying a name.' : '';
     }
     function close({resume = true} = {}) {
@@ -89,7 +90,7 @@
           $('profileClaimToggle').checked = true;
           $('profileClaimName').value = draft.claimName;
         }
-        status(data.claimName ? `Your identifier is ${data.claimName}@satoshistacks.com. Profile edits are free.` : 'Profile information is public. A custom identifier is optional and costs 10,000 sats once.');
+        status(data.claimName ? `Your identifier is ${data.claimName}@satoshistacks.com. Profile edits are free.` : 'Profile information is public. A custom identifier is optional and costs ₿\u00a010,000 sats once.');
         controls(false);
       } catch(error) { if (active === state) status(error.message); }
     }
@@ -113,7 +114,7 @@
         if (!signer) throw new Error('Import your saved nsec into a Nostr signer such as Sidecar, then sign in with that signer to edit your profile.');
         const claimName = $('profileClaimToggle').checked ? $('profileClaimName').value.trim().toLowerCase() : null;
         const buying = claimName && !state.data.claimName;
-        if (buying && (!$('profilePurchaseConfirm').checked || !state.data.purchasesEnabled || state.data.availableSats < state.data.priceSats)) throw new Error('Add 10,000 sats to your account and confirm the username purchase first.');
+        if (buying && (!$('profilePurchaseConfirm').checked || !state.data.purchasesEnabled || state.data.availableSats < state.data.priceSats)) throw new Error('Add ₿\u00a010,000 sats to your account and confirm the username purchase first.');
         const fields = Object.fromEntries(['name','about','picture','website','lightningAddress'].map(key=>[key,$('profile'+key).value]));
         if (!claimName) fields.lightningAddress = '';
         const previous = {...state.data.profile};

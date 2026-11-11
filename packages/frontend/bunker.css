@@ -77,8 +77,29 @@ body.poker-app:not(.is-mobile) .poker-table {
   --avatar-size: 112px; --hole-width: 38px; --hero-width: 72px; --board-width: 100px;
 }
 body.poker-app:not(.is-mobile) .player-nameplate,
-body.poker-app:not(.is-mobile) .player-nameplate.hero { width: 132px; }
+body.poker-app:not(.is-mobile) .player-nameplate.hero { width: 152px; padding: 7px 10px; }
+body.poker-app:not(.is-mobile) .player-nameplate .np-name {
+  font-size: 14px; line-height: 1.25; font-weight: 600; color: #f4f6ef;
+}
+body.poker-app:not(.is-mobile) .player-nameplate .np-amount {
+  font-size: 18px; line-height: 1.2; font-weight: 700; letter-spacing: .2px;
+}
+body.poker-app .table-marker.dealer {
+  width: 28px; height: 28px; border: 2px solid #e9d49b;
+  background: radial-gradient(circle at 35% 25%, #fffdf0, #e4ddc6 75%);
+  box-shadow: 0 3px 6px #00101780, inset 0 0 0 2px #fff9e9, inset 0 0 0 3px #9a875c;
+  color: #26383e; font: 800 16px/1 Georgia, serif;
+}
+/* A drawn prefix keeps monetary number inputs numeric and editable. */
+body.poker-app .wallet-invoice-input[type="number"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 24'%3E%3Cpath d='M7 5v15M4 6h7C19 6 19 12 11 12H7m4 0c9 0 9 7 0 7H4M9 2v4m4-4v4M9 19v4m4-4v4' fill='none' stroke='%23f5d28f' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-size: 14px 18px; background-position: 9px center;
+  padding-left: 28px;
+}
 body.poker-app:not(.is-mobile) .table-pot-chips { width: 300px; height: 96px; }
+body.poker-app:not(.is-mobile) .table-pot-label {
+  top: calc(50% + var(--board-width) * .725 + 32px);
+}
 /* Six positions follow the rounder rail; wagers remain inside each seat. */
 body.poker-app:not(.is-mobile) :is(.seat-1, .seat-6, .np-pos-1, .np-pos-6) { top: 7%; }
 body.poker-app:not(.is-mobile) :is(.seat-3, .seat-4, .np-pos-3, .np-pos-4) { top: 93%; }

@@ -1,8 +1,9 @@
 # Table artwork contract
 
 The desktop playfield is 1000 × 680 logical pixels. `desktop-table.js` fits a
-1220 × 820 envelope (including seats and nameplates) into the space between
-the account header and visible utility panels. All game elements scale with
+1220 × 780 envelope (including seats and nameplates) below the account header.
+Its tapered corners let the table grow beside chat and betting panels; only
+actual panel overlap reduces its size. All game elements scale with
 that playfield. There is no desktop maximum size; very small windows retain
 the composition at the cost of smaller text. Phones retain the watch-only layout.
 
@@ -26,6 +27,10 @@ Desktop avatar circles are 112 logical pixels in diameter. Community cards
 are 100 × 145, personal face-up cards are 72 × 104.4, and opponent cards are
 38 × 55.1 logical pixels. These sizes scale uniformly with the table; side-seat
 hole cards sit further inward to clear the larger avatars.
+Desktop nameplates are 152 logical pixels wide, with 14px names and 18px
+balances. The dealer disc is 28px with a raised ivory face and engraved ring.
+Display amounts use the ₿ sats prefix through `js/amounts.js`; monetary
+number inputs and server payloads retain plain numeric values.
 The community board always reserves five card widths plus four 6-pixel gaps,
 with cards anchored to the left; dealing the turn or river never recenters
 existing cards. The dealer station groups table options and observer waitlist

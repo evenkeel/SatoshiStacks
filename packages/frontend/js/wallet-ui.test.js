@@ -11,7 +11,7 @@ test('a paused wallet never offers a withdrawal even when a balance exists',()=>
 });
 test('a recovered balance supports both WebLN and a receiving invoice',()=>{
   const html=cashoutHTML({withdrawalsEnabled:true,availableSats:500});
-  assert.match(html,/up to 500 sats/);assert.match(html,/confirm-cashout/);assert.match(html,/confirm-pasted-cashout/);
+  assert.match(html,/up to ₿\s500 sats/);assert.match(html,/confirm-cashout/);assert.match(html,/confirm-pasted-cashout/);
 });
 test('server errors are escaped before rendering in the wallet',()=>{
   const html=cashoutHTML({error:'<img src=x onerror=alert(1)>',withdrawalsEnabled:true,availableSats:10000});
