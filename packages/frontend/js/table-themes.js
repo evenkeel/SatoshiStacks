@@ -1,7 +1,7 @@
 /* Themes own presentation only. No game state, socket, card, or seat mutations. */
 (() => {
   'use strict';
-  const assets = { felt: '/img/table-felt.svg', rail: '/img/table-rail.svg', logo: '/img/neon-wordmark.svg' };
+  const assets = { felt: '/img/table-felt.svg', rail: '/img/table-rail.svg', logo: '/img/table-wordmark.svg?v=7' };
   // Register approved local assets here. Every theme uses the same table bounds.
   const themes = {
     bunker: { ...assets, name: 'Neon bunker', room: 'radial-gradient(ellipse at 50% 46%, #193b3d55, transparent 60%), radial-gradient(ellipse at 4% 30%, #d35b2019, transparent 46%), repeating-linear-gradient(90deg, transparent 0 calc(25% - 2px), #03070899 calc(25% - 2px) 25%), repeating-linear-gradient(0deg, #ffffff02 0 1px, transparent 1px 5px), linear-gradient(130deg, #1a2023, #0a1116 58%, #151b20)', accent: '#f1ad64', feltFilter: 'none', railFilter: 'none' },

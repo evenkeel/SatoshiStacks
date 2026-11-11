@@ -12,14 +12,15 @@ All files live in `packages/frontend/img/`:
 | --- | --- | --- |
 | `table-felt.svg` | viewBox `-24 -24 1048 728` | Felt and stitching, transparent exterior |
 | `table-rail.svg` | same viewBox | Independent metal rail and trim |
-| `neon-wordmark.svg` | viewBox `0 0 640 200` | Transparent sign; editable backing, tubes, caption, and glow filter |
+| `table-wordmark.svg` | viewBox `-0.984 -77.736 435.968 184.456` | Landing-page orange/yellow lettering, dark outline and offset shadow; transparent surroundings |
 
 The felt boundary is `x=0 y=0 width=1000 height=680 rx=500 ry=340`.
 Both table images share the same bounds and overlay exactly. Keep 24 logical
 pixels of transparent allowance around the boundary for the rail. Supply
 replacement artwork on the same coordinate grid, with no players or controls.
-The logo is a separate layer centered on the table, 57% of its width; its
-opacity drops during play to preserve card and pot readability.
+The logo is a separate layer centered on the table, 48% of its width. It uses
+80% grayscale and soft-light blending at 42% opacity, fading to 12% during
+play to preserve card and pot readability.
 
 Desktop avatar circles are 112 logical pixels in diameter. Community cards
 are 100 × 145, personal face-up cards are 72 × 104.4, and opponent cards are
@@ -41,10 +42,11 @@ new hand, or corrected snapshot resets the visual pile.
 
 `bunker.css` owns the new atmosphere and desktop sizing overrides. Change the
 table dimensions, seat envelope, and asset bounds together if changing its shape.
-The legacy PNG signs remain as references; the table, header, and login now use
-the new vector sign. SVG typography uses Arial/Helvetica with a sans-serif
-fallback and needs no downloaded font. For exact cross-platform letter shapes,
-an artist can convert the editable lettering to paths in a final export.
+The legacy PNG signs remain as references. The table uses the landing page's
+Lilita One lettering converted to paths, with no runtime font dependencies.
+Rebuild it with `node scripts/build-table-brand.cjs`; editable contours and
+font licensing are documented in `scripts/README-brand.md`. The header uses
+the same lettering in full color; the login uses its separate identity asset.
 
 ## Live theme registration
 
@@ -53,7 +55,7 @@ Each entry supplies `felt`, `rail`, `logo`, optional `roomImage`, room CSS,
 accent color, and optional felt/rail color filters. Add an option with the same
 ID to the Room theme selector in `index.html`. A room image uses `cover` and
 can crop; the table layers always retain the playfield's proportions. New art
-must use the table viewBox above and the logo's 3.2:1 canvas. Avoid opaque
+must use the table viewBox above and the logo's approximately 2.364:1 canvas. Avoid opaque
 padding that would cover gameplay.
 
 Themes preload their image assets before committing together. A failed load

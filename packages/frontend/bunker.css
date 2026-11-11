@@ -28,13 +28,15 @@ body.poker-app .poker-table::after { background: none; }
 .table-art .table-felt { filter: var(--theme-felt-filter, none); }
 .table-art .table-rail { filter: var(--theme-rail-filter, none); }
 .table-neon-sign {
-  position: absolute; left: 50%; top: 50%; width: 57%; aspect-ratio: 3.2;
+  position: absolute; left: 50%; top: 50%; width: 48%; aspect-ratio: 2.363534 / 1;
   transform: translate(-50%, -50%); pointer-events: none; z-index: 0;
-  background: url('/img/neon-wordmark.svg') center / contain no-repeat;
-  filter: drop-shadow(0 0 14px #fa68252e);
-  opacity: .22; transition: opacity .25s ease;
+  background: url('/img/table-wordmark.svg?v=7') center / contain no-repeat;
+  /* Muted ink lets the felt texture show through; fade further during hands. */
+  mix-blend-mode: soft-light;
+  filter: grayscale(.8);
+  opacity: .12; transition: opacity .25s ease;
 }
-.is-waiting:has(.community-cards:empty) .table-neon-sign { opacity: 1; }
+.is-waiting:has(.community-cards:empty) .table-neon-sign { opacity: .42; }
 body.poker-app .table-waiting { top: 79%; width: 56%; }
 body.poker-app .table-waiting img,
 body.poker-app .table-waiting .waiting-eyebrow { display: none; }
@@ -130,3 +132,19 @@ body.poker-app:not(.is-mobile) .spectator-badge {
   body.poker-app:not(.is-mobile) .account-bar button { white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) { .table-neon-sign { transition: none; } }
+
+/* Keep the complete wordmark visible at every size. */
+body.poker-app .brand-wordmark { display: block; width: 126px; height: auto; }
+body.poker-app .login-logo-img { width: 300px; height: auto; }
+body.poker-app.is-mobile .brand-wordmark { display: block; width: 90px; height: auto; }
+@media (max-height: 500px) and (orientation: landscape) {
+  body.poker-app.is-mobile .brand-wordmark { width: 76px; }
+  body.poker-app .login-logo-img { width: 210px; }
+}
+/* Phone felt is shallow: fit the sign by height and reserve space for status. */
+body.poker-app.is-mobile .table-neon-sign {
+  width: 42%; height: 40%; aspect-ratio: auto; top: 40%;
+}
+body.poker-app.is-mobile .table-waiting { top: 83%; width: 70%; }
+body.poker-app.is-mobile .table-waiting h1 { font-size: 14px; margin-bottom: 3px; }
+body.poker-app.is-mobile .table-waiting p { font-size: 9px; }
