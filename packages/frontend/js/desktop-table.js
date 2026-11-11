@@ -28,10 +28,15 @@
       const uiScale = Math.min(1, innerWidth / 1200, innerHeight / 700);
       document.body.style.setProperty('--desktop-ui-scale', uiScale);
       const top = header.getBoundingClientRect().bottom + 8;
-      const blockers = panels.filter(panel => {
-        const style = getComputedStyle(panel);
-        return style.display !== 'none' && style.visibility !== 'hidden';
-      }).map(panel => panel.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0);
+      // Reserve each control dock even when its buttons are hidden or empty.
+      // A turn update must never change the table's scale or center.
+      const blockers = panels.map(panel => {
+        const rect = panel.getBoundingClientRect();
+        let height = rect.height;
+        if (panel.classList.contains('chat-box')) height = 172 * uiScale;
+        return { left: rect.left, right: rect.right, top: rect.bottom - height,
+          bottom: rect.bottom, width: rect.width, height };
+      }).filter(rect => rect.width > 0 && rect.height > 0);
       let low = 0;
       let high = Math.max(0, Math.min((innerWidth - 16) / envelopeWidth,
         (innerHeight - top - 12) / envelopeHeight));
@@ -54,8 +59,6 @@
   const observer = new ResizeObserver(fit);
   observer.observe(header);
   panels.forEach(panel => observer.observe(panel));
-  const changes = new MutationObserver(fit);
-  panels.forEach(panel => changes.observe(panel, { attributes: true, attributeFilter: ['class'] }));
   window.addEventListener('resize', fit);
   fit();
 })();

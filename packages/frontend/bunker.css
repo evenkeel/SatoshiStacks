@@ -123,20 +123,34 @@ body.poker-app:not(.is-mobile) .chat-box {
 }
 body.poker-app:not(.is-mobile) .chat-box.collapsed { height: 44px; }
 body.poker-app:not(.is-mobile) .controls-area {
-  width: 520px; bottom: 8px; right: 8px; padding: 8px;
+  width: 520px; height: 176px; bottom: 8px; right: 8px; padding: 8px;
+  align-items: flex-end;
   transform: scale(var(--desktop-ui-scale, 1)); transform-origin: bottom right;
   transition: opacity .2s ease;
 }
+body.poker-app:not(.is-mobile) .bet-controls {
+  padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  gap: 10px;
+}
+body.poker-app:not(.is-mobile) .bet-presets { justify-content: flex-start; gap: 8px; }
+body.poker-app:not(.is-mobile) .action-buttons { gap: 10px; }
+body.poker-app:not(.is-mobile) .action-btn { min-height: 48px; }
 body.poker-app:not(.is-mobile) .table-actions-bar {
+  width: 280px; height: 48px; flex-direction: row; gap: 8px;
   display: flex !important; top: auto; bottom: 12px;
   left: calc(24px + 340px * var(--desktop-ui-scale, 1));
   transform: scale(var(--desktop-ui-scale, 1)); transform-origin: bottom left;
 }
 body.poker-app:not(.is-mobile) .pre-action-bar {
-  display: flex !important; bottom: calc(12px + 88px * var(--desktop-ui-scale, 1));
+  width: 280px; height: 48px; padding: 0; flex-direction: row; gap: 8px;
+  display: flex !important; bottom: calc(12px + 56px * var(--desktop-ui-scale, 1));
   left: calc(24px + 340px * var(--desktop-ui-scale, 1));
   transform: scale(var(--desktop-ui-scale, 1)); transform-origin: bottom left;
 }
+body.poker-app:not(.is-mobile) :is(.table-action-btn, .pre-action-btn) {
+  flex: 1; text-align: center; white-space: nowrap;
+}
+body.poker-app .table-action-btn.resume { background: #386e5d; border-color: #669881; color: #f2fff5; }
 body.poker-app:not(.is-mobile) .spectator-badge {
   left: 12px; transform: scale(var(--desktop-ui-scale, 1)); transform-origin: bottom left;
 }

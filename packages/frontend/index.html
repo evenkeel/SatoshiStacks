@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="/club.css?v=4">
 <link rel="stylesheet" href="/motion.css?v=2">
 <link rel="stylesheet" href="/table-layout.css?v=8">
-<link rel="stylesheet" href="/bunker.css?v=16">
+<link rel="stylesheet" href="/bunker.css?v=17">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
@@ -91,12 +91,9 @@
 <div class="connection-status" id="connectionStatus" style="position:fixed;top:10px;right:220px;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:700;background:var(--sage);color:var(--warm-white);box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:1000;display:none;">
   <span id="connectionText">Connected</span>
 </div>
-<!-- Sit Back In Button -->
-<button type="button" id="sitBackInBtn" style="position:fixed;bottom:120px;left:50%;transform:translateX(-50%);padding:12px 32px;border-radius:12px;font-size:16px;font-weight:800;background:var(--mustard);color:var(--text-dark);box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;display:none;cursor:pointer;border:2px solid var(--outline);" data-action="sit-back-in">
-  Sit Back In
-</button>
 <!-- Table Actions (Sit Out / Stand Up) -->
 <div class="table-actions-bar" id="tableActionsBar">
+  <button type="button" class="table-action-btn resume" id="sitBackInBtn" style="display:none" data-action="sit-back-in">Sit Back In</button>
   <button class="table-action-btn" id="sitOutBtn" data-action="sit-out">Sit Out Next Hand</button>
   <button class="table-action-btn stand-up" id="standUpBtn" data-action="stand-up">Stand Up</button>
 </div>
@@ -286,7 +283,7 @@
 <script src="/js/table-motion.js?v=3"></script>
 <script src="/js/pot-pile.js?v=3"></script>
 <script src="/js/app.js?v=42"></script>
-<script src="/js/desktop-table.js?v=3"></script>
+<script src="/js/desktop-table.js?v=4"></script>
 <script src="/js/table-themes.js?v=6"></script>
 </body>
 </html>

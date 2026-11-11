@@ -2,8 +2,12 @@
 
 The desktop playfield is 1000 × 680 logical pixels. `desktop-table.js` fits a
 1220 × 780 envelope (including seats and nameplates) below the account header.
-Its tapered corners let the table grow beside chat and betting panels; only
-actual panel overlap reduces its size. All game elements scale with
+Its tapered corners let the table grow beside chat and betting controls.
+Desktop controls reserve fixed space even when hidden: betting uses a 520 ×
+176 dock, with separate 280 × 48 rows for pre-actions and table actions.
+The betting controls have no enclosing panel. Table bounds remain unchanged
+between turns and when chat collapses; viewport and header changes still refit
+the layout. All game elements scale with
 that playfield. There is no desktop maximum size; very small windows retain
 the composition at the cost of smaller text. Phones retain the watch-only layout.
 

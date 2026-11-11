@@ -8,7 +8,9 @@ function layout(width, height, panels = [], mobile = false) {
   let fit;
   const area = { style: { setProperty(name, value) { this[name] = value; } } };
   const header = { getBoundingClientRect: () => ({ bottom: 92 }) };
-  const nodes = panels.map(rect => ({ getBoundingClientRect: () => rect, style: { display: 'block', visibility: 'visible' } }));
+  const nodes = panels.map(rect => ({ getBoundingClientRect: () => rect,
+    classList: { contains: name => rect.kind === name },
+    style: { display: 'block', visibility: 'visible' } }));
   vm.runInNewContext(source, {
     innerWidth: width, innerHeight: height,
     document: {
@@ -64,4 +66,29 @@ test('opening or expanding a utility panel recalculates table clearance', () => 
 
 test('phone layouts keep their existing sizing', () => {
   assert.ok(Number.isNaN(layout(390, 844, [], true).scale));
+});
+
+test('table bounds remain identical as turn controls appear and disappear', () => {
+  for (const [width, height] of [[1031,920], [1280,720], [2048,1072]]) {
+    const scale = Math.min(1, width/1200, height/700);
+    const panels = [rect(12,height-12-172*scale,340*scale,172*scale),
+      rect(width-8-520*scale,height-8-176*scale,520*scale,176*scale),
+      rect(24+340*scale,height-12-48*scale,280*scale,48*scale),
+      rect(24+340*scale,height-12-104*scale,280*scale,48*scale)];
+    const result = layout(width,height,panels);
+    const initial = JSON.stringify(result.area.style);
+    for (const visible of [false,true,false,true,false]) {
+      result.nodes.slice(1).forEach(node => { node.style.visibility = visible ? 'visible' : 'hidden'; });
+      result.resize();
+      assert.equal(JSON.stringify(result.area.style),initial);
+    }
+  }
+});
+
+test('collapsing chat does not change the table footprint', () => {
+  const chat = {...rect(12,716,340,172),kind:'chat-box'};
+  const result = layout(1440,900,[chat]);
+  result.nodes[0].getBoundingClientRect = () => rect(12,844,340,44);
+  result.resize();
+  assert.equal(Number(result.area.style['--table-scale']),result.scale);
 });
