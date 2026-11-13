@@ -135,7 +135,7 @@ public HTML/assets before saving PM2 and updating the manifest. Roll back to
 the prior release if startup or verification fails.
 
 The original funded database stays separate from the demo database. See the
-[November 10 deployment record](../DEPLOYMENT-2026-11-10.md) for the current
+[November 13 deployment record](../DEPLOYMENT-2026-11-13.md) for the current
 release and rollback locations.
 
 ### View Logs
