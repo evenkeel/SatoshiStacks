@@ -315,7 +315,7 @@ const boundDialogs = new WeakSet();
 function focusDialog(overlay) {
   if (!overlay) return;
   if (!dialogTriggers.has(overlay)) dialogTriggers.set(overlay, document.activeElement);
-  const focusable = () => [...overlay.querySelectorAll('button, input, textarea, a[href], [tabindex="0"]')]
+  const focusable = () => [...overlay.querySelectorAll('button, input, textarea, select, summary, a[href], [tabindex="0"]')]
     .filter(el => !el.disabled && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
   if (!boundDialogs.has(overlay)) {
     overlay.addEventListener('keydown', event => {
@@ -346,6 +346,7 @@ function restoreDialogFocus(overlay) {
 function showLoginOverlay() {
   stopLoginAttempt();
   clearCreatedAccount();
+  clearImportedKey();
   const overlay = document.getElementById('loginOverlay');
   if (overlay) overlay.classList.remove('hidden');
   // Reset to method selection screen
@@ -368,6 +369,7 @@ function showLoginOverlay() {
 
 function hideLoginOverlay() {
   clearCreatedAccount();
+  clearImportedKey();
   const overlay = document.getElementById('loginOverlay');
   if (overlay) overlay.classList.add('hidden');
   restoreDialogFocus(overlay);
@@ -403,17 +405,16 @@ function populateLoginMethods() {
   if (!container) return;
   container.innerHTML = '';
 
-  container.innerHTML =
-    `<button class="login-method-btn primary" data-action="create-nostr-account">${LOGIN_ICONS.keyring} Create a Nostr account</button>` +
-    `<p class="login-provider-note">New to Nostr? Create an account here and save your private key. Already have one? Use your signer below.</p>` +
-    `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Use browser signer</button>` +
-    `<p class="login-provider-note">Use Sidecar or any NIP-07 browser signer. Approve the sign-in request in your extension.</p>` +
-    `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect a phone signer</button>` +
-    `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Use a bunker URL</button>`;
-  if (isMobileDevice) container.innerHTML +=
-    `<button class="login-method-btn secondary" data-action="deep-link-login">${LOGIN_ICONS.keyring} Open signer app</button>`;
-  const help = $('loginHelp');
-  if (help) help.innerHTML = '<a href="https://sidecar.top" target="_blank" rel="noopener noreferrer">Sidecar</a> supports Nostr sign-in and a Lightning wallet. Wallet connection is a separate step.';
+  const primary = isMobileDevice
+    ? `<button class="login-method-btn primary" data-action="deep-link-login">${LOGIN_ICONS.extension} Open signer app</button>`
+    : `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Use browser signer</button>`;
+  container.innerHTML = primary +
+    `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with QR code</button>` +
+    `<button class="login-method-btn secondary" data-action="show-private-key">${LOGIN_ICONS.keyring} Use private key</button>` +
+    `<button class="login-text-btn" data-action="create-nostr-account">Create a new account</button>` +
+    `<details class="login-more"><summary>More options</summary>` +
+    (isMobileDevice ? `<button class="login-text-btn" data-action="nip07-login">Use browser signer</button>` : '') +
+    `<button class="login-text-btn" data-action="show-bunker">Connect with bunker URL</button></details>`;
 }
 
 let createdAccount = null;
@@ -480,6 +481,45 @@ document.getElementById('loginKeySaved')?.addEventListener('change', () => {
   $('loginCreateContinue').disabled = !createdAccount || !$('loginKeySaved').checked || !!loginAttempt;
 });
 
+function clearImportedKey() {
+  if ($('loginImportNsec')) { $('loginImportNsec').value = ''; $('loginImportNsec').readOnly = false; }
+  $('loginKeyScreen')?.classList.add('hidden');
+}
+function showPrivateKeyScreen() {
+  stopLoginAttempt();
+  clearCreatedAccount();
+  clearImportedKey();
+  $('loginMethods').classList.add('hidden');
+  $('loginKeyScreen').classList.remove('hidden');
+  $('loginKeySubmit').disabled = false;
+  setLoginStatus('', false);
+  $('loginImportNsec').focus();
+}
+async function submitPrivateKey(event) {
+  event.preventDefault();
+  if (loginAttempt) return;
+  const attempt = beginLoginAttempt();
+  $('loginImportNsec').readOnly = true;
+  let signer = null;
+  try {
+    setLoginStatus('Signing in…', false);
+    await loginStep(attempt, () => nip46Ready, 15000);
+    if (loginAttempt !== attempt || attempt.controller.signal.aborted) return;
+    // Decode directly from the field; never put the nsec in storage or a request.
+    signer = window.StacksLocalAccount.fromNsec(window.NostrNIP46, $('loginImportNsec').value, window);
+    $('loginImportNsec').value = '';
+    attempt.localSigner = signer;
+    await finishLogin(attempt, signer, 'private-key');
+  } catch (error) {
+    if (loginAttempt === attempt) { $('loginImportNsec').value = ''; $('loginImportNsec').readOnly = false; }
+    loginFailed(attempt, new Error('Could not sign in. Check your nsec and connection, then try again.'));
+  } finally {
+    if (signer && localProfileSigner !== signer) signer.destroy();
+  }
+}
+$('loginKeyScreen')?.addEventListener('submit', submitPrivateKey);
+window.addEventListener('pagehide', () => { stopLoginAttempt(); clearCreatedAccount(); clearImportedKey(); });
+
 let localProfileSigner = null;
 function clearLocalProfileSigner() {
   localProfileSigner?.destroy();
@@ -536,7 +576,7 @@ function storeAuthSession(verifyData) {
 
 // Challenge-response auth using a signer object (window.nostr or NIP-46 BunkerSigner)
 async function performChallengeAuth(signer, signal) {
-  setLoginStatus(signer === createdAccount ? 'Signing in with your new account…' : 'Approve the sign-in request in your signer.', false);
+  setLoginStatus(signer === createdAccount || loginAttempt?.localSigner === signer ? 'Signing in…' : 'Approve in your signer…', false);
   return window.StacksProviders.authenticate(signer, {
     origin: window.location.origin,
     signal,
@@ -564,7 +604,9 @@ function stopLoginAttempt() {
   loginAttempt = null;
   $('loginSignerLink')?.remove();
   attempt?.controller.abort();
+  document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
   if (attempt && !attempt.completed) {
+    attempt.localSigner?.destroy();
     try { attempt.signer?.close(); } catch (_) { /* already closed */ }
     attempt.pool?.close(attempt.relays || NIP46_RELAYS);
   }
@@ -600,9 +642,9 @@ async function finishLogin(attempt, signer, method) {
   localStorage.setItem('ss_authMethod', method);
   $('loginBunkerInput').value = '';
   qrConnectionURI = null;
-  // Keep the new signer in page memory for profile edits. Clear its export
+  // Keep the local signer in page memory for optional profile edits. Clear its export
   // fields now, and erase the key itself on logout or page exit.
-  const setupSigner = method === 'local' ? createdAccount : null;
+  const setupSigner = method === 'local' ? createdAccount : method === 'private-key' ? signer : null;
   clearLocalProfileSigner();
   localProfileSigner = setupSigner;
   if (setupSigner) createdAccount = null;
@@ -614,14 +656,13 @@ async function finishLogin(attempt, signer, method) {
     if (loginIntent === 'observe') loginIntent = 'sit';
     else showBuyinDialog();
   };
-  if (setupSigner) profileEditor.open({signer:setupSigner,onDone:continueLogin});
-  else continueLogin();
+  continueLogin();
 }
 async function handleNIP07Login() {
   const attempt = beginLoginAttempt();
   try {
     setLoginStatus('Looking for your browser signer…', false);
-    if (!await loginStep(attempt, detectNostr, 5000)) throw new Error('No browser signer found. Unlock Sidecar or another NIP-07 extension, or choose Connect a phone signer.');
+    if (!await loginStep(attempt, detectNostr, 5000)) throw new Error('No signer found. Unlock your extension, connect with QR code, or use your private key.');
     await finishLogin(attempt, window.nostr, 'nip07');
   } catch (error) { loginFailed(attempt, error); }
 }
@@ -754,6 +795,7 @@ window.submitBunkerLogin = submitBunkerLogin;
 function loginGoBack() {
   stopLoginAttempt();
   clearCreatedAccount();
+  clearImportedKey();
   document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
   if (nip46AbortController) {
     nip46AbortController.abort();
@@ -766,6 +808,7 @@ function loginGoBack() {
   document.getElementById('loginBunkerScreen')?.classList.add('hidden');
   document.getElementById('loginMethods')?.classList.remove('hidden');
   setLoginStatus('', false);
+  $('loginMethods').querySelector('button')?.focus();
 }
 window.loginGoBack = loginGoBack;
 
@@ -3229,6 +3272,7 @@ document.addEventListener('click', (e) => {
     case 'close-wallet': closeWalletModal(); break;
     case 'submit-bunker': submitBunkerLogin(); break;
     case 'nip07-login': handleNIP07Login(); break;
+    case 'show-private-key': showPrivateKeyScreen(); break;
     case 'create-nostr-account': createNostrAccount(); break;
     case 'copy-new-nsec': copyCreatedNsec(); break;
     case 'finish-create-account': finishCreatedAccount(); break;

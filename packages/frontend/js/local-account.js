@@ -12,8 +12,11 @@
     // nostr-tools uses noble's CSPRNG-backed secp256k1 key generator. No
     // passwords, timestamps, Math.random(), or weak-randomness fallback.
     const secret = tools.generateSecretKey();
+    return makeSigner(tools, secret);
+  }
+  function makeSigner(tools, secret) {
     let destroyed = false;
-    const assertActive = () => { if (destroyed) throw new Error('This key has been cleared. Create a new account.'); };
+    const assertActive = () => { if (destroyed) throw new Error('This key has been cleared. Sign in again.'); };
     try {
       const pubkey = tools.getPublicKey(secret);
       return {
@@ -30,5 +33,18 @@
       };
     } catch (error) { secret.fill(0); throw error; }
   }
-  return { create };
+  function fromNsec(tools, encoded, environment = globalThis) {
+    if (!environment.isSecureContext) throw new Error('Private-key sign-in requires HTTPS.');
+    // Accept only NIP-19 private keys, not npubs, raw hex, or arbitrary text.
+    const value = typeof encoded === 'string' ? encoded.trim() : '';
+    if (!/^nsec1[023456789acdefghjklmnpqrstuvwxyz]{58}$/.test(value)) throw new Error('Enter a valid nsec private key.');
+    let decoded;
+    try { decoded = tools.decode(value); } catch (_) { throw new Error('Enter a valid nsec private key.'); }
+    if (decoded.type !== 'nsec' || !(decoded.data instanceof Uint8Array) || decoded.data.length !== 32) {
+      if (decoded.data instanceof Uint8Array) decoded.data.fill(0);
+      throw new Error('Enter a valid nsec private key.');
+    }
+    return makeSigner(tools, decoded.data);
+  }
+  return { create, fromNsec };
 });

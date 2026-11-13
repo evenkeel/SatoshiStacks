@@ -4,10 +4,10 @@
 identity: orange SATOSHI, yellow STACKS, dark outline and offset shadow, with
 transparent surroundings. No frame, chips, or Bitcoin symbol.
 
-The header shows the original colors. Felt CSS reduces the logo to 48% of table
+The header and login popup show the original colors. Felt CSS reduces the logo to 48% of table
 width, applies 80% grayscale and soft-light blending, and fades it from 42%
 opacity while waiting to 12% during hands. Mobile uses a smaller bounded layer.
-The login and compact icons retain their separate existing assets.
+Compact icons retain their separate existing assets.
 
 Run `node scripts/build-table-brand.cjs` to rebuild the SVG. Its editable path
 contours live in `scripts/table-lettering.json`; no font installation or network

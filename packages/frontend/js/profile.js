@@ -70,7 +70,7 @@
       $('profileClaimToggle').disabled = false;
       $('profileClaimFields').hidden = true;
       $('profileDone').textContent = signer ? 'Skip for now' : 'Done';
-      $('profileSignerNote').textContent = signer ? 'Finish setting up your public Nostr profile. Your key stays only in memory while this page is open so you can edit again. Keep your saved nsec: signing out or leaving this page clears the key.' : 'Saving uses your current Nostr account. After leaving the page, import your saved nsec into a signer such as Sidecar and sign in with it to edit again.';
+      $('profileSignerNote').textContent = 'Changes update your public Nostr profile.';
       $('profileOverlay').classList.remove('hidden');
       status('Loading your profile…'); controls(true); focus($('profileOverlay'));
       try {

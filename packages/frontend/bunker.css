@@ -183,3 +183,53 @@ body.poker-app.is-mobile .table-neon-sign {
 body.poker-app.is-mobile .table-waiting { top: 83%; width: 70%; }
 body.poker-app.is-mobile .table-waiting h1 { font-size: 14px; margin-bottom: 3px; }
 body.poker-app.is-mobile .table-waiting p { font-size: 9px; }
+
+/* Login: one compact chooser, with instructions only inside the chosen method. */
+body.poker-app #loginOverlay .login-card {
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 32px));
+  max-width: 380px;
+  padding: 32px 28px 24px;
+}
+body.poker-app #loginOverlay .login-logo {
+  height: auto;
+  overflow: visible;
+  margin: 0 0 24px;
+}
+body.poker-app #loginOverlay .login-logo-img {
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+  transform: none;
+  filter: none;
+}
+#loginOverlay .login-method-btn { max-width: none; min-height: 48px; }
+#loginOverlay .login-status { margin: 0 0 16px; line-height: 1.5; }
+#loginOverlay .login-status:empty { display: none; }
+#loginOverlay .login-methods { gap: 10px; }
+#loginOverlay .login-text-btn, #loginOverlay .login-more summary {
+  background: none;
+  border: 0;
+  color: #d2ddda;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 12px 8px;
+  min-height: 44px;
+}
+#loginOverlay .login-text-btn:hover { color: #ffbc69; }
+#loginOverlay .login-more { width: 100%; }
+#loginOverlay .login-more summary { color: #a9bfbe; }
+#loginOverlay .login-more .login-text-btn { width: 100%; }
+#loginOverlay .login-key-screen { display: flex; flex-direction: column; gap: 14px; }
+#loginOverlay .login-key-screen.hidden { display: none; }
+#loginOverlay .login-key-label { font-size: 13px; text-align: left; }
+#loginOverlay .login-key-warning { font-size: 13px; line-height: 1.5; }
+#loginOverlay .login-provider-note { margin: 0; font-size: 12px; line-height: 1.5; }
+#loginOverlay .login-key-input { font-size: 16px; }
+#loginOverlay .login-close-btn { min-width: 44px; min-height: 44px; top: 4px; right: 4px; }
+#loginOverlay :is(button, input, summary):focus-visible { outline: 2px solid #ffbc69; outline-offset: 3px; }
+@media (max-width: 480px) {
+  body.poker-app #loginOverlay .login-card { padding: 32px 24px 20px; }
+  body.poker-app #loginOverlay .login-logo-img { width: 190px; }
+}

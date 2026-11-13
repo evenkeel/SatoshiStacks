@@ -69,3 +69,45 @@ test('failed account setup also zeroes secret bytes', () => {
   assert.throws(() => create({ ...tools, generateSecretKey: () => secret, npubEncode() { throw new Error('encoding failed'); } }, environment), /encoding failed/);
   assert.ok(secret.every(byte => byte === 0));
 });
+
+test('imported nsec signs the challenge locally without sending the private key', async () => {
+  const { fromNsec } = require('./local-account');
+  const secret = pure.generateSecretKey();
+  const encoded = nip19.nsecEncode(secret);
+  const decoded = nip19.decode(encoded).data;
+  const account = fromNsec({ ...tools, decode: () => ({ type: 'nsec', data: decoded }) }, ` ${encoded} `, environment);
+  try {
+    assert.equal(await account.getPublicKey(), pure.getPublicKey(secret));
+    await authenticate(account, {
+      origin: 'https://example.com',
+      requestChallenge: async () => ({ challengeId: 'import-id', nonce: 'import-challenge' }),
+      verify: async body => {
+        assert.equal(pure.verifyEvent(body.signedEvent), true);
+        assert.equal(body.signedEvent.pubkey, pure.getPublicKey(secret));
+        assert.equal(JSON.stringify(body).includes(encoded), false);
+        assert.equal(JSON.stringify(body).includes(Buffer.from(secret).toString('hex')), false);
+        assert.deepEqual(Object.keys(body).sort(), ['challengeId', 'signedEvent']);
+        return { success: true };
+      },
+    });
+    await assert.rejects(account.signEvent({ kind: 1 }), /Only sign-in/);
+  } finally { account.destroy(); secret.fill(0); }
+  assert.ok(decoded.every(byte => byte === 0));
+  await assert.rejects(account.getPublicKey(), /cleared/);
+});
+
+test('private-key import rejects public keys, bad checksums, invalid scalars, and insecure pages', () => {
+  const { fromNsec } = require('./local-account');
+  const secret = pure.generateSecretKey();
+  const encoded = nip19.nsecEncode(secret);
+  const account = fromNsec(tools, encoded, environment);
+  account.destroy();
+  for (const input of ['', nip19.npubEncode(pure.getPublicKey(secret)), Buffer.from(secret).toString('hex'), encoded.slice(0, -1) + (encoded.endsWith('q') ? 'p' : 'q')]) {
+    assert.throws(() => fromNsec(tools, input, environment), /valid nsec/);
+  }
+  assert.throws(() => fromNsec(tools, encoded, { isSecureContext: false }), /HTTPS/);
+  const invalidScalar = new Uint8Array(32).fill(255);
+  assert.throws(() => fromNsec({ ...tools, decode: () => ({ type: 'nsec', data: invalidScalar }) }, encoded, environment));
+  assert.ok(invalidScalar.every(byte => byte === 0));
+  secret.fill(0);
+});

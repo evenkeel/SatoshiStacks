@@ -11,12 +11,12 @@
 <title>Satoshi Stacks</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/img/brand-icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/styles.css?v=24">
+<link rel="stylesheet" href="/styles.css?v=25">
 <link rel="stylesheet" href="/interface.css?v=4">
 <link rel="stylesheet" href="/club.css?v=4">
 <link rel="stylesheet" href="/motion.css?v=2">
 <link rel="stylesheet" href="/table-layout.css?v=8">
-<link rel="stylesheet" href="/bunker.css?v=17">
+<link rel="stylesheet" href="/bunker.css?v=18">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
@@ -158,13 +158,12 @@
   <p class="table-options-hint">D · Dealer &nbsp; SB · Small blind &nbsp; BB · Big blind</p>
 </dialog>
 <!-- NOSTR Login Overlay (hidden by default — triggered by clicking empty seat) -->
-<div class="nostr-login-overlay hidden" id="loginOverlay" role="dialog" aria-modal="true" aria-labelledby="loginHeading">
+<div class="nostr-login-overlay hidden" id="loginOverlay" role="dialog" aria-modal="true" aria-label="Sign in with Nostr">
 <div class="login-card">
 <button class="login-close-btn" data-action="login-cancel" aria-label="Close">&times;</button>
 <div class="login-logo">
-<img src="/img/neon-wordmark.svg" alt="Satoshi Stacks" class="login-logo-img">
+<img src="/img/table-wordmark.svg?v=7" alt="Satoshi Stacks" class="login-logo-img" width="220" height="93">
 </div>
-<h1 class="login-subtitle" id="loginHeading">Sign in to Satoshi Stacks</h1>
 <div class="login-status" id="loginStatus" role="status" aria-live="polite"></div>
 <!-- Method Selection Screen -->
 <div class="login-methods" id="loginMethods">
@@ -172,19 +171,17 @@
 </div>
 <!-- QR Code Screen (hidden by default — desktop: scan with phone signer) -->
 <div class="login-create-screen hidden" id="loginCreateScreen">
-  <h2 class="login-qr-label">Save your Nostr account</h2>
-  <p class="login-key-warning" id="loginKeyWarning"><strong>Copy and save your nsec now.</strong> It is your private key. There is no backup or password reset. If you lose it, you lose access to this account and any funds in it. Anyone with it can access your account.</p>
-  <label for="loginNewNpub">Public account ID (npub)</label>
-  <input class="login-key-input" id="loginNewNpub" type="text" readonly>
+  <h2 class="login-qr-label">Save your private key</h2>
+  <p class="login-key-warning" id="loginKeyWarning">This key unlocks your account and funds. Save it somewhere safe: there is no password reset.</p>
+  <input id="loginNewNpub" type="hidden">
   <label for="loginNewNsec">Private key (nsec)</label>
   <input class="login-key-input" id="loginNewNsec" type="password" readonly autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="loginKeyWarning">
   <div class="login-key-actions">
     <button class="login-qr-copy" data-action="toggle-new-nsec" id="loginRevealNsec" aria-controls="loginNewNsec" aria-pressed="false">Show nsec</button>
     <button class="login-qr-copy" data-action="copy-new-nsec">Copy nsec</button>
   </div>
-  <p class="login-provider-note">Save it in a password manager or another safe place. We do not store your private key. To sign in again, import your saved nsec into a Nostr signer such as Sidecar, then use that signer here.</p>
-  <label class="login-backup-check"><input id="loginKeySaved" type="checkbox"> I saved my nsec somewhere safe and understand it cannot be recovered.</label>
-  <button class="login-method-btn primary" data-action="finish-create-account" id="loginCreateContinue" disabled>Continue to sign in</button>
+  <label class="login-backup-check"><input id="loginKeySaved" type="checkbox"> I saved my key and understand it cannot be recovered.</label>
+  <button class="login-method-btn primary" data-action="finish-create-account" id="loginCreateContinue" disabled>Continue</button>
   <button class="login-back-btn" data-action="login-go-back">Back</button>
 </div>
 <div class="login-qr-screen hidden" id="loginQrScreen">
@@ -199,12 +196,7 @@
 <!-- Bunker URL Screen (hidden by default) -->
 <div class="login-bunker-screen hidden" id="loginBunkerScreen">
   <p class="login-bunker-label">Connect with Bunker URL</p>
-  <p class="login-bunker-instructions">
-    In your Nostr signer app (<a href="https://amber.nostr.dev" target="_blank" rel="noopener">Amber</a>,
-    <a href="https://nostrconnect.org" target="_blank" rel="noopener">Nostr Connect</a>, or similar),
-    find the <strong>"Connect App"</strong> or <strong>"Bunker URL"</strong> option.
-    Copy the <code>bunker://</code> URL and paste it below.
-  </p>
+  <p class="login-bunker-instructions">Paste the connection URL from your signer.</p>
   <input type="text" class="login-bunker-input" id="loginBunkerInput"
     placeholder="bunker://pubkey?relay=wss://...&secret=..."
     autocomplete="off" spellcheck="false">
@@ -212,7 +204,15 @@
   <p class="login-bunker-hint" id="loginBunkerHint"></p>
   <button class="login-back-btn" data-action="login-go-back">Back</button>
 </div>
-<p class="login-help" id="loginHelp"></p>
+<form class="login-key-screen hidden" id="loginKeyScreen">
+  <h2 class="login-qr-label">Use your private key</h2>
+  <p class="login-key-warning" id="loginImportWarning">Only paste your key on a device you trust. A signer keeps it outside this page.</p>
+  <label class="login-key-label" for="loginImportNsec">Private key (nsec)</label>
+  <input class="login-key-input" id="loginImportNsec" type="password" placeholder="nsec1…" autocomplete="off" spellcheck="false" autocapitalize="off" maxlength="100" aria-describedby="loginImportWarning loginImportPrivacy" required>
+  <p class="login-provider-note" id="loginImportPrivacy">Used in this tab until sign-out or exit. Never saved or sent to our server.</p>
+  <button type="submit" class="login-method-btn primary" id="loginKeySubmit">Sign in</button>
+  <button type="button" class="login-back-btn" data-action="login-go-back">Back</button>
+</form>
 </div>
 </div>
 <div class="nostr-login-overlay hidden" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileHeading">
@@ -271,18 +271,18 @@
 <!-- QR Code Library (for NIP-46 login) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <!-- NIP-46 (Nostr Connect) dependencies from nostr-tools -->
-<script type="module" src="/js/nip46-loader.js"></script>
+<script type="module" src="/js/nip46-loader.js?v=2"></script>
 <!-- Socket.IO Client -->
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/providers.js?v=21"></script>
 <script src="/js/cards.js?v=22"></script>
 <script src="/js/amounts.js?v=2"></script>
 <script src="/js/wallet-ui.js?v=5"></script>
-<script src="/js/local-account.js?v=2"></script>
-<script src="/js/profile.js?v=4"></script>
+<script src="/js/local-account.js?v=3"></script>
+<script src="/js/profile.js?v=5"></script>
 <script src="/js/table-motion.js?v=3"></script>
 <script src="/js/pot-pile.js?v=3"></script>
-<script src="/js/app.js?v=42"></script>
+<script src="/js/app.js?v=43"></script>
 <script src="/js/desktop-table.js?v=4"></script>
 <script src="/js/table-themes.js?v=6"></script>
 </body>
