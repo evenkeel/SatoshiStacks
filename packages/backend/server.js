@@ -16,9 +16,12 @@ const PokerGame = require('./poker-game');
 const apiRoutes = require('./routes/api');
 const adminRoutes = require('./routes/admin');
 const authRoutes = require('./routes/auth');
+const { createProfileRoutes, nip05Lookup } = require('./routes/profile');
+const {createLightningAddressHandler} = require('./services/lightning-address');
 const socketHandlers = require('./socket-handlers');
 const { createLightning } = require('./services/lightning');
 const { createPayments } = require('./services/payments');
+const { authenticatedSocketId } = require('./socket-session');
 
 // ==================== EXPRESS & SOCKET.IO SETUP ====================
 
@@ -80,7 +83,7 @@ function broadcastGameState(tableId) {
   // Send personalized state to each seated player
   game.players.forEach((player) => {
     if (!player) return;
-    const socketId = userSockets.get(player.userId);
+    const socketId = authenticatedSocketId(io, userSockets, player.userId);
     if (!socketId) return;
     io.to(socketId).emit('game-state', addBadgesToState(game.getGameState(player.userId)));
   });
@@ -104,19 +107,8 @@ function broadcastGameState(tableId) {
 // ==================== MIDDLEWARE & ROUTES ====================
 
 // NIP-05 identifier (must be before static middleware)
-app.get('/.well-known/nostr.json', (req, res) => {
-  const name = (req.query.name || '').toLowerCase().trim();
-  const identifiers = {
-    'allen': '8a3a9236d0eae6bc92eb17782d57e828a01f03cd28d3c68297c7e19d374b9419'
-  };
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-cache');
-  if (name && identifiers[name]) {
-    res.json({ names: { [name]: identifiers[name] } });
-  } else {
-    res.json({ names: identifiers });
-  }
-});
+app.get('/.well-known/nostr.json', nip05Lookup);
+app.get('/.well-known/lnurlp/:name', createLightningAddressHandler());
 
 // Security headers (helmet) — required dependency
 app.use(helmet({
@@ -148,7 +140,8 @@ TABLE_ROUTES.forEach(route => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ ok: true, uptime: process.uptime(), tables: games.size });
+  const ready = !config.REALMONEY_ENABLED || walletReady;
+  res.status(ready ? 200 : 503).json({ ok: ready, uptime: process.uptime(), tables: games.size, walletReady });
 });
 
 // Live table status API
@@ -161,6 +154,8 @@ app.get('/api/tables', (req, res) => {
     }
     return {
       ...tc,
+      realMoney: config.isRealMoney(tc.id),
+      depositsEnabled: !!payments?.depositsEnabled(),
       playerCount: game ? game.players.filter(p => p !== null).length : 0,
       observerCount,
       handInProgress: game ? game.handInProgress : false,
@@ -173,6 +168,27 @@ app.get('/api/tables', (req, res) => {
 app.use('/api', apiRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/profile', createProfileRoutes({
+  canPurchase: () => config.REALMONEY_ENABLED && walletReady && !!payments && !payments.breakerState().tripped,
+  onUpdate(pubkey, profile) {
+  const name = profile.display_name || profile.name || pubkey.slice(0,12);
+  for (const [tableId, game] of games) {
+    const player = game.players.find(p => p?.userId === pubkey);
+    if (player) {
+      Object.assign(player, {username:name,nostrName:name,nostrPicture:profile.picture || null,lud16:profile.lud16 || null});
+      broadcastGameState(tableId);
+    }
+  }
+  for (const [socketId, observer] of observerSockets) {
+    if (observer.userId === pubkey) {
+      Object.assign(observer,{observerName:name,nostrName:name,nostrPicture:profile.picture || null});
+      io.to(socketId).emit('profile-updated',{name,picture:profile.picture || null,lud16:profile.lud16 || null});
+    }
+  }
+  for (const entries of waitlists.values()) for (const entry of entries) if (entry.userId === pubkey) entry.observerName = name;
+  const socketId = userSockets.get(pubkey);
+  if (socketId) io.to(socketId).emit('profile-updated',{name,picture:profile.picture || null,lud16:profile.lud16 || null});
+} }));
 
 // Admin dashboard HTML
 app.get('/admin', (req, res) => {
@@ -193,7 +209,7 @@ authRoutes.setContext(sharedContext);
 // ==================== CRASH RECOVERY ====================
 // Restore in-progress hands from snapshots (survives server restart)
 
-(function recoverInProgressHands() {
+function recoverInProgressHands() {
   try {
     const snapshots = db.getAllHandSnapshots();
     if (snapshots.length === 0) {
@@ -203,52 +219,15 @@ authRoutes.setContext(sharedContext);
 
     for (const { table_id, hand_id, snapshot } of snapshots) {
       try {
-        const game = PokerGame.deserializeState(snapshot);
-
-        // Re-wire callbacks (same as ensureGameExists in socket-handlers)
-        game.onStateChange = () => {
-          broadcastGameState(table_id);
-        };
-        game.onTimerStart = (playerIndex, baseMs, timeBankInfo) => {
-          io.to(`table-${table_id}`).emit('action-timer-start', {
-            playerIndex,
-            timeoutMs: baseMs,
-            timeBankMs: timeBankInfo ? timeBankInfo.timeBankMs : 0,
-            isPreflop: timeBankInfo ? timeBankInfo.isPreflop : true
-          });
-        };
-        game.onTimeBankStart = (playerIndex, timeBankMs) => {
-          io.to(`table-${table_id}`).emit('time-bank-start', { playerIndex, timeBankMs });
-        };
-        game.onHandLog = (line, type) => {
-          io.to(`table-${table_id}`).emit('hand-log', { line, type });
-        };
-        game.onDealCards = (userId, line) => {
-          const socketId = userSockets.get(userId);
-          if (socketId) io.to(socketId).emit('hand-log', { line, type: 'deal' });
-        };
-        game.onHandComplete = (userId, historyText) => {
-          const socketId = userSockets.get(userId);
-          if (socketId) io.to(socketId).emit('hand-complete', { history: historyText });
-        };
-        game.onPlayerLeaving = (userId, stack) => {
-          try { db.updatePlayerLeftAt(userId, stack, table_id); } catch (e) {}
-        };
-        game.onTableMaybeEmpty = () => {
-          if (game.players.every(p => p === null)) {
-            games.delete(table_id);
-            nostr.scheduleLiveActivityUpdate(table_id, games, true);
-          }
-        };
-        game.onBadgeCheck = (userId, stats) => {
-          nostr.checkAndAwardBadges(userId, stats, { userSockets, io, games, broadcastGameState });
-        };
-        game.onPublishHandHistory = (text, handId, tableId, playerPubkeys) => {
-          nostr.publishHandHistory(text, handId, tableId, playerPubkeys).catch(e => {
-            console.error(`[Nostr] Failed to publish hand history: ${e.message}`);
-          });
-        };
-
+        const game = PokerGame.deserializeState(snapshot, { expectedRealMoney: config.isRealMoney(table_id) });
+        walletHandlers.wireGame(table_id, game);
+        for (const player of game.players) {
+          if (!player) continue;
+          player.disconnected = true;
+          player.sittingOutNextHand = true;
+          if (!game.handInProgress) player.sittingOut = true;
+          game.startSitOutKickTimer(player.userId);
+        }
         games.set(table_id, game);
 
         // Resume interrupted timers. The snapshot doesn't serialize the
@@ -273,16 +252,17 @@ authRoutes.setContext(sharedContext);
         console.log(`[Recovery] Restored hand ${hand_id} on table ${table_id} (phase: ${game.phase}, players: ${game.players.filter(p => p).length})`);
       } catch (e) {
         console.error(`[Recovery] Failed to restore hand on table ${table_id}:`, e.message);
-        // Delete corrupted snapshot so it doesn't block future startups
-        db.deleteHandSnapshot(table_id);
+        // Preserve evidence and liabilities. Never discard a funded snapshot.
+        throw e;
       }
     }
 
     console.log(`[Recovery] Recovered ${snapshots.length} in-progress hand(s)`);
   } catch (e) {
     console.error('[Recovery] Crash recovery failed:', e.message);
+    process.exit(1);
   }
-})();
+}
 
 // ==================== SEED TABLE CONFIGS ====================
 // Ensure all configured tables exist in the database
@@ -298,11 +278,15 @@ console.log(`[Server] Seeded ${Object.keys(config.TABLE_CONFIGS).length} table c
 // REALMONEY_ENABLED master switch is on).
 let lightning = null;
 let payments = null;
+let accountPayments = null;
+let walletReady = false;
 
 const walletHandlers = socketHandlers.setup(
   io, games, userSockets, socketUsers, observerSockets, broadcastGameState, waitlists,
   () => payments,
+  () => accountPayments,
 );
+recoverInProgressHands();
 
 // ==================== LIGHTNING REAL-MONEY WIRING ====================
 // Total sats currently represented as real-money stacks/pots across all tables.
@@ -320,7 +304,7 @@ function liveStacksTotal() {
 
 if (config.REALMONEY_ENABLED) {
   lightning = createLightning(config.LIGHTNING);
-  payments = createPayments({
+  const connectedPayments = createPayments({
     lnd: lightning,
     db,
     config,
@@ -328,30 +312,44 @@ if (config.REALMONEY_ENABLED) {
     liveStacksTotal,
     onSeatPlayer: (row) => walletHandlers.seatFromDeposit(row),
     onRefund: (row) => walletHandlers.refundToPlayer(row),
+    onDeposit: (row) => { if (row.table_id === db.ACCOUNT) walletHandlers.seatFromDeposit(row); },
     alert: (m) => console.error('[Wallet][ALERT]', m),
   });
-  adminRoutes.setPayments(payments); // expose breaker/withdrawals state to the admin wallet view
-
-  lightning.connect()
-    .then(() => {
-      // Stream settled deposits -> idempotent credit + seat.
-      lightning.subscribeInvoices((s) => {
-        try { payments.creditDeposit(s.paymentHash, s.amountSats); }
-        catch (e) { console.error('[Wallet] creditDeposit failed:', e.message); }
-      });
-      // Resolve anything left mid-flight by a previous crash, then watch solvency
-      // and auto-refund any unseated deposits to the player's lud16.
-      payments.reconcilePending().catch(e => console.error('[Wallet] reconcile failed:', e.message));
-      payments.refundUnseatedDeposits().catch(e => console.error('[Wallet] refund sweep failed:', e.message));
-      setInterval(() => {
-        payments.solvencyCheck().catch(e => console.error('[Wallet] solvency check failed:', e.message));
-        payments.refundUnseatedDeposits().catch(e => console.error('[Wallet] refund sweep failed:', e.message));
-      }, 60000).unref();
-      console.log('[Wallet] Real-money Lightning wiring active');
-    })
-    .catch((e) => {
-      console.error('[Wallet] FATAL: could not connect to LND — real-money disabled until restart:', e.message);
-    });
+  accountPayments = connectedPayments;
+  let subscription = null;
+  let maintenanceRunning = false;
+  async function maintainWallet() {
+    if (maintenanceRunning) return;
+    maintenanceRunning = true;
+    try {
+      await lightning.connect();
+      if (!subscription) {
+        const stream = lightning.subscribeInvoices(s => connectedPayments.creditDeposit(s.paymentHash, s.amountSats));
+        subscription = stream;
+        stream.on('error', error => {
+          if (subscription !== stream) return;
+          console.error('[Wallet] Invoice stream failed:', error.message);
+          stream.removeAllListeners('invoice_updated');
+          subscription = null;
+          stream.cancel?.();
+          walletReady = false;
+          payments = null;
+        });
+      }
+      await connectedPayments.reconcilePending();
+      const solvency = await connectedPayments.solvencyCheck();
+      walletReady = solvency.ok;
+      payments = walletReady ? connectedPayments : null;
+      adminRoutes.setPayments(connectedPayments);
+      if (walletReady) connectedPayments.releaseUnseatedDeposits();
+    } catch (error) {
+      walletReady = false;
+      payments = null;
+      console.error('[Wallet] Not ready:', error.message);
+    } finally { maintenanceRunning = false; }
+  }
+  maintainWallet();
+  setInterval(maintainWallet, 15000).unref();
 }
 
 // ==================== START ====================
@@ -370,7 +368,7 @@ function flushSnapshots(label) {
   let flushed = 0;
   for (const [tableId, game] of games) {
     try {
-      if (game.handInProgress) {
+      if (game.handInProgress || game.realMoney) {
         game.saveSnapshot();
         flushed++;
       }

@@ -29,7 +29,7 @@ const isMobileDevice = (() => {
   const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
   const isMobileUA = /Android|iPhone|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(ua);
   const isSmallScreen = Math.min(window.screen.width, window.screen.height) <= 500;
-  return isTouchDevice && (isMobileUA || isSmallScreen);
+  return isMobileUA || (isTouchDevice && isSmallScreen);
 })();
 
 // Platform-specific detection for login method selection
@@ -42,27 +42,6 @@ const nip46Ready = new Promise(resolve => {
   if (window.NostrNIP46?.loaded) resolve();
   else window.addEventListener('nip46-ready', resolve, { once: true });
 });
-
-if (isMobileDevice) {
-  document.body.classList.add('is-mobile');
-
-  // Track true visible height (accounts for Safari toolbar)
-  const setMobileHeight = () => {
-    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
-  };
-  setMobileHeight();
-  window.addEventListener('resize', setMobileHeight);
-
-  // Try Fullscreen API (works on Android Chrome, not iOS Safari)
-  const el = document.documentElement;
-  const rfs = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (rfs) {
-    document.addEventListener('click', () => {
-      if (!document.fullscreenElement) rfs.call(el).catch(() => {});
-    }, { once: true });
-  }
-
-}
 
 // ============================================================
 //  SOUND EFFECTS (Web Audio API — no files needed)
@@ -143,12 +122,9 @@ let gameState = null;
 let mySeat = null;          // 1-6 (assigned by server)
 let prevGameState = null;    // Track previous state for animations
 let preAction = null;        // Pre-action selection
+let preActionToCall = null;  // Exact wager accepted when selecting Call
 let currentHandLog = [];     // Accumulates hand-log lines for current hand
-let chipFlyTriggered = false; // Prevent multiple chip fly animations per hand
-let savedPotForAnimation = 0; // Captures pot total before server zeroes it, for chip fly
-let renderedPotChipCount = 0; // How many chips currently rendered in the pot pile DOM
-let potPileRng = null;        // Persistent PRNG function for stable chip pile layout
-let vacuumAnimating = false;  // Guard: prevent updatePot from clearing DOM during vacuum animation
+const potPile = window.StacksPotPile.create(); // Settled chips persist for the hand.
 let cachedHoleCards = null;    // Cache our hole cards so they survive state glitches
 let isObserver = false;       // True when watching without a seat
 let observerName = null;      // Random name assigned by server for observers
@@ -203,26 +179,6 @@ const CHIP_DEFS = [
   { value: 5,      label: '5',    fill: '#8B7355', text: '#F8F3EA' },
   { value: 1,      label: '1',    fill: '#F3EBD9', text: '#F3EBD9' },
 ];
-
-// Nameplate target positions (% on poker table), keyed by visual seat (1-6)
-const NP_TARGETS = {
-  1: { top: 2,  left: 62 },
-  2: { top: 50, left: 84 },
-  3: { top: 98, left: 62 },
-  4: { top: 98, left: 38 },
-  5: { top: 50, left: 16 },
-  6: { top: 2,  left: 38 },
-};
-
-// Bet position targets (where bet chips sit on felt), keyed by visual seat (1-6)
-const BET_TARGETS = {
-  1: { top: 12, left: 62 },
-  2: { top: 60, left: 84 },
-  3: { top: 72, left: 60 },
-  4: { top: 72, left: 40 },
-  5: { top: 60, left: 16 },
-  6: { top: 12, left: 38 },
-};
 
 // Avatar colors for each visual seat
 const AVATAR_COLORS = ['#5b9ea6','#d4714e','#8cb49a','#e8a838','#9b7cb4','#5a7d9a'];
@@ -281,158 +237,22 @@ function renderChipStack(amount, chipSize, maxTotal) {
   return html;
 }
 
-function layoutChipPile(chips, chipSize, seed) {
-  if (chips.length === 0) return '';
-  function rand() { seed = (seed * 16807 + 0) % 2147483647; return (seed - 1) / 2147483646; }
-  const shuffled = [...chips];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  const spreadX = Math.min(shuffled.length * 6, 120);
-  const spreadY = Math.min(shuffled.length * 2, 25);
-  let html = `<div class="chip-pile" style="width:${spreadX * 2 + chipSize}px;height:${spreadY * 2 + chipSize + 20}px;">`;
-  const cx = spreadX + chipSize / 2;
-  const cy = spreadY + chipSize / 2;
-  for (let i = 0; i < shuffled.length; i++) {
-    const layer = i / Math.max(shuffled.length - 1, 1);
-    const tightness = 0.85 - layer * 0.55;
-    const angle = rand() * Math.PI * 2;
-    const dist = rand() * tightness;
-    const x = cx + Math.cos(angle) * dist * spreadX - chipSize / 2;
-    const y = cy + Math.sin(angle) * dist * spreadY - chipSize / 2;
-    const rot = Math.floor(rand() * 360);
-    html += `<div class="chip-pile-item" style="left:${x}px;top:${y}px;z-index:${i};transform:rotate(${rot}deg)">${renderChipSVG(shuffled[i], chipSize)}</div>`;
-  }
-  html += '</div>';
-  return html;
-}
-
-// Stable PRNG factory — returns a function that produces deterministic values 0–1
-function createPRNG(seed) {
-  let s = Math.abs(seed) || 1;
-  return function() {
-    s = (s * 16807 + 0) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
-
-// Append new chips to an existing pile without touching existing DOM chips.
-// rng must be the same persistent PRNG that was used for all prior chips.
-function appendChipsToPile(newChips, container, totalCount, chipSize, rng) {
-  // Get or create the .chip-pile div
-  let pile = container.querySelector('.chip-pile');
-  const spreadX = Math.min(totalCount * 6, 120);
-  const spreadY = Math.min(totalCount * 2, 25);
-  if (!pile) {
-    pile = document.createElement('div');
-    pile.className = 'chip-pile';
-    container.appendChild(pile);
-  }
-  // Resize pile to accommodate total chip count
-  pile.style.width = (spreadX * 2 + chipSize) + 'px';
-  pile.style.height = (spreadY * 2 + chipSize + 20) + 'px';
-
-  const cx = spreadX + chipSize / 2;
-  const cy = spreadY + chipSize / 2;
-  const startIdx = totalCount - newChips.length;
-
-  for (let i = 0; i < newChips.length; i++) {
-    const globalIdx = startIdx + i;
-    const layer = globalIdx / Math.max(totalCount - 1, 1);
-    const tightness = 0.85 - layer * 0.55;
-    const angle = rng() * Math.PI * 2;
-    const dist = rng() * tightness;
-    const x = cx + Math.cos(angle) * dist * spreadX - chipSize / 2;
-    const y = cy + Math.sin(angle) * dist * spreadY - chipSize / 2;
-    const rot = Math.floor(rng() * 360);
-    const el = document.createElement('div');
-    el.className = 'chip-pile-item';
-    el.style.cssText = `left:${x}px;top:${y}px;z-index:${globalIdx};transform:rotate(${rot}deg)`;
-    el.innerHTML = renderChipSVG(newChips[i], chipSize);
-    pile.appendChild(el);
-  }
-}
-
-function renderChipPillIcon(amount, size) {
-  if (!amount || amount <= 0) return renderChipSVG(CHIP_DEFS[CHIP_DEFS.length - 1], size);
-  for (const def of CHIP_DEFS) {
-    if (amount >= def.value) return renderChipSVG(def, size);
-  }
-  return renderChipSVG(CHIP_DEFS[CHIP_DEFS.length - 1], size);
-}
-
 // ============================================================
 //  CARD RENDERING (from beautiful version)
 // ============================================================
-function isRed(s) { return s === 'h' || s === 'd'; }
+// One vector deck is shared by the table and the deck preview.
+const renderCardHTML = window.SatoshiDeck.renderCardHTML;
+const tableMotion = window.StacksTableMotion.create({
+  table: $('pokerTable'),
+  seatElement: index => $(`nameplate-${calculateVisualPosition(index + 1)}`),
+  betElement: index => $(`bet-${calculateVisualPosition(index + 1)}`),
+  cardElement: index => $(`playerCards-${calculateVisualPosition(index + 1)}`),
+  cardHTML: renderCardHTML,
+  chipHTML: amount => renderChipStack(amount, 24, 3),
+});
 
-// Pip grid layouts for number cards (positions on a 3-col x N-row grid)
-// Each pip: [col 1-3, row position %, flipped]
-const PIP_LAYOUTS = {
-  '2': [[2,20,false],[2,80,true]],
-  '3': [[2,15,false],[2,50,false],[2,85,true]],
-  '4': [[1,25,false],[3,25,false],[1,75,true],[3,75,true]],
-  '5': [[1,25,false],[3,25,false],[2,50,false],[1,75,true],[3,75,true]],
-  '6': [[1,25,false],[3,25,false],[1,50,false],[3,50,false],[1,75,true],[3,75,true]],
-  '7': [[1,25,false],[3,25,false],[2,37,false],[1,50,false],[3,50,false],[1,75,true],[3,75,true]],
-  '8': [[1,25,false],[3,25,false],[2,37,false],[1,50,false],[3,50,false],[2,63,true],[1,75,true],[3,75,true]],
-  '9': [[1,22,false],[3,22,false],[1,44,false],[3,44,false],[2,33,false],[1,66,true],[3,66,true],[1,88,true],[3,88,true]],
-  'T': [[1,20,false],[3,20,false],[2,32,false],[1,42,false],[3,42,false],[1,58,true],[3,58,true],[2,68,true],[1,80,true],[3,80,true]]
-};
-
-function renderCardHTML(card, sizeClass) {
-  if (!card || card === '??') return `<div class="card face-down ${sizeClass || ''}"></div>`;
-  const r = card[0], s = card[1];
-  const d = RANK_DISP[r] || r;
-  const sym = SUIT_SYM[s];
-  const color = isRed(s) ? 'red' : 'black';
-  const extraClasses = sizeClass || '';
-
-  // Small cards — keep compact
-  if (extraClasses.includes('small')) {
-    return `<div class="card ${extraClasses} ${color}">
-      <span class="card-rank">${d}</span><span class="card-suit">${sym}</span>
-    </div>`;
-  }
-
-  const corners = `<div class="card-corner top-left"><span class="card-rank">${d}</span><span class="card-suit">${sym}</span></div>` +
-    `<div class="card-corner bottom-right"><span class="card-rank">${d}</span><span class="card-suit">${sym}</span></div>`;
-
-  // Ace — large centered suit
-  if (r === 'A') {
-    return `<div class="card ${color} ${extraClasses} ace-card">${corners}
-      <div class="card-center"><span class="card-pip">${sym}</span></div>
-    </div>`;
-  }
-
-  // Face cards (J, Q, K) — large suit + ghosted letter
-  if (r === 'J' || r === 'Q' || r === 'K') {
-    return `<div class="card ${color} ${extraClasses} face-card">${corners}
-      <div class="card-face-icon"><span class="card-face-letter">${d}</span></div>
-      <div class="card-face-icon"><span class="card-face-suit">${sym}</span></div>
-    </div>`;
-  }
-
-  // Number cards (2-10) — proper pip layout
-  const layout = PIP_LAYOUTS[r];
-  if (layout) {
-    const colPos = {1: '20%', 2: '50%', 3: '80%'};
-    let pipsHTML = '<div class="card-pips">';
-    pipsHTML += layout.map(([col, row, flip]) =>
-      `<span class="pip${flip ? ' flip' : ''}" style="position:absolute;left:${colPos[col]};top:${row}%;transform:translate(-50%,-50%)${flip ? ' rotate(180deg)' : ''}">${sym}</span>`
-    ).join('');
-    pipsHTML += '</div>';
-    return `<div class="card ${color} ${extraClasses} pip-card">${corners}${pipsHTML}</div>`;
-  }
-
-  // Fallback
-  return `<div class="card ${color} ${extraClasses}">${corners}
-    <div class="card-center"><span class="card-pip">${sym}</span></div>
-  </div>`;
-}
-
-function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : '0'; }
+function fmt(n) { return window.StacksAmounts.format(n); }
+function fmtNumber(n) { return Number(n || 0).toLocaleString(); }
 
 // ============================================================
 //  GUI ROTATION — player always sees themselves at position 3
@@ -463,7 +283,44 @@ let nip46ClientSk = null;
 let nip46AbortController = null;
 const NIP46_RELAYS = ['wss://relay.nsec.app', 'wss://relay.damus.io'];
 
+// Keep keyboard focus inside an open dialog and return it to its trigger.
+const dialogTriggers = new WeakMap();
+const boundDialogs = new WeakSet();
+function focusDialog(overlay) {
+  if (!overlay) return;
+  if (!dialogTriggers.has(overlay)) dialogTriggers.set(overlay, document.activeElement);
+  const focusable = () => [...overlay.querySelectorAll('button, input, textarea, select, summary, a[href], [tabindex="0"]')]
+    .filter(el => !el.disabled && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+  if (!boundDialogs.has(overlay)) {
+    overlay.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        const close = overlay.querySelector('[data-action="login-cancel"], [data-action="close-wallet"], [data-action="close-profile"], #buyinCancelBtn');
+        if (close) { event.preventDefault(); close.click(); }
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusable(), first = items[0], last = items[items.length - 1];
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || !overlay.contains(document.activeElement))) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !overlay.contains(document.activeElement))) {
+        event.preventDefault(); first.focus();
+      }
+    });
+    boundDialogs.add(overlay);
+  }
+  focusable()[0]?.focus();
+}
+function restoreDialogFocus(overlay) {
+  if (!overlay) return;
+  const trigger = dialogTriggers.get(overlay);
+  dialogTriggers.delete(overlay);
+  if (trigger?.isConnected) trigger.focus();
+}
+
 function showLoginOverlay() {
+  stopLoginAttempt();
+  clearCreatedAccount();
+  clearImportedKey();
   const overlay = document.getElementById('loginOverlay');
   if (overlay) overlay.classList.remove('hidden');
   // Reset to method selection screen
@@ -481,18 +338,22 @@ function showLoginOverlay() {
   qrConnectionURI = null;
   setLoginStatus('', false);
   populateLoginMethods();
+  focusDialog(overlay);
 }
 
 function hideLoginOverlay() {
+  clearCreatedAccount();
+  clearImportedKey();
   const overlay = document.getElementById('loginOverlay');
   if (overlay) overlay.classList.add('hidden');
+  restoreDialogFocus(overlay);
 }
 
 function setLoginStatus(msg, isError = true) {
   const el = document.getElementById('loginStatus');
   if (el) {
     el.textContent = msg;
-    el.style.color = isError ? 'var(--rust)' : 'var(--sage)';
+    el.style.color = isError ? '#efb59b' : '#b5d4c4';
   }
 }
 
@@ -518,69 +379,152 @@ function populateLoginMethods() {
   if (!container) return;
   container.innerHTML = '';
 
-  const hasExtension = !!window.nostr;
+  const primary = isMobileDevice
+    ? `<button class="login-method-btn primary" data-action="deep-link-login">${LOGIN_ICONS.extension} Open signer app</button>`
+    : `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Use browser signer</button>`;
+  container.innerHTML = primary +
+    `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with QR code</button>` +
+    `<button class="login-method-btn secondary" data-action="show-private-key">${LOGIN_ICONS.keyring} Use private key</button>` +
+    `<button class="login-text-btn" data-action="create-nostr-account">Create a new account</button>` +
+    `<details class="login-more"><summary>More options</summary>` +
+    (isMobileDevice ? `<button class="login-text-btn" data-action="nip07-login">Use browser signer</button>` : '') +
+    `<button class="login-text-btn" data-action="show-bunker">Connect with bunker URL</button></details>`;
+}
 
-  if (!isMobileDevice) {
-    // DESKTOP: Extension (if available) + QR Code + Bunker URL
-    if (hasExtension) {
-      container.innerHTML =
-        `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
-        `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-        `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    } else {
-      container.innerHTML =
-        `<button class="login-method-btn primary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
-        `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    }
-  } else if (isAndroid) {
-    // ANDROID: Deep link (Amber/Primal/any NIP-46 signer) + Bunker URL fallback
-    container.innerHTML =
-      `<button class="login-method-btn primary" data-action="deep-link-login" data-provider="Nostr">${LOGIN_ICONS.amber} Sign in with Nostr</button>` +
-      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    if (hasExtension) {
-      container.innerHTML +=
-        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>`;
-    }
-  } else if (isIOS) {
-    // iOS: Deep link (Nostr Keyring/Primal/any NIP-46 signer) + Bunker URL fallback
-    container.innerHTML =
-      `<button class="login-method-btn primary" data-action="deep-link-login" data-provider="Nostr">${LOGIN_ICONS.keyring} Sign in with Nostr</button>` +
-      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
-    if (hasExtension) {
-      container.innerHTML +=
-        `<button class="login-method-btn secondary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>`;
-    }
-  } else {
-    // Fallback: show all options
-    container.innerHTML =
-      `<button class="login-method-btn primary" data-action="nip07-login">${LOGIN_ICONS.extension} Browser Extension</button>` +
-      `<button class="login-method-btn secondary" data-action="start-qr-login">${LOGIN_ICONS.qrcode} Connect with Phone</button>` +
-      `<button class="login-method-btn secondary" data-action="show-bunker">${LOGIN_ICONS.bunker} Paste Bunker URL</button>`;
+let createdAccount = null;
+function clearCreatedAccount() {
+  createdAccount?.destroy();
+  createdAccount = null;
+  if ($('loginNewNsec')) { $('loginNewNsec').value = ''; $('loginNewNsec').type = 'password'; }
+  if ($('loginNewNpub')) $('loginNewNpub').value = '';
+  if ($('loginKeySaved')) $('loginKeySaved').checked = false;
+  if ($('loginCreateContinue')) $('loginCreateContinue').disabled = true;
+  if ($('loginRevealNsec')) {
+    $('loginRevealNsec').textContent = 'Show nsec';
+    $('loginRevealNsec').setAttribute('aria-pressed', 'false');
   }
-
-  // Update help text
-  const helpEl = document.getElementById('loginHelp');
-  if (helpEl) {
-    if (!isMobileDevice) {
-      helpEl.innerHTML = hasExtension
-        ? 'Scan the QR code with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer'
-        : 'Use <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or install <a href="https://chromewebstore.google.com/detail/nos2x/kpgefcfmnafjgpblomihpgmejjdanjjp" target="_blank" rel="noopener">nos2x</a>';
-    } else if (isAndroid) {
-      helpEl.innerHTML = 'Works with <a href="https://github.com/greenart7c3/Amber" target="_blank" rel="noopener">Amber</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer';
-    } else if (isIOS) {
-      helpEl.innerHTML = 'Works with <a href="https://apps.apple.com/app/nostr-keyring/id6446657094" target="_blank" rel="noopener">Nostr Keyring</a>, <a href="https://primal.net" target="_blank" rel="noopener">Primal</a>, or any NIP-46 signer';
-    } else {
-      helpEl.innerHTML = 'Requires a Nostr signer app or browser extension';
-    }
+  $('loginCreateScreen')?.classList.add('hidden');
+}
+async function createNostrAccount() {
+  const attempt = beginLoginAttempt();
+  try {
+    setLoginStatus('Creating your account securely…', false);
+    await loginStep(attempt, () => nip46Ready, 15000);
+    if (loginAttempt !== attempt || attempt.controller.signal.aborted) return;
+    clearCreatedAccount();
+    createdAccount = window.StacksLocalAccount.create(window.NostrNIP46, window);
+    $('loginNewNpub').value = createdAccount.npub;
+    $('loginNewNsec').value = createdAccount.nsec();
+    $('loginMethods').classList.add('hidden');
+    $('loginCreateScreen').classList.remove('hidden');
+    stopLoginAttempt();
+    document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
+    $('loginCreateContinue').disabled = true;
+    setLoginStatus('Your account is ready!', false);
+    $('loginRevealNsec').focus();
+  } catch (error) { loginFailed(attempt, error); }
+}
+async function copyCreatedNsec() {
+  const account = createdAccount;
+  if (!account) return;
+  try {
+    await navigator.clipboard.writeText(account.nsec());
+    if (createdAccount === account) setLoginStatus('Nsec copied. Save it somewhere safe, then confirm below.', false);
+  } catch (_) {
+    if (createdAccount !== account) return;
+    $('loginNewNsec').type = 'text';
+    $('loginRevealNsec').textContent = 'Hide nsec';
+    $('loginRevealNsec').setAttribute('aria-pressed', 'true');
+    $('loginNewNsec').focus();
+    $('loginNewNsec').select();
+    setLoginStatus('Clipboard unavailable. Copy the selected nsec and save it somewhere safe.');
   }
 }
+async function finishCreatedAccount() {
+  if (!createdAccount || !$('loginKeySaved').checked || loginAttempt) return;
+  const attempt = beginLoginAttempt();
+  try {
+    setLoginStatus('Signing in with your new account…', false);
+    await finishLogin(attempt, createdAccount, 'local');
+  } catch (error) {
+    loginFailed(attempt, error);
+    $('loginCreateContinue').disabled = !$('loginKeySaved').checked;
+  }
+}
+document.getElementById('loginKeySaved')?.addEventListener('change', () => {
+  $('loginCreateContinue').disabled = !createdAccount || !$('loginKeySaved').checked || !!loginAttempt;
+});
+
+function clearImportedKey() {
+  if ($('loginImportNsec')) { $('loginImportNsec').value = ''; $('loginImportNsec').readOnly = false; }
+  $('loginKeyScreen')?.classList.add('hidden');
+}
+function showPrivateKeyScreen() {
+  stopLoginAttempt();
+  clearCreatedAccount();
+  clearImportedKey();
+  $('loginMethods').classList.add('hidden');
+  $('loginKeyScreen').classList.remove('hidden');
+  $('loginKeySubmit').disabled = false;
+  setLoginStatus('', false);
+  $('loginImportNsec').focus();
+}
+async function submitPrivateKey(event) {
+  event.preventDefault();
+  if (loginAttempt) return;
+  const attempt = beginLoginAttempt();
+  $('loginImportNsec').readOnly = true;
+  let signer = null;
+  try {
+    setLoginStatus('Signing in…', false);
+    await loginStep(attempt, () => nip46Ready, 15000);
+    if (loginAttempt !== attempt || attempt.controller.signal.aborted) return;
+    // Decode directly from the field; never put the nsec in storage or a request.
+    signer = window.StacksLocalAccount.fromNsec(window.NostrNIP46, $('loginImportNsec').value, window);
+    $('loginImportNsec').value = '';
+    attempt.localSigner = signer;
+    await finishLogin(attempt, signer, 'private-key');
+  } catch (error) {
+    if (loginAttempt === attempt) { $('loginImportNsec').value = ''; $('loginImportNsec').readOnly = false; }
+    loginFailed(attempt, new Error('Could not sign in. Check your nsec and connection, then try again.'));
+  } finally {
+    if (signer && localProfileSigner !== signer) signer.destroy();
+  }
+}
+$('loginKeyScreen')?.addEventListener('submit', submitPrivateKey);
+window.addEventListener('pagehide', () => { stopLoginAttempt(); clearCreatedAccount(); clearImportedKey(); });
+
+let localProfileSigner = null;
+function clearLocalProfileSigner() {
+  localProfileSigner?.destroy();
+  localProfileSigner = null;
+}
+window.addEventListener('pagehide', clearLocalProfileSigner);
+const profileEditor = window.StacksProfile.createEditor({
+  session: () => ({token:mySessionToken,pubkey:myPubkeyHex}),
+  getSigner: () => localProfileSigner || (localStorage.getItem('ss_authMethod') === 'nip07' ? window.nostr : nip46Signer),
+  focus: focusDialog,
+  restore: restoreDialogFocus,
+  onFund: amount => showAccountDeposit(amount),
+  onSave(profile, availableSats) {
+    availableCashoutSats = Number(availableSats || 0);
+    myNostrName = profile.display_name || profile.name || null;
+    myUsername = myNostrName || myNpub.slice(0,12) + '...';
+    myNostrPicture = profile.picture || null;
+    if (myNostrName) localStorage.setItem('ss_nostrName',myNostrName); else localStorage.removeItem('ss_nostrName');
+    if (myNostrPicture) localStorage.setItem('ss_nostrPicture',myNostrPicture); else localStorage.removeItem('ss_nostrPicture');
+    updateWalletButtons();
+    requestWalletState();
+  }
+});
 
 // Shared session storage helper
 function storeAuthSession(verifyData) {
+  lightningWallet.disconnect();
   mySessionToken = verifyData.sessionToken;
   myPubkeyHex = verifyData.pubkeyHex;
   myNpub = verifyData.npub;
+  availableCashoutSats = verifyData.profile.availableSats || 0;
   myNostrName = verifyData.profile.name;
   myNostrPicture = verifyData.profile.picture;
   myUserId = myPubkeyHex;
@@ -589,6 +533,9 @@ function storeAuthSession(verifyData) {
   localStorage.setItem('ss_sessionToken', mySessionToken);
   localStorage.setItem('ss_pubkeyHex', myPubkeyHex);
   localStorage.setItem('ss_npub', myNpub);
+  localStorage.removeItem('ss_nostrName');
+  localStorage.removeItem('ss_nostrPicture');
+  localStorage.removeItem('ss_lud16');
   if (myNostrName) localStorage.setItem('ss_nostrName', myNostrName);
   if (myNostrPicture) localStorage.setItem('ss_nostrPicture', myNostrPicture);
   if (verifyData.profile.lud16) localStorage.setItem('ss_lud16', verifyData.profile.lud16);
@@ -596,182 +543,147 @@ function storeAuthSession(verifyData) {
   // NIP-51: Fetch follow/mute lists in background
   fetchFollowAndMuteLists(myPubkeyHex);
 
-  // NIP-47: Show wallet connect option in settings
-  showNWCRow();
+  // Show connected-wallet controls
+  showWalletControls();
+  requestWalletState();
 }
 
 // Challenge-response auth using a signer object (window.nostr or NIP-46 BunkerSigner)
-async function performChallengeAuth(signer) {
-  // Step 1: Get challenge from server
-  setLoginStatus('Requesting challenge...', false);
-  const challengeRes = await fetch('/api/auth/challenge', { method: 'POST' });
-  const challengeData = await challengeRes.json();
-  if (!challengeData.success) throw new Error(challengeData.error || 'Failed to get challenge');
-
-  // Step 2: Get pubkey from signer
-  setLoginStatus('Requesting pubkey...', false);
-  const pubkey = await signer.getPublicKey();
-
-  // Step 3: Sign the challenge event
-  setLoginStatus('Please approve the login request...', false);
-  const eventTemplate = {
-    kind: 22242,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['challenge', challengeData.nonce],
-      ['relay', window.location.origin]
-    ],
-    content: ''
-  };
-  const signedEvent = await signer.signEvent(eventTemplate);
-
-  // Step 4: Verify with server
-  setLoginStatus('Verifying signature...', false);
-  const verifyRes = await fetch('/api/auth/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      challengeId: challengeData.challengeId,
-      signedEvent
-    })
+async function performChallengeAuth(signer, signal) {
+  setLoginStatus(signer === createdAccount || loginAttempt?.localSigner === signer ? 'Signing in…' : 'Approve in your signer…', false);
+  return window.StacksProviders.authenticate(signer, {
+    origin: window.location.origin,
+    signal,
+    async requestChallenge() {
+      const response = await fetch('/api/auth/challenge', { method: 'POST', signal });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Could not request sign-in');
+      return data;
+    },
+    async verify(body) {
+      const response = await fetch('/api/auth/verify', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Sign-in verification failed');
+      return data;
+    },
   });
-  const verifyData = await verifyRes.json();
-  if (!verifyData.success) throw new Error(verifyData.error || 'Verification failed');
-
-  return verifyData;
 }
 
-// === NIP-07 Browser Extension Login ===
-async function handleNIP07Login() {
-  // Disable all method buttons
+// Each attempt owns its cancellation, relay pool, and signer. Switching methods
+// or closing the dialog prevents a delayed approval from signing the user in.
+let loginAttempt = null;
+let qrConnectionURI = null;
+function stopLoginAttempt() {
+  const attempt = loginAttempt;
+  loginAttempt = null;
+  $('loginSignerLink')?.remove();
+  attempt?.controller.abort();
+  document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
+  if (attempt && !attempt.completed) {
+    attempt.localSigner?.destroy();
+    try { attempt.signer?.close(); } catch (_) { /* already closed */ }
+    attempt.pool?.close(attempt.relays || NIP46_RELAYS);
+  }
+}
+function beginLoginAttempt() {
+  stopLoginAttempt();
+  const attempt = { controller: new AbortController(), completed: false };
+  loginAttempt = attempt;
   document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = true);
-  setLoginStatus('Checking for NOSTR extension...', false);
-
-  const hasNostr = await detectNostr();
-  if (!hasNostr) {
-    setLoginStatus('No Nostr extension found. Install nos2x or another NIP-07 signer extension.');
-    document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
-    return;
-  }
-
+  return attempt;
+}
+function loginStep(attempt, operation, timeoutMs = 120000) {
+  return window.StacksProviders.withTimeout(operation, {
+    signal: attempt.controller.signal, timeoutMs,
+    message: 'The signer did not respond in time. Unlock it and try again, or choose another sign-in method.'
+  });
+}
+function loginFailed(attempt, error) {
+  if (loginAttempt !== attempt || attempt.controller.signal.aborted) return;
+  const message = error.message || 'Sign-in failed. Please try again.';
+  setLoginStatus(message);
+  const hint = $('loginQrHint');
+  if (hint) hint.textContent = 'Connection not completed. Go back to try again.';
+  stopLoginAttempt();
+  document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
+}
+async function finishLogin(attempt, signer, method) {
+  const data = await performChallengeAuth(signer, attempt.controller.signal);
+  if (loginAttempt !== attempt || attempt.controller.signal.aborted) return;
+  attempt.completed = true;
+  nip46Signer = method === 'nip46' ? signer : null;
+  storeAuthSession(data);
+  localStorage.setItem('ss_authMethod', method);
+  $('loginBunkerInput').value = '';
+  qrConnectionURI = null;
+  // Keep the local signer in page memory for optional profile edits. Clear its export
+  // fields now, and erase the key itself on logout or page exit.
+  const setupSigner = method === 'local' ? createdAccount : method === 'private-key' ? signer : null;
+  clearLocalProfileSigner();
+  localProfileSigner = setupSigner;
+  if (setupSigner) createdAccount = null;
+  hideLoginOverlay();
+  // Authenticate the observer socket immediately, including the real-money
+  // buy-in path; it must not remain attached to an anonymous observer.
+  if (socket?.connected) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
+  const continueLogin = () => {
+    if (loginIntent === 'observe') loginIntent = 'sit';
+    else showBuyinDialog();
+  };
+  continueLogin();
+}
+async function handleNIP07Login() {
+  const attempt = beginLoginAttempt();
   try {
-    const verifyData = await performChallengeAuth(window.nostr);
-    storeAuthSession(verifyData);
-    localStorage.setItem('ss_authMethod', 'nip07');
-    setLoginStatus('Connected!', false);
-    hideLoginOverlay();
-    if (loginIntent === 'observe') {
-      // Authenticate observer socket without sitting down
-      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
-      loginIntent = 'sit';
-    } else {
-      showBuyinDialog();
-    }
-  } catch (err) {
-    console.error('[NIP-07] Login error:', err);
-    setLoginStatus(err.message || 'Login failed');
-    document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
-  }
+    setLoginStatus('Looking for your browser signer…', false);
+    if (!await loginStep(attempt, detectNostr, 5000)) throw new Error('No signer found. Unlock your extension, connect with QR code, or use your private key.');
+    await finishLogin(attempt, window.nostr, 'nip07');
+  } catch (error) { loginFailed(attempt, error); }
 }
 window.handleNIP07Login = handleNIP07Login;
 
-// === NIP-46 QR Code Login (Desktop — scan with phone signer) ===
-let qrConnectionURI = null; // stored for "copy link" button
-
-async function startQRCodeLogin() {
+async function startRemoteLogin(openApp = false) {
+  const attempt = beginLoginAttempt();
   try {
-    await nip46Ready;
+    setLoginStatus('Loading phone sign-in…', false);
+    await loginStep(attempt, nip46Ready, 15000);
     const { generateSecretKey, getPublicKey, BunkerSigner, createNostrConnectURI, SimplePool } = window.NostrNIP46;
-
-    // Switch to QR screen
-    document.getElementById('loginMethods').classList.add('hidden');
-    document.getElementById('loginBunkerScreen').classList.add('hidden');
-    const qrScreen = document.getElementById('loginQrScreen');
-    qrScreen.classList.remove('hidden');
-    setLoginStatus('Generating connection code...', false);
-
-    // Generate ephemeral keypair
-    nip46ClientSk = generateSecretKey();
-    const clientPkHex = getPublicKey(nip46ClientSk);
-
-    // Generate random secret for anti-spoofing
-    const secret = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-
-    // Build nostrconnect:// URI
-    qrConnectionURI = createNostrConnectURI({
-      clientPubkey: clientPkHex,
-      relays: NIP46_RELAYS,
-      secret: secret,
-      name: 'Satoshi Stacks',
-      url: window.location.origin
-    });
-
-    // Render QR code
-    const qrContainer = document.getElementById('loginQrContainer');
-    qrContainer.innerHTML = '';
-    new QRCode(qrContainer, {
-      text: qrConnectionURI,
-      width: 200,
-      height: 200,
-      colorDark: '#3d3228',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-
-    setLoginStatus('', false);
-    document.getElementById('loginQrHint').textContent = 'Waiting for connection...';
-
-    // Wait for signer to connect (2 minute timeout)
-    nip46AbortController = new AbortController();
-    const pool = new SimplePool();
-
-    const timeoutId = setTimeout(() => {
-      if (nip46AbortController) nip46AbortController.abort();
-    }, 120000);
-
-    nip46Signer = await BunkerSigner.fromURI(
-      nip46ClientSk,
-      qrConnectionURI,
-      { pool },
-      nip46AbortController.signal
-    );
-
-    clearTimeout(timeoutId);
-
-    // Connected! Proceed with challenge-response auth
-    setLoginStatus('Connected! Authenticating...', false);
-    document.getElementById('loginQrHint').textContent = 'Connected! Authenticating...';
-
-    const verifyData = await performChallengeAuth(nip46Signer);
-    storeAuthSession(verifyData);
-    localStorage.setItem('ss_authMethod', 'nip46');
-
-    setLoginStatus('Connected!', false);
-    hideLoginOverlay();
-    if (loginIntent === 'observe') {
-      // Authenticate observer socket without sitting down
-      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
-      loginIntent = 'sit';
-    } else {
-      showBuyinDialog();
+    const key = generateSecretKey();
+    const secret = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    qrConnectionURI = createNostrConnectURI({ clientPubkey: getPublicKey(key), relays: NIP46_RELAYS,
+      secret, name: 'Satoshi Stacks', url: window.location.origin });
+    attempt.pool = new SimplePool();
+    nip46AbortController = attempt.controller;
+    $('loginMethods').classList.add('hidden');
+    $('loginBunkerScreen').classList.add('hidden');
+    $('loginQrScreen').classList.remove('hidden');
+    const qr = $('loginQrContainer');
+    qr.innerHTML = '';
+    if (typeof QRCode !== 'undefined') new QRCode(qr, { text: qrConnectionURI, width: 200, height: 200,
+      colorDark: '#182b3d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    else qr.textContent = 'QR code unavailable. Use Copy connection link or paste a bunker URL.';
+    $('loginQrHint').textContent = 'Approve the connection, then the sign-in request in your signer.';
+    setLoginStatus('Waiting for your phone signer…', false);
+    const connected = BunkerSigner.fromURI(key, qrConnectionURI, { pool: attempt.pool }, attempt.controller.signal);
+    $('loginSignerLink')?.remove();
+    if (openApp) {
+      // Keep a real user-activated link: an async library load may exhaust the
+      // browser's popup activation before the connection URI is ready.
+      const link=document.createElement('a');
+      link.id='loginSignerLink'; link.className='login-method-btn primary';
+      link.href=qrConnectionURI; link.target='_blank'; link.rel='noopener';
+      link.textContent='Open signer app';
+      qr.insertAdjacentElement('afterend',link);
+      setLoginStatus('Open your signer app using the button below, then approve the connection.',false);
     }
-
-  } catch (err) {
-    if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-      setLoginStatus('Connection timed out — try again or paste a bunker URL', true);
-      document.getElementById('loginQrHint').textContent = 'Timed out';
-    } else {
-      console.error('[NIP-46] QR login error:', err);
-      setLoginStatus(err.message || 'Connection failed', true);
-      document.getElementById('loginQrHint').textContent = 'Connection failed';
-    }
-    nip46Signer = null;
-    nip46ClientSk = null;
-    qrConnectionURI = null;
-  }
+    attempt.signer = await loginStep(attempt, connected);
+    await finishLogin(attempt, attempt.signer, 'nip46');
+  } catch (error) { loginFailed(attempt, error); }
 }
+function startQRCodeLogin() { return startRemoteLogin(false); }
 window.startQRCodeLogin = startQRCodeLogin;
+function startDeepLinkLogin() { return startRemoteLogin(true); }
+window.startDeepLinkLogin = startDeepLinkLogin;
 
 function copyQRLink() {
   if (!qrConnectionURI) return;
@@ -801,6 +713,7 @@ function copyQRLink() {
 window.copyQRLink = copyQRLink;
 
 function switchToBunkerFromQR() {
+  stopLoginAttempt();
   // Cancel pending QR connection
   if (nip46AbortController) {
     nip46AbortController.abort();
@@ -821,6 +734,7 @@ window.switchToBunkerFromQR = switchToBunkerFromQR;
 
 // === NIP-46 Bunker URL Login ===
 function showBunkerScreen() {
+  stopLoginAttempt();
   document.getElementById('loginMethods').classList.add('hidden');
   document.getElementById('loginQrScreen')?.classList.add('hidden');
   document.getElementById('loginBunkerScreen').classList.remove('hidden');
@@ -833,155 +747,30 @@ function showBunkerScreen() {
 window.showBunkerScreen = showBunkerScreen;
 
 async function submitBunkerLogin() {
-  const input = document.getElementById('loginBunkerInput');
-  const hint = document.getElementById('loginBunkerHint');
-  const submitBtn = document.getElementById('loginBunkerSubmit');
-  const uri = (input?.value || '').trim();
-
-  if (!uri) {
-    hint.textContent = 'Please paste your bunker:// URL';
-    hint.style.color = '#e57373';
-    return;
-  }
-  if (!uri.startsWith('bunker://')) {
-    hint.textContent = 'URL must start with bunker://';
-    hint.style.color = '#e57373';
-    return;
-  }
-
+  const uri = $('loginBunkerInput').value.trim();
+  if (!uri.startsWith('bunker://')) { setLoginStatus('Paste the bunker:// connection URL from your signer.'); return; }
+  const attempt = beginLoginAttempt();
   try {
-    submitBtn.disabled = true;
-    hint.style.color = 'var(--sage)';
-    hint.textContent = 'Connecting to signer...';
-    setLoginStatus('Connecting...', false);
-
-    await nip46Ready;
+    setLoginStatus('Connecting to your signer…', false);
+    await loginStep(attempt, nip46Ready, 15000);
     const { generateSecretKey, BunkerSigner, parseBunkerInput, SimplePool } = window.NostrNIP46;
-
-    // Parse the bunker:// URI
-    const bunkerProfile = await parseBunkerInput(uri);
-    if (!bunkerProfile || !bunkerProfile.pubkey || !bunkerProfile.relays?.length) {
-      throw new Error('Invalid bunker URL — could not parse pubkey or relay');
-    }
-
-    // Generate ephemeral client keypair
-    nip46ClientSk = generateSecretKey();
-    const pool = new SimplePool();
-
-    // Connect to the signer (immediate — no waiting like QR)
-    nip46Signer = BunkerSigner.fromBunker(nip46ClientSk, bunkerProfile, { pool });
-
-    // NIP-46: Send connect request to the signer
-    hint.textContent = 'Requesting permission from signer...';
-    await nip46Signer.connect();
-
-    // Proceed with challenge-response auth
-    hint.textContent = 'Authenticating...';
-    setLoginStatus('Authenticating...', false);
-
-    const verifyData = await performChallengeAuth(nip46Signer);
-    storeAuthSession(verifyData);
-    localStorage.setItem('ss_authMethod', 'nip46');
-
-    setLoginStatus('Connected!', false);
-    hideLoginOverlay();
-    if (loginIntent === 'observe') {
-      // Authenticate observer socket without sitting down
-      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
-      loginIntent = 'sit';
-    } else {
-      showBuyinDialog();
-    }
-
-  } catch (err) {
-    console.error('[NIP-46] Bunker login error:', err);
-    hint.textContent = err.message || 'Connection failed';
-    hint.style.color = '#e57373';
-    setLoginStatus(err.message || 'Connection failed', true);
-    nip46Signer = null;
-    nip46ClientSk = null;
-  } finally {
-    if (submitBtn) submitBtn.disabled = false;
-  }
+    const profile = await loginStep(attempt, () => parseBunkerInput(uri), 15000);
+    if (!profile?.pubkey || !profile.relays?.length) throw new Error('This bunker URL is missing its public key or relay.');
+    attempt.pool = new SimplePool();
+    attempt.relays = profile.relays;
+    attempt.signer = BunkerSigner.fromBunker(generateSecretKey(), profile, { pool: attempt.pool });
+    await loginStep(attempt, () => attempt.signer.connect());
+    await finishLogin(attempt, attempt.signer, 'nip46');
+  } catch (error) { loginFailed(attempt, error); }
 }
 window.submitBunkerLogin = submitBunkerLogin;
 
-// === NIP-46 Deep Link Login (Amber / Nostr Keyring) ===
-async function startDeepLinkLogin(appName) {
-  try {
-    await nip46Ready;
-    const { generateSecretKey, getPublicKey, BunkerSigner, createNostrConnectURI, SimplePool } = window.NostrNIP46;
-
-    // Disable buttons, show status
-    document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = true);
-    setLoginStatus('Opening signer app...', false);
-
-    // Generate ephemeral keypair
-    nip46ClientSk = generateSecretKey();
-    const clientPkHex = getPublicKey(nip46ClientSk);
-
-    const secret = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-
-    const connectionURI = createNostrConnectURI({
-      clientPubkey: clientPkHex,
-      relays: NIP46_RELAYS,
-      secret: secret,
-      name: 'Satoshi Stacks',
-      url: window.location.origin
-    });
-
-    // Start listening on relay FIRST
-    nip46AbortController = new AbortController();
-    const pool = new SimplePool();
-    const signerPromise = BunkerSigner.fromURI(
-      nip46ClientSk,
-      connectionURI,
-      { pool },
-      nip46AbortController.signal
-    );
-
-    // Open deep link (triggers Amber / Primal / Nostr Keyring / etc.)
-    window.open(connectionURI, '_blank');
-
-    setLoginStatus('Waiting for signer app to respond...', false);
-
-    // Wait for connection
-    nip46Signer = await signerPromise;
-
-    // Connected! Proceed with challenge-response auth
-    setLoginStatus('Connected! Authenticating...', false);
-
-    const verifyData = await performChallengeAuth(nip46Signer);
-    storeAuthSession(verifyData);
-    localStorage.setItem('ss_authMethod', 'nip46');
-
-    setLoginStatus('Connected!', false);
-    hideLoginOverlay();
-    if (loginIntent === 'observe') {
-      // Authenticate observer socket without sitting down
-      if (socket) socket.emit('observer-authenticate', { sessionToken: mySessionToken });
-      loginIntent = 'sit';
-    } else {
-      showBuyinDialog();
-    }
-
-  } catch (err) {
-    if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-      setLoginStatus('Connection cancelled', true);
-    } else {
-      console.error('[NIP-46] Deep link login error:', err);
-      setLoginStatus(err.message || 'Failed to connect — try pasting a bunker URL instead', true);
-    }
-    nip46Signer = null;
-    nip46ClientSk = null;
-    document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
-  }
-}
-window.startDeepLinkLogin = startDeepLinkLogin;
-
 // Back button from bunker screen
 function loginGoBack() {
+  stopLoginAttempt();
+  clearCreatedAccount();
+  clearImportedKey();
+  document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
   if (nip46AbortController) {
     nip46AbortController.abort();
     nip46AbortController = null;
@@ -993,11 +782,13 @@ function loginGoBack() {
   document.getElementById('loginBunkerScreen')?.classList.add('hidden');
   document.getElementById('loginMethods')?.classList.remove('hidden');
   setLoginStatus('', false);
+  $('loginMethods').querySelector('button')?.focus();
 }
 window.loginGoBack = loginGoBack;
 
 // Cancel login entirely — dismiss overlay, clear pending seat, stay as observer
 function cancelLogin() {
+  stopLoginAttempt();
   if (nip46AbortController) {
     nip46AbortController.abort();
     nip46AbortController = null;
@@ -1007,10 +798,18 @@ function cancelLogin() {
   pendingBuyIn = null;
   loginIntent = 'sit';
   hideLoginOverlay();
-  resetLoginOverlay();
+  loginGoBack();
 }
 
 function nostrLogout() {
+  profileEditor.close({resume:false});
+  clearLocalProfileSigner();
+  handHistories.length = 0;
+  historyOwner = null;
+  histViewIdx = -1;
+  renderHistoryView();
+  stopLoginAttempt();
+  if (mySessionToken) fetch('/api/auth/logout', { method: 'POST', headers: { 'x-session-token': mySessionToken }, keepalive: true }).catch(() => {});
   localStorage.removeItem('ss_sessionToken');
   localStorage.removeItem('ss_pubkeyHex');
   localStorage.removeItem('ss_npub');
@@ -1019,6 +818,13 @@ function nostrLogout() {
   localStorage.removeItem('ss_lud16');
   localStorage.removeItem('ss_authMethod');
   localStorage.removeItem('ss_nwcUri');
+  lightningWallet.disconnect();
+  availableCashoutSats = 0;
+  activeBuyinInvoice = null;
+  activeBuyinDetails = null;
+  walletView = null;
+  walletRequestPending = false;
+  closeWalletModal();
   mySessionToken = null;
   myPubkeyHex = null;
   myNpub = null;
@@ -1032,8 +838,8 @@ function nostrLogout() {
   // Clear NIP-51 follow/mute state
   myFollowSet = new Set();
   myMuteSet = new Set();
-  // Hide NWC row
-  showNWCRow();
+  // Update wallet controls
+  showWalletControls();
   // Clean up NIP-46 state
   if (nip46Signer) {
     try { nip46Signer.close(); } catch (e) { /* ignore */ }
@@ -1046,7 +852,7 @@ function nostrLogout() {
     nip46AbortController = null;
   }
   if (socket) {
-    socket.emit('leave-table');
+    socket.emit('leave-table', { tableId: myTableId });
     socket.disconnect();
     socket = null;
   }
@@ -1056,42 +862,70 @@ function nostrLogout() {
 window.nostrLogout = nostrLogout;
 
 // ============================================================
-//  NIP-47: Nostr Wallet Connect
+//  Connected Lightning wallet and account balance
 // ============================================================
-function connectNWC() {
-  const existing = localStorage.getItem('ss_nwcUri');
-  if (existing) {
-    // Already connected — offer disconnect
-    if (confirm('Disconnect Lightning wallet?')) {
-      localStorage.removeItem('ss_nwcUri');
-      updateNWCButton();
-    }
+const lightningWallet = window.StacksProviders.createWallet(() => window.webln);
+let walletBusy = false;
+let availableCashoutSats = 0;
+let activeBuyinInvoice = null;
+let activeBuyinDetails = null;
+let walletView = null;
+let lastCashoutView = '';
+let walletStateRequestedAt = 0;
+let walletRequestPending = false;
+// Remove obsolete placeholder credentials; the application no longer stores NWC secrets.
+localStorage.removeItem('ss_nwcUri');
+
+async function connectWallet() {
+  if (walletBusy) return;
+  if (lightningWallet.isConnected()) {
+    lightningWallet.disconnect();
+    updateWalletButtons();
+    showToast('Wallet disconnected from this page. You can revoke site permissions in your extension.', 'info');
     return;
   }
-  const uri = prompt('Paste your nostr+walletconnect:// URI from your wallet (Alby, Mutiny, etc.):');
-  if (!uri || !uri.startsWith('nostr+walletconnect://')) {
-    if (uri) showToast('Invalid NWC URI — must start with nostr+walletconnect://');
-    return;
+  walletBusy = true;
+  updateWalletButtons();
+  try {
+    const wallet = await lightningWallet.connect();
+    showToast(`${wallet.name} connected. Each payment starts when you choose Pay.`, 'info');
+  } catch (error) { showToast(error.message || 'Wallet connection declined'); }
+  finally { walletBusy = false; updateWalletButtons(); }
+}
+window.connectWallet = connectWallet;
+
+function updateWalletButtons() {
+  const connected = lightningWallet.isConnected();
+  for (const id of ['walletSettingsBtn', 'walletConnectBtn']) {
+    const button = $(id);
+    if (!button) continue;
+    button.textContent = walletBusy ? 'Connecting…' : connected ? `${lightningWallet.name()} connected · Disconnect` : 'Connect Lightning wallet';
+    button.disabled = walletBusy;
+    button.classList.toggle('connected', connected);
   }
-  localStorage.setItem('ss_nwcUri', uri);
-  updateNWCButton();
-  showToast('⚡ Lightning wallet connected!');
+  const account = $('accountSignIn');
+  if (account) { account.textContent = myUserId ? myUsername : 'Sign in with Nostr'; account.disabled = !!myUserId; }
+  const cashout = $('recoverFundsBtn');
+  if (cashout) { cashout.hidden = !myUserId || !isRealMoneyTable(); cashout.textContent = `Account · ${fmt(availableCashoutSats || 0)} sats`; }
+  const signOut = $('accountSignOut');
+  if (signOut) signOut.hidden = !myUserId;
+  if ($('editProfileBtn')) $('editProfileBtn').hidden = !myUserId;
 }
-window.connectNWC = connectNWC;
-
-function updateNWCButton() {
-  const btn = $('nwcConnectBtn');
-  if (!btn) return;
-  const connected = !!localStorage.getItem('ss_nwcUri');
-  btn.textContent = connected ? 'Connected ⚡' : 'Connect';
-  btn.classList.toggle('connected', connected);
-}
-
-function showNWCRow() {
-  const row = $('nwcSettingRow');
+function showWalletControls() {
+  const row = $('walletSettingRow');
   if (row) row.style.display = myUserId ? '' : 'none';
-  updateNWCButton();
+  updateWalletButtons();
 }
+function requestWalletState() {
+  if (!socket?.connected || !mySessionToken || Date.now() - walletStateRequestedAt < 1000) return;
+  walletStateRequestedAt = Date.now();
+  socket.emit('wallet-state-request', { tableId: myTableId, sessionToken: mySessionToken });
+}
+// Reconciliation can finish without a new hand or socket event. Poll while the
+// player is looking at their wallet; never dispatch money from this timer.
+setInterval(() => {
+  if (!document.hidden && mySessionToken && (walletView || activeBuyinInvoice)) requestWalletState();
+}, 5000);
 
 // ============================================================
 //  NIP-51: Follow/Mute List Fetching
@@ -1150,6 +984,7 @@ async function tryRestoreSession(retries = 2) {
         headers: { 'x-session-token': mySessionToken }
       });
       const data = await res.json();
+      if (res.status !== 401 && !data.success) throw new Error(data.error || 'Sign-in service temporarily unavailable');
       if (!data.success) {
         // Session expired — clear and show login
         nostrLogout();
@@ -1158,14 +993,15 @@ async function tryRestoreSession(retries = 2) {
       // Restore state from server
       myPubkeyHex = data.pubkeyHex;
       myNpub = data.npub;
+      availableCashoutSats = data.profile.availableSats || 0;
       myNostrName = data.profile.name;
       myNostrPicture = data.profile.picture;
       myUserId = myPubkeyHex;
       myUsername = myNostrName || myNpub.slice(0, 12) + '...';
       // NIP-51: Fetch follow/mute lists in background
       fetchFollowAndMuteLists(myPubkeyHex);
-      // NIP-47: Show wallet connect option
-      showNWCRow();
+      // Show connected-wallet controls
+      showWalletControls();
       return true;
     } catch (err) {
       console.error(`[NOSTR] Session restore attempt ${attempt + 1} failed:`, err);
@@ -1201,7 +1037,8 @@ function connectAsObserver() {
         buyIn: myTableConfig.maxBuyin
       });
     } else {
-      socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined });
+      socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined, resumeSeat: !localStorage.getItem('ss_stoodUp') });
+      requestWalletState();
     }
   });
 
@@ -1266,14 +1103,17 @@ function setupCommonSocketHandlers() {
     if (mySeat && mySeat !== newSeat) {
       console.warn(`[Seat] Seat changed from ${mySeat} to ${newSeat}`);
     }
+    tableMotion.cancel();
     mySeat = newSeat;
+    localStorage.removeItem('ss_stoodUp');
     isObserver = false;
     if (displayName) myUsername = displayName;
     // Close buy-in dialog / wallet modal if open
     hideBuyinDialog();
     closeWalletModal();
     showToast(`Playing as ${myUsername}`, 'info');
-    render();
+    updateWalletButtons();
+    requestWalletState();
   });
 
   socket.on('auth-error', ({ message }) => {
@@ -1289,18 +1129,25 @@ function setupCommonSocketHandlers() {
       localStorage.setItem('ss_nostrName', name);
       showToast(`Welcome, ${name}!`, 'info');
     }
-    if (picture) {
-      myNostrPicture = picture;
-      localStorage.setItem('ss_nostrPicture', picture);
-    }
-    if (lud16) {
-      localStorage.setItem('ss_lud16', lud16);
-    }
+    myNostrPicture = picture || null;
+    if (picture) localStorage.setItem('ss_nostrPicture', picture); else localStorage.removeItem('ss_nostrPicture');
+    if (lud16) localStorage.setItem('ss_lud16', lud16); else localStorage.removeItem('ss_lud16');
+    updateWalletButtons();
   });
 
   socket.on('game-state', (state) => {
+    const motionBefore = tableMotion.capture();
     prevGameState = gameState;
     gameState = state;
+
+    if (myUserId && historyOwner !== myUserId) loadHandHistories();
+
+    if (state.handId && state.currentHandHistory) {
+      const followLatest = histViewIdx === handHistories.length - 1;
+      mergeHandHistories([{handId:state.handId, history:state.currentHandHistory, startedAt:state.handStartedAt, inProgress:state.handInProgress,personal:state.currentHandHistoryPersonal}]);
+      if (followLatest) histViewIdx = handHistories.length - 1;
+      renderHistoryView();
+    }
 
     // Extract waitlist position for this client
     waitlistPosition = state.waitlistPosition || null;
@@ -1321,33 +1168,76 @@ function setupCommonSocketHandlers() {
       }
     }
 
-    // Save pot total for chip fly animation
-    const currentPot = (state.pot || 0) + (state.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
-    if (currentPot > 0) savedPotForAnimation = currentPot;
     render();
+    tableMotion.play(prevGameState, gameState, motionBefore);
+    updateWalletButtons();
+    const mode = $('tableModeLabel');
+    if (mode) mode.textContent = `${state.realMoney ? 'Real sats' : 'Demo chips'} · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)} · Buy-in ${fmt(state.minBuyin)}–${fmt(state.maxBuyin)}`;
+    requestWalletState();
   });
 
   socket.on('error', (error) => {
+    walletRequestPending = false;
+    if ($('walletModal') && !$('walletModal').classList.contains('hidden')) { walletView = 'error'; showWalletModal('Could not complete request', `<p role="alert">${esc(error.message)}</p><button class="wallet-btn" data-action="close-wallet">Close and try again</button>`); }
     showToast(error.message);
+    requestWalletState();
+  });
+  socket.on('wallet-state', state => {
+    if (state.tableId !== myTableId || state.userId !== myPubkeyHex) return;
+    availableCashoutSats = state.availableSats || 0;
+    if (['cashout','cashout-pending'].includes(walletView)) renderCashoutState(state);
+    if (walletView === 'buyin-invoice' && activeBuyinDetails) {
+      const deposit = (state.deposits || []).find(row => row.payment_hash === activeBuyinDetails.paymentHash);
+      if (!deposit || deposit.status !== 'pending') {
+        activeBuyinInvoice = null;
+        activeBuyinDetails = null;
+        if (mySeat) closeWalletModal();
+        else { walletView = 'cashout'; renderCashoutState(state); }
+      }
+    }
+    updateWalletButtons();
   });
 
   // ---- real-money wallet events ----
-  socket.on('buyin-invoice', ({ bolt11, amountSats }) => {
-    showBuyinInvoice(bolt11, amountSats);
+  socket.on('buyin-invoice', invoice => {
+    if (invoice.userId && (invoice.userId !== myPubkeyHex || invoice.tableId !== myTableId)) return;
+    walletRequestPending = false;
+    showBuyinInvoice(invoice);
   });
-  socket.on('deposit-confirmed', ({ amountSats }) => {
+  socket.on('account-buyin-confirmed', () => {
     closeWalletModal();
-    showToast(`Deposited ${Number(amountSats).toLocaleString()} sats — you're in!`, 'info');
+    requestWalletState();
+    showToast('Buy-in transferred from your account.', 'info');
+  });
+  socket.on('account-table-cashout', ({ tableId, amountSats }) => {
+    if (tableId !== myTableId) return;
+    mySeat = null;
+    localStorage.setItem('ss_stoodUp', '1');
+    walletView = 'cashout';
+    lastCashoutView = '';
+    walletStateRequestedAt = 0;
+    showWalletModal('Your SatoshiStacks account', '<p role="status">Checking your balance…</p>');
+    connectAsObserver();
+    showToast(`${fmt(amountSats)} sats returned to your account.`, 'info');
+  });
+  socket.on('account-deposit-confirmed', () => requestWalletState());
+  socket.on('cashout-pending', () => {
+    walletView = 'cashout-pending';
+    showWalletModal('Withdrawal pending', '<p class="wallet-status" role="status">The withdrawal amount is reserved in your account. Waiting for the Lightning payment result…</p>');
+    requestWalletState();
   });
   socket.on('cashout-result', (res) => {
     if (!res) return;
-    if (res.status === 'succeeded') { mySeat = null; closeWalletModal(); showToast('Cashed out — sent to your Lightning address!', 'info'); }
-    else if (res.status === 'in_flight') { mySeat = null; closeWalletModal(); showToast('Payment processing — it will arrive shortly.', 'info'); }
-    // 'failed' is handled by the cashout-failed event (chips returned, re-seated)
+    availableCashoutSats = 0;
+    requestWalletState();
+    if (res.status === 'succeeded') { closeWalletModal(); showToast('Withdrawal confirmed — sent to your receiving wallet!', 'info'); }
+    else if (res.status === 'in_flight') { walletView = 'cashout'; lastCashoutView = ''; fetchWalletState().then(renderCashoutState).catch(error => showToast(error.message)); }
+
   });
   socket.on('cashout-failed', ({ message }) => {
     closeWalletModal();
-    showToast(message || 'Payment failed — your chips were returned to the table.');
+    requestWalletState();
+    showToast(message || 'Payment failed — the amount was returned to your account.');
   });
 
   socket.on('action-timer-start', ({ playerIndex, timeoutMs, timeBankMs, isPreflop }) => {
@@ -1377,12 +1267,11 @@ function setupCommonSocketHandlers() {
   // Real-time hand log
   socket.on('hand-log', ({ line, type }) => {
     if (!line || !line.trim()) return;
-    if (type === 'header' && line.startsWith('Satoshi Stacks Hand')) {
-      chipFlyTriggered = false;
-      savedPotForAnimation = 0;
-      vacuumAnimating = false;
-    }
     addPlayByPlay(line);
+    if (type === 'summary') {
+      const result = summarizeHandResult(line);
+      if (result) addChatMessage('Hand summary', result, true);
+    }
     currentHandLog.push(line);
 
     if (type === 'action' && gameState) {
@@ -1416,29 +1305,12 @@ function setupCommonSocketHandlers() {
         }
       }
     }
-    if (type === 'winner' && gameState) {
-      const match = line.match(/^(.+?)\s+collected/);
-      if (match) {
-        const name = match[1].trim();
-        if (!chipFlyTriggered) {
-          chipFlyTriggered = true;
-          animateChipsToWinner(name);
-        }
-        for (let i = 0; i < NUM_SEATS; i++) {
-          const p = gameState.players[i];
-          if (p && p.username === name) {
-            const vp = calculateVisualPosition(i + 1);
-            showBadge(vp, 'Win');
-            break;
-          }
-        }
-      }
-    }
+
   });
 
-  socket.on('hand-complete', ({ history }) => {
+  socket.on('hand-complete', ({ history, handId }) => {
     if (history) {
-      handHistories.push(history);
+      mergeHandHistories([{handId, history, startedAt:Date.now(),personal:true}]);
       histViewIdx = handHistories.length - 1;
       currentHandLog = [];
       renderHistoryView();
@@ -1446,6 +1318,9 @@ function setupCommonSocketHandlers() {
   });
 
   socket.on('disconnect', () => {
+    tableMotion.cancel();
+    gameState = null;
+    prevGameState = null;
     updateConnectionStatus(false);
     if (mySeat) {
       showToast('Connection lost — reconnecting...', 'info');
@@ -1477,6 +1352,42 @@ function setupCommonSocketHandlers() {
   });
 }
 
+// A waiting table should communicate its state without covering a live board.
+function updateWaitingState() {
+  const waiting = $('tableWaiting');
+  if (!waiting || !gameState) return;
+  const players = (gameState.players || []).filter(Boolean);
+  const ready = players.filter(player => player.stack > 0 && !player.sittingOut && !player.busted);
+  const show = !gameState.handInProgress && !(gameState.communityCards || []).length;
+  waiting.hidden = !show;
+  $('pokerTable')?.classList.toggle('is-waiting', show);
+  const count = $('seatCount');
+  if (count) count.textContent = `${players.length} / ${NUM_SEATS} seated`;
+  if (!show) return;
+  const me = players.find(player => player.userId === myUserId);
+  let title = 'Waiting for players';
+  let detail = 'Choose an open seat. Play starts with two players.';
+  if (ready.length >= 2) {
+    title = 'The next hand starts shortly';
+    detail = 'Settle in. Your cards are on the way.';
+  } else if (me && (me.sittingOut || me.busted)) {
+    title = 'Ready when you are';
+    detail = me.busted ? 'Choose your nameplate to buy back in.' : 'Choose Sit Back In when you’re ready to play.';
+  } else if (me) {
+    title = 'One more player to begin';
+    detail = 'You’re seated. Play starts when another player joins.';
+  } else if (players.length === NUM_SEATS) {
+    title = 'Waiting for players to return';
+    detail = 'The table is full. Play resumes when two players are ready.';
+  } else if (ready.length === 1) {
+    title = 'A seat is waiting for you';
+    detail = 'One player is ready. Choose an open seat to join them.';
+  }
+  // Avoid repeat live-region announcements for unchanged server updates.
+  if ($('waitingTitle').textContent !== title) $('waitingTitle').textContent = title;
+  if ($('waitingDetail').textContent !== detail) $('waitingDetail').textContent = detail;
+}
+
 // ============================================================
 //  MAIN RENDER — called on every game-state update
 // ============================================================
@@ -1491,14 +1402,23 @@ function render() {
     mySeat = null;
   }
 
+  updateWaitingState();
+
   // In observer mode (no seat), render table but skip player controls
   if (!mySeat) {
     renderSeats();
     updateNameplates();
+    renderTableMarkers();
     renderCommunityCards();
     highlightWinningCards();
     updateBets();
     updatePot();
+    const status = $('mobileTurnStatus');
+    if (status) {
+      status.textContent = gameState.players.every(Boolean) ? 'Table full · join the waitlist' : 'Choose an open seat to play';
+      status.classList.remove('your-turn');
+    }
+    updateTableActions();
     // Hide player controls for observers
     const ca = document.querySelector('.controls-area');
     if (ca) ca.classList.remove('visible');
@@ -1517,6 +1437,7 @@ function render() {
 
   renderSeats();
   updateNameplates();
+  renderTableMarkers();
   renderCommunityCards();
   highlightWinningCards();
   updateBets();
@@ -1549,7 +1470,8 @@ function updateSpectatorBadge() {
   badge.textContent = `${count} watching`;
   // Append sign-in button inline if unauthenticated observer
   if (isObserver && !mySeat && !mySessionToken) {
-    const signInLink = document.createElement('span');
+    const signInLink = document.createElement('button');
+    signInLink.type = 'button';
     signInLink.id = 'observerSignInBtn';
     signInLink.className = 'observer-sign-in-link';
     signInLink.textContent = 'sign into chat';
@@ -1592,7 +1514,7 @@ function updateWaitlistUI() {
     container = document.createElement('div');
     container.id = 'waitlistUI';
     container.className = 'waitlist-ui';
-    document.getElementById('pokerTable').appendChild(container);
+    document.getElementById('dealerStation').prepend(container);
   }
   container.style.display = '';
 
@@ -1609,7 +1531,6 @@ function updateWaitlistUI() {
     `;
   } else {
     container.innerHTML = `
-      <div class="waitlist-status">Table is full (6/6)${waitlistCount > 0 ? ` \u2014 ${waitlistCount} waiting` : ''}</div>
       <button class="waitlist-btn join-wl" data-action="join-waitlist">Join Waitlist</button>
     `;
   }
@@ -1676,14 +1597,14 @@ function renderSeats() {
     if (!player) {
       seatEl.className = `seat seat-${visualPos}`;
       if (mySeat) {
-        // Hide empty seats when player is already seated — no seat-switching mid-game
+        // Seated players cannot switch seats mid-game.
         seatEl.innerHTML = '';
       } else {
         // Render clickable empty seat avatar with "EMPTY SEAT" text
         seatEl.innerHTML = `
-          <div class="empty-avatar" data-empty-seat="${idx}">
-            <span class="empty-label">EMPTY<br>SEAT</span>
-          </div>
+          <button type="button" class="empty-avatar" data-empty-seat="${idx}" aria-label="Take seat ${actualSeat}">
+            <span class="empty-label">Take seat</span>
+          </button>
         `;
       }
       continue;
@@ -1719,7 +1640,8 @@ function updateNameplates() {
     const actualSeat = idx + 1;
     const visualPos = calculateVisualPosition(actualSeat);
     const el = $(`nameplate-${visualPos}`);
-    if (!el) continue;
+    const cardsEl = $(`playerCards-${visualPos}`);
+    if (!el || !cardsEl) continue;
 
     if (!player) {
       // No nameplate for empty seats — the avatar circle shows "EMPTY SEAT"
@@ -1728,6 +1650,8 @@ function updateNameplates() {
       el.removeAttribute('data-is-me');
       el.style.cursor = '';
       el.innerHTML = '';
+      cardsEl.replaceChildren();
+      delete cardsEl.dataset.cardKey;
       continue;
     }
 
@@ -1752,13 +1676,7 @@ function updateNameplates() {
         const dim2 = allDealt && player.hand ? (bestCards ? (!bestCards.includes(card2) ? ' dimmed' : '') : ' dimmed') : '';
         cardsHTML = `<div class="np-cards">${renderCardHTML(card1, sc + dim1)}${renderCardHTML(card2, sc + dim2)}</div>`;
       }
-    } else if (isMe && player.folded && player.holeCards && player.holeCards.length === 2 && player.holeCards[0] !== '??') {
-      // Folded peek for hero
-      cardsHTML = `<div class="np-cards folded-peek">${renderCardHTML(player.holeCards[0])}${renderCardHTML(player.holeCards[1])}</div>`;
     }
-
-    // Dealer button
-    const dealerHTML = gameState.dealerSeat === idx ? '<div class="np-dealer">D</div>' : '';
 
     // Sitting out / busted badge — position away from table center (outer edge of nameplate)
     const badgePos = (visualPos === 3 || visualPos === 4) ? 'badge-bottom' : 'badge-top';
@@ -1772,53 +1690,63 @@ function updateNameplates() {
     el.setAttribute('data-userid', player.userId);
     el.setAttribute('data-is-me', isMe);
     el.style.cursor = 'pointer';
+    const samePlayer = el.dataset.renderedUser === player.userId;
+    const cardKey = JSON.stringify([gameState.handId || gameState.handCount, player.userId, cardsHTML]);
+    cardsEl.className = `player-cards cards-pos-${visualPos}${isMe ? ' hero' : ''}`;
+    if (cardsEl.dataset.cardKey !== cardKey) {
+      cardsEl.innerHTML = cardsHTML;
+      cardsEl.dataset.cardKey = cardKey;
+    }
+    const savedLifeBar = samePlayer ? el.querySelector('.np-life-bar') : null;
+    el.dataset.renderedUser = player.userId;
     el.innerHTML = `
-      ${cardsHTML}
-      ${dealerHTML}
       ${sitOutBadge}
       <div class="np-life-bar" id="lifeBar-${visualPos}"></div>
       <div class="np-action" id="npAction-${visualPos}"></div>
       <div class="np-content">
-        <div class="np-icon">${renderChipPillIcon(player.stack, 24)}</div>
-        <span class="np-name">${esc(truncName(player.nostrName || player.username))}</span>${myFollowSet.has(player.userId) && !isMe ? '<span class="np-friend" title="You follow this player">⭐</span>' : ''}${player.badges && player.badges.length ? `<span class="np-badges">${player.badges.map(b => BADGE_ICONS[b] || '').join('')}</span>` : ''}
-        <div class="np-divider"></div>
-        <div class="np-amount-wrap"><span class="np-amount">${fmt(player.stack)}</span></div>
+        <span class="np-identity"><span class="np-name">${esc(truncName(player.nostrName || player.username))}</span>${myFollowSet.has(player.userId) && !isMe ? '<span class="np-friend" title="You follow this player">⭐</span>' : ''}${player.badges?.length ? `<span class="np-badges">${player.badges.map(b => BADGE_ICONS[b] || '').join('')}</span>` : ''}</span>
+        <span class="np-amount">${fmt(player.stack)}</span>
       </div>
     `;
+    if (savedLifeBar) el.querySelector('.np-life-bar')?.replaceWith(savedLifeBar);
 
     // Re-apply active badge after re-render (badges are stored in activeBadges{})
     applyBadge(visualPos);
   }
 }
 
-// ============================================================
-//  RENDER COMMUNITY CARDS (staggered animation)
-// ============================================================
-let lastCommunityCount = 0;
+// Dealer button follows the dealer's visual seat, including after they fold.
+function renderTableMarkers() {
+  const container = $('tableMarkers');
+  if (!container) return;
+  const seat = gameState.dealerSeat;
+  let html = '';
+  if (gameState.handId && Number.isInteger(seat) && gameState.players[seat]) {
+    const position = calculateVisualPosition(seat + 1);
+    html = `<div class="marker-group marker-pos-${position}"><span class="table-marker dealer" role="img" aria-label="Dealer" title="Dealer">D</span></div>`;
+  }
+  if (container.innerHTML !== html) container.innerHTML = html;
+}
 
+// ============================================================
+//  RENDER COMMUNITY CARDS — preserve cards across repeated server updates
+// ============================================================
 function renderCommunityCards() {
   const el = $('communityCards');
   if (!el) return;
-
   const cards = gameState.communityCards || [];
-  const existing = el.children.length;
-
-  // Only append NEW cards — never re-render existing ones (stagger effect)
-  for (let i = existing; i < cards.length; i++) {
+  const key = gameState.handId || String(gameState.handCount);
+  if (el.dataset.hand !== key || [...el.children].some((child,i) => child.dataset.card !== cards[i])) {
+    el.replaceChildren();
+    el.dataset.hand = key;
+  }
+  for (let i=el.children.length;i<cards.length;i++) {
     const div = document.createElement('div');
     div.className = 'community-card';
-    const delayInBatch = i < 3 ? (i * 0.08) : 0;
-    div.style.animation = `dealCard 0.4s var(--ease) ${delayInBatch}s both`;
+    div.dataset.card = cards[i];
     div.innerHTML = renderCardHTML(cards[i]);
     el.appendChild(div);
   }
-
-  // If cards cleared (new hand), clear DOM
-  if (cards.length === 0 && existing > 0) {
-    el.innerHTML = '';
-  }
-
-  lastCommunityCount = cards.length;
 }
 
 /**
@@ -1865,27 +1793,33 @@ function updateBets() {
     const visualPos = calculateVisualPosition(idx + 1);
     const be = $(`bet-${visualPos}`);
     const bc = $(`betChips-${visualPos}`);
+    const amount = $(`betAmount-${visualPos}`);
     if (!be) continue;
 
     if (!player || !player.currentBet || player.currentBet <= 0) {
       be.classList.remove('visible');
-      if (bc) bc.innerHTML = '';
+      if (amount) amount.textContent = '';
+      if (bc) { bc.replaceChildren(); delete bc.dataset.amount; }
       continue;
     }
 
     be.classList.add('visible');
-    if (bc) bc.innerHTML = renderChipStack(player.currentBet, 30, 5);
+    be.setAttribute('aria-label', `${player.nostrName || player.username} bet ${fmt(player.currentBet)}`);
+    if (amount) amount.textContent = fmt(player.currentBet);
+    if (bc && bc.dataset.amount !== String(player.currentBet)) {
+      bc.innerHTML = renderChipStack(player.currentBet, 22, 3);
+      bc.dataset.amount = player.currentBet;
+    }
   }
 }
 
 // ============================================================
 //  RENDER POT (chip pile + label)
-//  Uses server-provided potChips array (actual accumulated chip
-//  denomination objects) so every chip is always accounted for.
+//  The server provides the exact amount and chip denominations.
+//  The visual pile samples those chips into a bounded area above the board.
 // ============================================================
 function updatePot() {
   if (!gameState) return;
-  if (vacuumAnimating) return; // Don't clear pot pile while vacuum animation is running
   const pot = gameState.pot || 0;
   const potChips = gameState.potChips || [];
   const totalWithBets = pot + (gameState.players || []).reduce((s, p) => s + (p ? p.currentBet || 0 : 0), 0);
@@ -1894,42 +1828,12 @@ function updatePot() {
   const hasValue = totalWithBets > 0;
   $('tablePotLabel').classList.toggle('visible', hasValue);
 
-  // Incremental pot chip pile — only append NEW chips, never re-render existing ones
   const chipsEl = $('tablePotChips');
   if (!chipsEl) return;
-
-  const chipCount = potChips.length;
-
-  if (chipCount === 0) {
-    // No chips — clear everything
-    chipsEl.classList.remove('visible');
-    chipsEl.innerHTML = '';
-    renderedPotChipCount = 0;
-    potPileRng = null;
-    return;
-  }
-
-  if (chipCount < renderedPotChipCount) {
-    // Chip count decreased — new hand started, full reset and re-render
-    chipsEl.innerHTML = '';
-    renderedPotChipCount = 0;
-    potPileRng = null;
-  }
-
-  if (chipCount > renderedPotChipCount) {
-    // New chips to add — create PRNG if needed (seeded from dealerSeat for hand stability)
-    if (!potPileRng) {
-      const dealerSeat = gameState.dealerSeat || 1;
-      potPileRng = createPRNG(dealerSeat + 1);
-      // Fast-forward PRNG past already-rendered chips (3 rng calls per chip)
-      for (let i = 0; i < renderedPotChipCount * 3; i++) potPileRng();
-    }
-    chipsEl.classList.add('visible');
-    const newChips = potChips.slice(renderedPotChipCount);
-    appendChipsToPile(newChips, chipsEl, chipCount, 30, potPileRng);
-    renderedPotChipCount = chipCount;
-  }
-  // If chipCount === renderedPotChipCount → nothing to do, chips stay put
+  const handKey = gameState.handId || `${gameState.tableId}:${gameState.handCount}`;
+  const positions = potPile.update(potChips, handKey);
+  chipsEl.classList.toggle('visible', positions.length > 0);
+  window.StacksPotPile.updateElement(chipsEl, positions, renderChipSVG, handKey);
 }
 
 // ============================================================
@@ -1973,122 +1877,6 @@ function applyBadge(visualPos) {
 }
 
 // ============================================================
-//  CHIP VACUUM ANIMATION — chips fly directly from the pot pile
-//  to the winner's nameplate like crumbs being vacuumed up.
-//  Fixed 2000ms duration. Uses table-relative coordinates
-//  (position:absolute inside .poker-table) to avoid the
-//  transform-containing-block issue with position:fixed.
-// ============================================================
-function animateChipsToWinner(winnerName) {
-  if (!gameState) return;
-  const table = $('pokerTable');
-  const potChipsEl = $('tablePotChips');
-  if (!table || !potChipsEl) return;
-
-  // Find winner's visual position
-  let winnerVisualPos = null;
-  for (let i = 0; i < NUM_SEATS; i++) {
-    const p = gameState.players[i];
-    if (p && p.username === winnerName) {
-      winnerVisualPos = calculateVisualPosition(i + 1);
-      break;
-    }
-  }
-  if (!winnerVisualPos) return;
-
-  // If pot pile has no visible content, nothing to animate
-  const pile = potChipsEl.querySelector('.chip-pile');
-  if (!potChipsEl.classList.contains('visible') || !pile) {
-    return;
-  }
-
-  // Lock the pot pile so updatePot() doesn't clear it mid-animation
-  vacuumAnimating = true;
-
-  // Hide pot label
-  const potLabel = $('tablePotLabel');
-  if (potLabel) potLabel.classList.remove('visible');
-
-  // Show badge
-  showBadge(winnerVisualPos, 'Stacking');
-
-  // --- Calculate destination: center of winner's nameplate, in table-relative px ---
-  const npEl = $(`nameplate-${winnerVisualPos}`);
-  if (!npEl) { vacuumAnimating = false; return; }
-  const tableRect = table.getBoundingClientRect();
-  const npRect = npEl.getBoundingClientRect();
-  const destX = (npRect.left + npRect.width / 2) - tableRect.left;
-  const destY = (npRect.top + npRect.height / 2) - tableRect.top;
-
-  // --- Flat 2000ms timing ---
-  const TOTAL_DURATION = 2000;
-  const CHIP_FLIGHT = 500; // each chip's individual flight time
-  const flightSec = '0.50s';
-
-  // Collect chips
-  const chips = [...pile.querySelectorAll('.chip-pile-item')];
-  if (chips.length === 0) { vacuumAnimating = false; return; }
-
-  // Stagger departures across (total - flight) so last chip arrives at 2000ms
-  const staggerWindow = Math.max(0, TOTAL_DURATION - CHIP_FLIGHT);
-  const stagger = chips.length > 1 ? staggerWindow / (chips.length - 1) : 0;
-
-  // Allow chips to fly freely out of the pot container
-  potChipsEl.style.overflow = 'visible';
-
-  // --- Vacuum: reparent each chip to the table, fly to nameplate ---
-  chips.forEach((chip, i) => {
-    setTimeout(() => {
-      // Snapshot chip's current screen position, convert to table-relative px
-      const r = chip.getBoundingClientRect();
-      const startX = (r.left + r.width / 2) - tableRect.left;
-      const startY = (r.top + r.height / 2) - tableRect.top;
-
-      // Reparent chip from .chip-pile to .poker-table so position:absolute
-      // is relative to the table (same coordinate space as nameplates)
-      chip.remove();
-      table.appendChild(chip);
-
-      // Place at starting position WITHOUT transition first
-      chip.style.left = startX + 'px';
-      chip.style.top = startY + 'px';
-      chip.style.transform = 'translate(-50%, -50%)';
-
-      // Double-rAF: first frame locks the start position in the layout,
-      // second frame adds the transition and sets the destination.
-      // Without this, the browser may skip the start position entirely.
-      requestAnimationFrame(() => {
-        chip.style.setProperty('--vac-dur', flightSec);
-        chip.classList.add('vacuum-fly');
-        requestAnimationFrame(() => {
-          chip.style.left = destX + 'px';
-          chip.style.top = destY + 'px';
-          chip.style.opacity = '0';
-        });
-      });
-    }, i * stagger);
-  });
-
-  // Hide the now-emptying pot container so any stray chip isn't visible at the old pot position
-  const hideContainerAt = (chips.length - 1) * stagger + 50;
-  setTimeout(() => { potChipsEl.classList.remove('visible'); }, hideContainerAt);
-
-  // --- Cleanup after all chips have arrived ---
-  setTimeout(() => {
-    // Remove ALL chip-pile-items from the table (reparented + any strays)
-    table.querySelectorAll('.chip-pile-item').forEach(c => c.remove());
-    // Reset pot container
-    potChipsEl.classList.remove('visible');
-    potChipsEl.innerHTML = '';
-    potChipsEl.style.overflow = '';
-    renderedPotChipCount = 0;
-    potPileRng = null;
-    vacuumAnimating = false;
-    savedPotForAnimation = 0;
-  }, TOTAL_DURATION + 200);
-}
-
-// ============================================================
 //  RENDER CONTROLS (non-linear slider, presets, action buttons)
 // ============================================================
 function renderControls() {
@@ -2097,28 +1885,30 @@ function renderControls() {
   if (!bc || !ca) return;
 
   const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
+  const status = $('mobileTurnStatus');
+  if (status) {
+    const active = gameState.players[gameState.currentPlayerIndex];
+    status.textContent = !myPlayer ? 'Choose an open seat to play' :
+      myPlayer.busted ? 'Stack empty · add chips from your seat' :
+      myPlayer.sittingOut ? 'Sitting out · return from Table options' :
+      !gameState.handInProgress ? 'Waiting for the next hand' :
+      myPlayer.folded ? 'You folded · next hand coming up' :
+      myPlayer.allIn ? 'You’re all in' : gameState.yourTurn ? 'Your turn' :
+      active ? `${truncName(active.nostrName || active.username || 'Player', 16)} is thinking…` : 'Hand in progress';
+    status.classList.toggle('your-turn', !!gameState.yourTurn);
+  }
   if (!myPlayer || !gameState.yourTurn || !gameState.handInProgress) {
     ca.classList.remove('visible');
     bc.innerHTML = '';
     return;
   }
 
-  // Position controls
-  const tableEl = $('pokerTable');
-  if (tableEl) {
-    if (isMobileDevice) {
-      // On mobile, controls overlay the bottom of the table
-      ca.style.maxHeight = '';
-    } else {
-      const tRect = tableEl.getBoundingClientRect();
-      const tableBottom = tRect.bottom + 22;
-      const availHeight = window.innerHeight - tableBottom;
-      ca.style.maxHeight = Math.max(availHeight, 60) + 'px';
-    }
-  }
+  // The desktop fitter reserves space for the complete action panel. A height
+  // limit derived from the previous table size can clip buttons before it fits.
+  ca.style.maxHeight = '';
   ca.classList.add('visible');
 
-  const maxBet = Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
+  const maxBet = gameState.currentBetToCall ?? Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
   const toCall = maxBet - (myPlayer.currentBet || 0);
   const canCheck = toCall === 0;
 
@@ -2132,9 +1922,9 @@ function renderControls() {
   // Check if all opponents are all-in or folded — if so, player can only call/fold (no raise option)
   const opponents = gameState.players.filter((p, i) => p && p.userId !== myUserId && !p.folded);
   const allOpponentsAllIn = opponents.length > 0 && opponents.every(p => p.allIn);
-  const canRaise = !allOpponentsAllIn && myPlayer.stack > toCall;
+  const canRaise = myPlayer.canRaise !== false && !allOpponentsAllIn && myPlayer.stack > toCall;
 
-  const callText = canCheck ? 'Check' : (toCall >= myPlayer.stack ? 'All In' : `Call ${fmt(toCall)}`);
+  const callText = canCheck ? 'Check' : (toCall >= myPlayer.stack ? 'All In' : `Call ${fmtNumber(toCall)}`);
   const rLabel = maxBet === 0 ? 'Bet' : 'Raise';
 
   // Non-linear slider mapping
@@ -2160,14 +1950,14 @@ function renderControls() {
       <button class="bet-preset" data-amt="${maxR}">All In</button>
     </div>
     <div class="slider-row">
-      <input type="range" class="bet-slider" id="betSlider" min="0" max="${SLIDER_STEPS}" value="0" step="1">
-      <input type="number" class="bet-amount-input" id="betInput" min="${minR}" max="${maxR}" value="${minR}">
+      <input type="range" class="bet-slider" id="betSlider" aria-label="Raise amount" aria-valuetext="${fmtNumber(minR)}" min="0" max="${SLIDER_STEPS}" value="0" step="1">
+      <input type="number" inputmode="numeric" class="bet-amount-input" id="betInput" aria-label="Bet or raise total" min="${minR}" max="${maxR}" value="${minR}">
     </div>` : ''}
     <div class="action-buttons">
       <button class="action-btn btn-fold" id="foldBtn">Fold</button>
       <button class="action-btn btn-check-call" id="ccBtn">${callText}</button>
-      ${canRaise && maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmt(minR)}</button>` :
-       (canRaise && toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmt(myPlayer.stack)}</button>` : '')}
+      ${canRaise && maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmtNumber(minR)}</button>` :
+       (canRaise && toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmtNumber(myPlayer.stack)}</button>` : '')}
     </div>
   `;
 
@@ -2178,12 +1968,14 @@ function renderControls() {
   const rb = $('raiseBtn'), sl = $('betSlider'), bi = $('betInput');
   function updateBetUI(v) {
     v = Math.max(minR, Math.min(maxR, Math.round(v)));
-    if (sl) sl.value = betToSlider(v);
+    if (sl) { sl.value = betToSlider(v); sl.setAttribute('aria-valuetext', fmtNumber(v)); }
     if (bi) bi.value = v;
-    if (rb) rb.textContent = `${v >= maxR ? 'All In' : rLabel} ${fmt(v)}`;
+    if (rb) rb.textContent = `${v >= maxR ? 'All In' : rLabel} ${fmtNumber(v)}`;
   }
   rb?.addEventListener('click', () => {
-    const bet = sl ? sliderToBet(parseInt(sl.value)) : (bi ? parseInt(bi.value) : minR);
+    // The numeric input is exact; mapping back from a curved slider can
+    // round a preset down by several chips after the label shows its total.
+    const bet = bi ? Math.max(minR, Math.min(maxR, Math.round(Number(bi.value) || minR))) : minR;
     sendAction('raise', bet);
   });
   sl?.addEventListener('input', () => updateBetUI(sliderToBet(parseInt(sl.value))));
@@ -2192,8 +1984,8 @@ function renderControls() {
     const v = parseInt(bi.value);
     if (!isNaN(v)) {
       const clamped = Math.max(minR, Math.min(maxR, Math.round(v)));
-      if (sl) sl.value = betToSlider(clamped);
-      if (rb) rb.textContent = `${clamped >= maxR ? 'All In' : rLabel} ${fmt(clamped)}`;
+      if (sl) { sl.value = betToSlider(clamped); sl.setAttribute('aria-valuetext', fmtNumber(clamped)); }
+      if (rb) rb.textContent = `${clamped >= maxR ? 'All In' : rLabel} ${fmtNumber(clamped)}`;
     }
   });
   bi?.addEventListener('blur', () => updateBetUI(parseInt(bi.value) || minR));
@@ -2227,7 +2019,7 @@ function renderPreActions() {
 
   // Only show pre-actions when there's a bet to face (guaranteed to act again).
   // If no one has bet (canCheck), hero might not need to act — hide pre-actions.
-  const maxBet = Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
+  const maxBet = gameState.currentBetToCall ?? Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
   const toCall = maxBet - (myPlayer.currentBet || 0);
   const canCheck = toCall === 0;
 
@@ -2252,7 +2044,7 @@ function renderPreActions() {
   // Only rebuild DOM if buttons don't exist yet
   if (!bar.children.length) {
     const callAmt = Math.min(toCall, myPlayer.stack);
-    const callLabel = callAmt >= myPlayer.stack ? 'Call All-In' : `Call ${fmt(callAmt)}`;
+    const callLabel = callAmt >= myPlayer.stack ? 'Call All-In' : `Call ${fmtNumber(callAmt)}`;
     let buttonsHTML = '';
     buttonsHTML += `<button class="pre-action-btn" data-pa="call">${callLabel}</button>`;
     buttonsHTML += '<button class="pre-action-btn" data-pa="fold">Fold</button>';
@@ -2261,6 +2053,7 @@ function renderPreActions() {
       btn.addEventListener('click', () => {
         const pa = btn.dataset.pa;
         preAction = (preAction === pa) ? null : pa;
+        preActionToCall = preAction === 'call' ? toCall : null;
         bar.querySelectorAll('.pre-action-btn').forEach(b => {
           b.classList.toggle('active', b.dataset.pa === preAction);
         });
@@ -2280,14 +2073,14 @@ function executePreAction() {
   const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
   if (!myPlayer) return false;
 
-  const maxBet = Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
+  const maxBet = gameState.currentBetToCall ?? Math.max(0, ...gameState.players.filter(p => p).map(p => p.currentBet || 0));
   const toCall = maxBet - (myPlayer.currentBet || 0);
   const canCheck = toCall === 0;
 
   const pa = preAction;
   preAction = null;
 
-  if (pa === 'call' && toCall > 0) { sendAction('call'); return true; }
+  if (pa === 'call' && toCall > 0 && toCall === preActionToCall) { sendAction('call'); return true; }
   if (pa === 'fold') { sendAction('fold'); return true; }
 
   return false;
@@ -2306,7 +2099,8 @@ function sendAction(action, amount) {
     tableId: myTableId,
     action: action,
     amount: amount || 0,
-    actionId: actionId
+    actionId: actionId,
+    handCount: gameState?.handCount
   });
 }
 
@@ -2339,21 +2133,11 @@ function lifeBarColor(pct, isTimeBank) {
   return `linear-gradient(135deg, rgba(${r},${g},${b},0.50), rgba(${r},${g},${b},0.35))`;
 }
 
-// Track time bank state for the active timer
-let timerTimeBankMs = 0;
-let timerIsPreflop = true;
-let timerVisualPos = null;
-let timerIsTimeBank = false;
-
 function handleTimerStart(playerIndex, baseMs, timeBankMs, isPreflop) {
   clearTimer();
   timeRemaining = baseMs;
   currentTurnTime = baseMs;
-  timerTimeBankMs = timeBankMs || 0;
-  timerIsPreflop = isPreflop;
-  timerIsTimeBank = false;
   const visualPos = getVisualPosition(playerIndex);
-  timerVisualPos = visualPos;
   if (!visualPos) return;
 
   // Base timer runs silently — no lifebar shown.
@@ -2380,11 +2164,9 @@ function handleTimerStart(playerIndex, baseMs, timeBankMs, isPreflop) {
  */
 function handleTimeBankStart(playerIndex, timeBankMs) {
   clearTimer();
-  timerIsTimeBank = true;
   timeRemaining = timeBankMs;
   currentTurnTime = timeBankMs;
   const visualPos = getVisualPosition(playerIndex);
-  timerVisualPos = visualPos;
   if (!visualPos) return;
 
   const bar = $(`lifeBar-${visualPos}`);
@@ -2426,7 +2208,6 @@ function clearTimer() {
     clearTimeout(actionTimer);
     actionTimer = null;
   }
-  timerIsTimeBank = false;
   for (let i = 1; i <= 6; i++) {
     const bar = $(`lifeBar-${i}`);
     if (bar) {
@@ -2437,65 +2218,22 @@ function clearTimer() {
 }
 
 // ============================================================
-//  DEAL ANIMATION (cards fly from dealer to players)
-// ============================================================
-function animateDeal() {
-  if (!gameState || !gameState.handInProgress) return;
-  const table = $('pokerTable');
-  if (!table) return;
-
-  // Find dealer's visual position for origin
-  const dealerVisual = getVisualPosition(gameState.dealerSeat);
-  if (!dealerVisual) return;
-  const origin = NP_TARGETS[dealerVisual];
-
-  // Build dealing order: clockwise from left of dealer
-  const dealOrder = [];
-  let seat = gameState.dealerSeat;
-  for (let t = 0; t < NUM_SEATS; t++) {
-    seat = (seat + 1) % NUM_SEATS;
-    const p = gameState.players[seat];
-    if (p && !p.folded && p.holeCards && p.holeCards.length === 2) {
-      dealOrder.push(seat);
-    }
-  }
-  if (dealOrder.length === 0) return;
-
-  // Two rounds
-  const fullOrder = [...dealOrder, ...dealOrder];
-  const STAGGER = 120;
-  const FLIGHT = 250;
-
-  fullOrder.forEach((playerIdx, i) => {
-    const targetVisual = calculateVisualPosition(playerIdx + 1);
-    const target = NP_TARGETS[targetVisual];
-
-    setTimeout(() => {
-      const flyEl = document.createElement('div');
-      flyEl.className = 'deal-card-fly';
-      flyEl.innerHTML = renderCardHTML(null, 'small');
-      flyEl.style.top = origin.top + '%';
-      flyEl.style.left = origin.left + '%';
-      flyEl.style.transform = 'translate(-50%,-50%) scale(0.7) rotate(' + (Math.random() * 20 - 10) + 'deg)';
-      table.appendChild(flyEl);
-
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          flyEl.style.top = target.top + '%';
-          flyEl.style.left = target.left + '%';
-          flyEl.style.transform = 'translate(-50%,-50%) scale(1) rotate(0deg)';
-        });
-      });
-
-      setTimeout(() => flyEl.remove(), FLIGHT + 50);
-    }, i * STAGGER);
-  });
-}
-
-// ============================================================
 //  CHAT SYSTEM
 // ============================================================
-const chatSettings = { sound: 'all', playerChat: true, playByPlay: true, autoMuck: true };
+const chatSettings = { sound: 'all', playerChat: true, playByPlay: false, autoMuck: true };
+
+function summarizeHandResult(line) {
+  // The server's final seat summaries already aggregate split and side-pot
+  // payouts. Only summarize winners; never expose cards from a folded hand.
+  const shown = /^Seat [1-6]: (.+) showed \[[^\]]+\] and won \((\d+)\) with (.+)$/.exec(line);
+  const folded = /^Seat [1-6]: (.+) collected \((\d+)\)$/.exec(line);
+  const match = shown || folded;
+  if (!match) return null;
+  const name = match[1].replace(/(?: \((?:button|small blind|big blind)\))+$/, '');
+  const amount = '₿\u00a0' + Number(match[2]).toLocaleString('en-US');
+  return shown ? `${name} won ${amount} chips with ${match[3]}.` :
+    `${name} won ${amount} chips — everyone else folded.`;
+}
 
 function addChatMessage(author, text, isSystem) {
   const el = $('chatMessages');
@@ -2530,6 +2268,40 @@ function addPlayByPlay(text) {
 // ============================================================
 const handHistories = [];
 let histViewIdx = -1;
+let historyOwner = null;
+let historyLoading = false;
+let historyLastAttempt = 0;
+
+function mergeHandHistories(records) {
+  const selected = handHistories[histViewIdx]?.handId;
+  const merged = new Map(handHistories.map(hand => [hand.handId, hand]));
+  for (const hand of records) {
+    if (merged.get(hand.handId)?.personal && !hand.personal) continue;
+    merged.set(hand.handId, hand);
+  }
+  handHistories.splice(0, handHistories.length, ...[...merged.values()].sort((a,b)=>a.startedAt-b.startedAt));
+  histViewIdx = selected ? handHistories.findIndex(hand=>hand.handId===selected) : handHistories.length-1;
+}
+
+async function loadHandHistories() {
+  if (!mySessionToken || !myUserId || historyLoading || Date.now()-historyLastAttempt < 3000) return;
+  const token = mySessionToken, owner = myUserId;
+  historyLastAttempt = Date.now();
+  historyLoading = true;
+  try {
+    const response = await fetch('/api/my/hands', {headers:{'x-session-token':token},cache:'no-store'});
+    if (!response.ok) throw new Error('Could not load saved histories');
+    const data = await response.json();
+    if (mySessionToken !== token || myUserId !== owner) return;
+    if (historyOwner && historyOwner !== owner) handHistories.length = 0;
+    mergeHandHistories(data.hands);
+    historyOwner = owner;
+    renderHistoryView();
+  } catch (error) {
+    const label = $('histLabel');
+    if (label && !handHistories.length) label.textContent = 'Saved histories unavailable — reopen to retry';
+  } finally { historyLoading = false; }
+}
 
 function renderHistoryView() {
   const label = $('histLabel');
@@ -2540,6 +2312,7 @@ function renderHistoryView() {
 
   if (handHistories.length === 0) {
     label.textContent = 'No hands yet';
+    if ($('historyHandId')) $('historyHandId').textContent = '';
     text.textContent = '';
     if (prev) prev.disabled = true;
     if (next) next.disabled = true;
@@ -2548,8 +2321,10 @@ function renderHistoryView() {
 
   const idx = Math.max(0, Math.min(histViewIdx, handHistories.length - 1));
   histViewIdx = idx;
-  label.textContent = `Hand ${idx + 1} / ${handHistories.length}`;
-  text.textContent = handHistories[idx];
+  label.textContent = `${idx + 1} / ${handHistories.length}${handHistories[idx].inProgress ? ' · In progress' : ''}`;
+  const idLabel = $('historyHandId');
+  if (idLabel) idLabel.textContent = handHistories[idx].handId || '';
+  text.textContent = handHistories[idx].history;
   if (prev) prev.disabled = idx <= 0;
   if (next) next.disabled = idx >= handHistories.length - 1;
 }
@@ -2569,7 +2344,10 @@ function initChat() {
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
       const t = tab.dataset.tab;
-      tabs.forEach(tt => tt.classList.toggle('active', tt === tab));
+      tabs.forEach(tt => {
+        tt.classList.toggle('active', tt === tab);
+        tt.setAttribute('aria-pressed', String(tt === tab));
+      });
       Object.entries(bodies).forEach(([key, el]) => {
         if (!el) return;
         if (key === 'chat') {
@@ -2580,7 +2358,7 @@ function initChat() {
         }
       });
       if (inputArea) inputArea.style.display = t === 'chat' ? 'flex' : 'none';
-      if (t === 'history') renderHistoryView();
+      if (t === 'history') { renderHistoryView(); loadHandHistories(); }
     });
   });
 
@@ -2591,16 +2369,17 @@ function initChat() {
   $('histNext')?.addEventListener('click', () => {
     if (histViewIdx < handHistories.length - 1) { histViewIdx++; renderHistoryView(); }
   });
-  $('histCopy')?.addEventListener('click', () => {
-    if (handHistories.length === 0) return;
-    const idx = Math.max(0, Math.min(histViewIdx, handHistories.length - 1));
-    navigator.clipboard.writeText(handHistories[idx]).then(() => {
-      const btn = $('histCopy');
-      btn.classList.add('copied');
-      btn.textContent = '\u2713';
-      setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '\uD83D\uDCCB'; }, 1500);
-    }).catch(() => {});
-  });
+  async function copyHistory(idOnly) {
+    const hand = handHistories[histViewIdx];
+    if (!hand) return;
+    try {
+      await navigator.clipboard.writeText(idOnly ? hand.handId : hand.history);
+      showToast(idOnly ? 'Hand ID copied' : 'Hand history copied — ready to share', 'info');
+    } catch (error) { showToast('Could not copy. Select the history text and copy it manually.'); }
+  }
+  $('histCopy')?.addEventListener('click', () => copyHistory(false));
+  $('histCopyId')?.addEventListener('click', () => copyHistory(true));
+  $('histLive')?.addEventListener('click', () => { histViewIdx = handHistories.length - 1; renderHistoryView(); });
 
   // Send message (server-side relay)
   const input = $('chatInput');
@@ -2617,15 +2396,22 @@ function initChat() {
 
   // Collapse toggle
   $('chatCollapseBtn')?.addEventListener('click', () => {
-    $('chatBox')?.classList.toggle('collapsed');
+    const collapsed = $('chatBox')?.classList.toggle('collapsed');
+    const button = $('chatCollapseBtn');
+    button?.setAttribute('aria-expanded', String(!collapsed));
+    button?.setAttribute('aria-label', collapsed ? 'Expand chat panel' : 'Collapse chat panel');
   });
 
   // Settings toggles
   document.querySelectorAll('.setting-toggle').forEach(tog => {
     tog.addEventListener('click', () => {
-      tog.classList.toggle('on');
       const key = tog.dataset.setting;
-      if (key) chatSettings[key] = tog.classList.contains('on');
+      if (!key) return;
+      chatSettings[key] = !chatSettings[key];
+      document.querySelectorAll(`.setting-toggle[data-setting="${key}"]`).forEach(button => {
+        button.classList.toggle('on', chatSettings[key]);
+        button.setAttribute('aria-checked', String(chatSettings[key]));
+      });
       const box = $('chatBox');
       if (key === 'playerChat') box?.classList.toggle('hide-chat', !chatSettings.playerChat);
       if (key === 'playByPlay') box?.classList.toggle('hide-pbp', !chatSettings.playByPlay);
@@ -2639,19 +2425,46 @@ function initChat() {
       const labels = { off: 'Off', alerts: 'Alerts', all: 'All' };
       const cur = btn.dataset.value;
       const next = cycle[cur] || 'all';
-      btn.dataset.value = next;
-      btn.textContent = labels[next];
       chatSettings.sound = next;
+      document.querySelectorAll('.setting-cycle[data-setting="sound"]').forEach(button => {
+        button.dataset.value = next;
+        button.textContent = labels[next];
+        button.setAttribute('aria-label', `Sounds: ${labels[next]}`);
+      });
     });
   });
+}
+
+function openTableOptions() {
+  const state = gameState || myTableConfig;
+  const mode = gameState ? (state.realMoney ? 'Real sats' : 'Demo chips') : 'Connecting…';
+  $('tableOptionsSummary').textContent = `${NUM_SEATS} seats · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)} blinds · ${mode}`;
+  const dialog = $('tableOptions');
+  if (!dialog.open) dialog.showModal();
+}
+
+function openTableHistory() {
+  $('tableOptions').close();
+  const panel = $('chatBox');
+  panel.classList.remove('collapsed');
+  $('chatCollapseBtn').setAttribute('aria-expanded', 'true');
+  $('chatCollapseBtn').setAttribute('aria-label', 'Collapse chat panel');
+  if (document.body.classList.contains('is-mobile')) {
+    panel.classList.add('mobile-open');
+    $('mobileChatBackdrop')?.classList.add('visible');
+    $('mobileChatToggle')?.classList.add('chat-active');
+    $('mobileChatToggle')?.setAttribute('aria-expanded', 'true');
+    $('mobileChatToggle')?.setAttribute('aria-label', 'Close table chat');
+    focusDialog(panel);
+  }
+  document.querySelector('.chat-tab[data-tab="history"]')?.click();
 }
 
 // ============================================================
 //  MOBILE CHAT TOGGLE
 // ============================================================
 function initMobileChat() {
-  if (!isMobileDevice) return;
-
+  // Initialize once on every device so resizing can reveal the same panel.
   // Create backdrop
   const backdrop = document.createElement('div');
   backdrop.className = 'mobile-chat-backdrop';
@@ -2662,22 +2475,33 @@ function initMobileChat() {
   const chatToggle = document.createElement('button');
   chatToggle.className = 'mobile-chat-toggle';
   chatToggle.id = 'mobileChatToggle';
-  chatToggle.innerHTML = '&#x1F4AC;';
+  chatToggle.textContent = 'Chat';
+  chatToggle.setAttribute('aria-label', 'Open table chat');
+  chatToggle.setAttribute('aria-controls', 'chatBox');
+  chatToggle.setAttribute('aria-expanded', 'false');
   chatToggle.title = 'Toggle chat';
   document.body.appendChild(chatToggle);
 
   const chatBox = document.getElementById('chatBox');
 
   function openChat() {
+    chatBox.classList.remove('collapsed');
     chatBox.classList.add('mobile-open');
+    chatToggle.setAttribute('aria-expanded', 'true');
+    chatToggle.setAttribute('aria-label', 'Close table chat');
     backdrop.classList.add('visible');
     chatToggle.classList.add('chat-active');
     chatToggle.classList.remove('has-unread');
+    focusDialog(chatBox);
   }
   function closeChat() {
+    const wasOpen = chatBox.classList.contains('mobile-open');
     chatBox.classList.remove('mobile-open');
+    chatToggle.setAttribute('aria-expanded', 'false');
+    chatToggle.setAttribute('aria-label', 'Open table chat');
     backdrop.classList.remove('visible');
     chatToggle.classList.remove('chat-active');
+    if (wasOpen) restoreDialogFocus(chatBox);
   }
 
   chatToggle.addEventListener('click', (e) => {
@@ -2691,106 +2515,21 @@ function initMobileChat() {
 
   // Close on backdrop tap
   backdrop.addEventListener('click', closeChat);
+  $('mobileChatClose').addEventListener('click', closeChat);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && chatBox.classList.contains('mobile-open')) { closeChat(); chatToggle.focus(); }
+  });
+  window.addEventListener('table-layout-change', closeChat);
 }
 
 function signalMobileUnread() {
-  if (!isMobileDevice) return;
+  if (!document.body.classList.contains('is-mobile')) return;
   const chatBox = document.getElementById('chatBox');
   const toggle = document.getElementById('mobileChatToggle');
   if (toggle && chatBox && !chatBox.classList.contains('mobile-open')) {
     toggle.classList.add('has-unread');
   }
 }
-
-// ============================================================
-//  LIGHTNING BOLTS BACKGROUND
-// ============================================================
-const BOLT_PATHS = [
-  { w: 60, h: 110, vb: '0 0 60 110', d: 'M35 2 L18 42 L32 42 L12 108' },
-  { w: 80, h: 120, vb: '0 0 80 120', d: 'M45 2 L28 45 L42 45 L22 90 M42 45 L58 88' },
-  { w: 50, h: 90,  vb: '0 0 50 90',  d: 'M30 4 L14 36 L28 32 L8 86' },
-  { w: 35, h: 70,  vb: '0 0 35 70',  d: 'M20 2 L10 28 L22 28 L8 68' },
-  { w: 55, h: 100, vb: '0 0 55 100', d: 'M32 3 L15 40 L30 38 L10 97' },
-  { w: 40, h: 75,  vb: '0 0 40 75',  d: 'M25 2 L12 30 L24 28 L8 73' },
-  { w: 70, h: 110, vb: '0 0 70 110', d: 'M40 3 L25 42 L38 40 L18 80 M38 40 L55 78' },
-];
-
-function spawnBolt() {
-  const container = $('bgDecor');
-  if (!container) return;
-  const bp = BOLT_PATHS[Math.floor(Math.random() * BOLT_PATHS.length)];
-  const scale = 0.7 + Math.random() * 0.6;
-  const rot = -40 + Math.random() * 80;
-  const x = 3 + Math.random() * 94;
-  const y = 3 + Math.random() * 94;
-  const sw = (1.5 + Math.random() * 1.5).toFixed(1);
-  const alpha = (0.12 + Math.random() * 0.10).toFixed(2);
-
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('width', Math.round(bp.w * scale));
-  svg.setAttribute('height', Math.round(bp.h * scale));
-  svg.setAttribute('viewBox', bp.vb);
-  svg.setAttribute('fill', 'none');
-  svg.style.cssText = `top:${y}%;left:${x}%;transform:rotate(${rot}deg);`;
-
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', bp.d);
-  path.setAttribute('stroke', `rgba(232,168,56,${alpha})`);
-  path.setAttribute('stroke-width', sw);
-  path.setAttribute('stroke-linecap', 'round');
-  path.setAttribute('stroke-linejoin', 'round');
-  svg.appendChild(path);
-  container.appendChild(svg);
-
-  requestAnimationFrame(() => {
-    svg.classList.add('bolt-visible');
-    const holdTime = 800 + Math.random() * 1500;
-    setTimeout(() => {
-      svg.classList.remove('bolt-visible');
-      svg.classList.add('bolt-fade');
-      setTimeout(() => svg.remove(), 1600);
-    }, holdTime);
-  });
-}
-
-function scheduleBolt() {
-  const delay = 3000 + Math.random() * 6000;
-  setTimeout(() => {
-    spawnBolt();
-    scheduleBolt();
-  }, delay);
-}
-
-// ============================================================
-//  RESIZE / ORIENTATION HANDLERS
-// ============================================================
-let resizeTimer;
-
-function checkOrientation() {
-  if (!isMobileDevice) return;
-  const overlay = document.getElementById('rotateOverlay');
-  if (!overlay) return;
-  const isPortrait = window.innerHeight > window.innerWidth;
-  if (isPortrait) {
-    overlay.classList.add('visible');
-  } else {
-    overlay.classList.remove('visible');
-  }
-}
-
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    checkOrientation();
-    if (gameState) render();
-  }, 100);
-});
-window.addEventListener('orientationchange', () => {
-  setTimeout(() => {
-    checkOrientation();
-    if (gameState) render();
-  }, 300);
-});
 
 // ============================================================
 //  CONNECTION STATUS
@@ -2870,7 +2609,7 @@ window.handleStandUp = function() {
   // Busted players (no chips) fall through to the normal stand-up.
   if (isRealMoneyTable() && mySeat) {
     const me = (gameState && gameState.players || []).find(p => p && p.userId === myUserId);
-    if (me && me.stack > 0) { startCashout(); return; }
+    if (me) { returnTableStack(); return; }
   }
   handleStandUpPlain();
 };
@@ -2903,7 +2642,7 @@ function handleStandUpPlain() {
 function isRealMoneyTable() {
   // Prefer the server's authoritative flag; fall back to the table config so a
   // seat-click works even before the first game-state arrives.
-  return !!((gameState && gameState.realMoney) || (myTableConfig && myTableConfig.realMoney));
+  return gameState ? !!gameState.realMoney : !!myTableConfig.realMoney;
 }
 
 function requestRealMoneyBuyin() {
@@ -2912,65 +2651,205 @@ function requestRealMoneyBuyin() {
   const min = (gameState && gameState.minBuyin) || (myTableConfig && myTableConfig.minBuyin) || 5000;
   const max = (gameState && gameState.maxBuyin) || (myTableConfig && myTableConfig.maxBuyin) || 10000;
   const body =
-    `<div class="wallet-amount">Choose your buy-in</div>` +
-    `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${max.toLocaleString()}</b> sats</div>` +
-    `<input id="rmBuyinSlider" class="wallet-slider" type="range" min="${min}" max="${max}" step="100" value="${max}">` +
-    `<div class="wallet-slider-ends"><span>${min.toLocaleString()}</span><span>${max.toLocaleString()}</span></div>` +
-    `<button class="wallet-btn" data-action="generate-buyin-invoice">Generate invoice</button>`;
+    `<p id="buyinAccountBalance" role="status">Checking account balance…</p><div class="wallet-amount">Choose your buy-in</div>` +
+    `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${fmt(max)}</b> sats</div>` +
+    `<input id="rmBuyinSlider" class="wallet-slider" aria-label="Buy-in amount in sats" type="range" min="${min}" max="${max}" step="100" value="${max}">` +
+    `<div class="wallet-slider-ends"><span>${fmt(min)}</span><span>${fmt(max)}</span></div>` +
+    `<button class="wallet-btn" data-action="generate-buyin-invoice">Buy in from account</button><button class="wallet-btn secondary" data-action="account-deposit">Deposit sats</button>`;
   showWalletModal('Buy in', body);
+  fetchWalletState().then(state => { const label=$('buyinAccountBalance'); if (label) label.textContent=`Available in your account: ${fmt(state.availableSats)} sats`; }).catch(error=>showToast(error.message));
   const slider = document.getElementById('rmBuyinSlider');
   const amt = document.getElementById('rmBuyinAmt');
-  if (slider && amt) slider.addEventListener('input', () => { amt.textContent = Number(slider.value).toLocaleString(); });
+  if (slider && amt) slider.addEventListener('input', () => { amt.textContent = fmt(Number(slider.value)); });
 }
 
-function generateBuyinInvoice() {
-  if (!socket || !mySessionToken) { handleNostrLoginThenSit(); return; }
-  const slider = document.getElementById('rmBuyinSlider');
-  const amountSats = slider ? parseInt(slider.value, 10) : undefined;
-  showWalletModal('Buy in', '<div class="wallet-status">Generating your Lightning invoice…</div>');
-  socket.emit('buyin-request', { tableId: myTableId, sessionToken: mySessionToken, amountSats });
+function showAccountDeposit(defaultAmount = 10000) {
+  walletView = 'deposit-amount';
+  showWalletModal('Deposit sats', `<p>Deposits stay in your SatoshiStacks account until you buy in or withdraw.</p>
+    <label for="accountDepositAmount">Amount in sats</label>
+    <input id="accountDepositAmount" class="wallet-invoice-input" type="number" min="1" step="1" value="${Number.isSafeInteger(defaultAmount) && defaultAmount > 0 ? defaultAmount : 10000}">
+    <button class="wallet-btn" data-action="account-deposit-invoice">Create Lightning invoice</button>`);
 }
-
-function showBuyinInvoice(bolt11, amountSats) {
-  const body =
-    `<div class="wallet-amount">Pay <b>${Number(amountSats).toLocaleString()} sats</b> to take your seat</div>` +
-    `<div id="walletQr" class="wallet-qr"></div>` +
-    `<textarea class="wallet-invoice" readonly>${bolt11}</textarea>` +
-    `<button class="wallet-btn" data-action="copy-invoice" data-invoice="${bolt11}">Copy invoice</button>` +
-    `<div class="wallet-status">Waiting for payment — you'll be seated automatically.</div>`;
-  showWalletModal('Buy in', body);
-  const qc = document.getElementById('walletQr');
-  if (qc && typeof QRCode !== 'undefined') {
+function requestAccountDeposit() {
+  const amountSats = Number($('accountDepositAmount')?.value);
+  if (!Number.isSafeInteger(amountSats) || amountSats <= 0) { showToast('Enter a positive whole number of sats.'); return; }
+  if (!socket?.connected || !mySessionToken || walletRequestPending) return;
+  walletRequestPending = true;
+  socket.emit('account-deposit-request', {tableId:myTableId, sessionToken:mySessionToken, amountSats});
+  walletView = 'deposit-preparing';
+  showWalletModal('Deposit sats', '<p role="status">Creating your Lightning invoice…</p>');
+  setTimeout(async () => {
+    if (walletView !== 'deposit-preparing') return;
+    walletRequestPending = false;
     try {
-      new QRCode(qc, { text: bolt11.toUpperCase(), width: 220, height: 220, colorDark: '#3d3228', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-    } catch (e) { /* QR optional */ }
-  }
+      const state = await fetchWalletState();
+      const invoice = state.deposits.find(p => p.status === 'pending' && p.bolt11 && p.expiresAt > Date.now()/1000);
+      if (invoice) showBuyinInvoice({bolt11:invoice.bolt11, amountSats:invoice.amount_sats, paymentHash:invoice.payment_hash, expiresAt:invoice.expiresAt});
+      else { walletView = 'cashout'; lastCashoutView = ''; renderCashoutState(state); }
+    } catch(error) { showToast(error.message); }
+  }, 10000);
+}
+function returnTableStack() {
+  if (!socket?.connected || !mySessionToken) return;
+  socket.emit('table-cashout-request', { tableId:myTableId, sessionToken:mySessionToken });
 }
 
-function startCashout() {
-  if (!socket || !gameState) return;
-  const me = (gameState.players || []).find(p => p && p.userId === myUserId);
-  const stack = me ? me.stack : 0;
-  if (!stack || stack <= 0) { handleStandUpPlain(); return; }
-  const addr = localStorage.getItem('ss_lud16') || '';
-  if (!addr) {
-    showWalletModal('Cash out',
-      `<div class="wallet-amount">Cash out <b>${stack.toLocaleString()} sats</b></div>` +
-      `<div class="wallet-status">Your Nostr profile has no Lightning address, so we can't send your sats automatically. Add a Lightning address (lud16) to your Nostr profile, then stand up again.</div>`);
-    return;
-  }
-  const body =
-    `<div class="wallet-amount">Cash out <b>${stack.toLocaleString()} sats</b></div>` +
-    `<div class="wallet-status">We'll send it straight to the Lightning address on your Nostr profile:</div>` +
-    `<div class="wallet-address">${addr}</div>` +
-    `<button class="wallet-btn" data-action="confirm-cashout">Cash out ${stack.toLocaleString()} sats</button>`;
-  showWalletModal('Cash out', body);
+async function generateBuyinInvoice() {
+  if (walletRequestPending) return;
+  if (!socket?.connected || !mySessionToken) { showToast('Reconnect and sign in before paying.'); return; }
+  walletRequestPending = true;
+  const token = mySessionToken;
+  const amountSats = Number($('rmBuyinSlider')?.value);
+  try {
+    const funds = await fetchWalletState();
+    if (token !== mySessionToken) throw new Error('Your account changed. Reopen your buy-in.');
+    const pending = (funds.deposits || []).find(row => row.status === 'pending' && row.bolt11 && row.expiresAt > Date.now()/1000);
+    if (pending && funds.availableSats < amountSats) { showBuyinInvoice({ bolt11:pending.bolt11, amountSats:pending.amount_sats, paymentHash:pending.payment_hash, expiresAt:pending.expiresAt }); return; }
+    if (funds.availableSats < amountSats) { showAccountDeposit(amountSats - funds.availableSats); return; }
+
+    walletView = 'buyin-preparing';
+    showWalletModal('Buy in', '<div class="wallet-status" role="status">Moving sats from your account to the table…</div>');
+    socket.emit('buyin-request', { tableId:myTableId, sessionToken:mySessionToken, amountSats });
+    // Recover a lost seating response from authoritative state; never pay again.
+    setTimeout(async () => {
+      if (walletView !== 'buyin-preparing') return;
+      try {
+        const state = await fetchWalletState();
+        if (state.seated) {
+          socket.emit('observe-table', {tableId:myTableId,sessionToken:mySessionToken});
+          closeWalletModal();
+        } else {
+          walletView='cashout'; lastCashoutView=''; renderCashoutState(state);
+        }
+      } catch (error) { showToast(error.message); }
+      finally { walletRequestPending=false; }
+    }, 10000);
+  } catch(error) { showToast(error.message); }
+  finally { walletRequestPending=false; }
+}
+function showBuyinInvoice(invoice) {
+  const {bolt11, amountSats, expiresAt}=invoice;
+  activeBuyinInvoice = bolt11;
+  activeBuyinDetails = invoice;
+  walletView = 'buyin-invoice';
+  const expired = expiresAt && expiresAt <= Date.now()/1000;
+  showWalletModal('Deposit to your account',
+    `<div class="wallet-amount"><b class="wallet-balance">${fmt(amountSats)} sats</b></div>`+
+    `<p class="wallet-status">Pay once using your browser wallet, or scan/copy this invoice in another wallet. Your account is credited after server confirmation. Then choose a table buy-in.</p>`+
+    `<div class="wallet-qr" id="buyinQR"></div>`+
+    `<button id="payBuyinBtn" class="wallet-btn" data-action="pay-buyin-wallet" ${expired?'disabled':''}>Pay with Lightning wallet</button>`+
+    `<button class="wallet-btn secondary" data-action="copy-buyin-invoice">Copy Lightning invoice</button>`+
+    `<p class="wallet-status" id="buyinInvoiceStatus" role="status">${expired?'This invoice has expired. Close and request a new deposit.':`Invoice expires ${new Date(expiresAt*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}. If payment is pending, wait for confirmation.`}</p>`);
+  if (typeof QRCode !== 'undefined') new QRCode($('buyinQR'), {text:bolt11,width:180,height:180,correctLevel:QRCode.CorrectLevel.M});
+  else $('buyinQR').textContent='Copy the invoice to pay in your wallet.';
+}
+async function copyBuyinInvoice() {
+  if (!activeBuyinInvoice) return;
+  try { await navigator.clipboard.writeText(activeBuyinInvoice); showToast('Lightning invoice copied.', 'info'); }
+  catch (_) { showToast('Clipboard unavailable. Use your connected wallet or the QR code.'); }
 }
 
-function confirmCashout() {
-  if (!socket || !mySessionToken) { showToast('Not connected'); return; }
-  showWalletModal('Cash out', '<div class="wallet-status">Sending your sats to your Lightning address…</div>');
-  socket.emit('cashout-request', { tableId: myTableId, sessionToken: mySessionToken });
+async function fetchWalletState() {
+  const target = socket, token = mySessionToken, pubkey = myPubkeyHex;
+  if (!target?.connected || !token) throw new Error('Sign in and reconnect to check your balance');
+  return new Promise((resolve, reject) => {
+    const cleanup = () => { clearTimeout(timer); target.off('wallet-state', receive); target.off('disconnect', disconnected); };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Balance request timed out — try again')); },10000);
+    function disconnected() { cleanup(); reject(new Error('Connection lost. Reconnect to check your balance.')); }
+    function receive(state) {
+      if (state.tableId !== myTableId || state.userId !== pubkey) return;
+      cleanup();
+      if (token !== mySessionToken) reject(new Error('Your account changed. Reopen your wallet.'));
+      else resolve(state);
+    }
+    target.on('wallet-state',receive);
+    target.once('disconnect',disconnected);
+    target.emit('wallet-state-request',{tableId:myTableId,sessionToken:token});
+  });
+}
+
+function renderCashoutState(state) {
+  if (!['cashout','cashout-pending'].includes(walletView)) return;
+  const signature = JSON.stringify([state.availableSats,state.error,state.withdrawalsEnabled,state.depositsEnabled,state.payments,state.tableStackSats,state.seated,state.canReturnStack,state.transfers]);
+  if (signature === lastCashoutView && walletView !== 'cashout-pending') return;
+  lastCashoutView = signature;
+  const invoice = $('cashoutInvoice')?.value;
+  const withdrawalAmount = $('withdrawalAmount')?.value;
+  walletView = 'cashout';
+  showWalletModal('Your SatoshiStacks account', window.StacksWalletUI.cashoutHTML(state));
+  if (withdrawalAmount && $('withdrawalAmount')) $('withdrawalAmount').value=withdrawalAmount;
+  if (invoice && $('cashoutInvoice')) { $('cashoutInvoice').value=invoice; $('cashoutInvoice').closest('details').open=true; }
+}
+async function startCashout() {
+  if (walletBusy || !socket?.connected || !mySessionToken) { showToast('Sign in and reconnect to view your balance.'); return; }
+  walletBusy=true;
+  walletView='cashout';
+  lastCashoutView='';
+  showWalletModal('Your SatoshiStacks account','<p class="wallet-status" role="status">Checking your balance…</p>');
+  try {
+
+    const funds=await fetchWalletState();
+    renderCashoutState(funds);
+  } catch(error) { showWalletModal('Your SatoshiStacks account',`<p class="wallet-status" role="alert">${esc(error.message)}</p><button class="login-back-btn" data-action="refresh-cashout">Try again</button>`); }
+  finally { walletBusy=false; }
+}
+async function confirmCashout(usePastedInvoice=false) {
+  if (walletBusy || !socket?.connected || !mySessionToken) return;
+  const token=mySessionToken;
+  const pasted=$('cashoutInvoice')?.value.trim().replace(/^lightning:/i,'');
+  const amountSats=Number($('withdrawalAmount')?.value);
+  walletBusy=true;
+  document.querySelectorAll('#walletModal .wallet-btn').forEach(button=>button.disabled=true);
+  try {
+    const funds=await fetchWalletState();
+    if (funds.error) throw new Error(funds.error);
+    if (!funds.withdrawalsEnabled) throw new Error('Withdrawals are temporarily unavailable. Your balance remains recorded.');
+    if (!funds.availableSats) throw new Error('No balance available. A previous payment may still be pending.');
+    let bolt11=pasted;
+    if (usePastedInvoice) {
+      if (!bolt11 || !/^ln(?:bc|tb|bcrt|sb)[0-9a-z]+$/i.test(bolt11)) throw new Error('Paste a complete Lightning invoice from your receiving wallet.');
+    } else {
+      if (!lightningWallet.isConnected()) await lightningWallet.connect();
+      if (localStorage.getItem('ss_authMethod')==='nip07') await window.StacksProviders.assertIdentity(window.nostr,myPubkeyHex);
+      if (!Number.isSafeInteger(amountSats) || amountSats <= 0 || amountSats > funds.availableSats) throw new Error('Choose an amount within your available balance.');
+      bolt11=await lightningWallet.invoice(amountSats);
+    }
+    if (token!==mySessionToken || !socket?.connected) throw new Error('Your session changed. Reconnect and check your balance before withdrawing.');
+    walletView='cashout-pending';
+    socket.emit('cashout-request',{tableId:myTableId,sessionToken:token,bolt11});
+    showWalletModal('Withdrawal pending','<p class="wallet-status" role="status">Request sent. Waiting for the server to reserve your balance and confirm the Lightning payment…</p>');
+  } catch(error) { showToast(error.message || 'Withdrawal canceled'); }
+  finally { walletBusy=false; updateWalletButtons(); document.querySelectorAll('#walletModal .wallet-btn').forEach(button=>button.disabled=false); }
+}
+
+async function payBuyinWithWallet() {
+  if (walletBusy || !activeBuyinInvoice) return;
+  walletBusy = true;
+  const token = mySessionToken, invoice = activeBuyinInvoice;
+  if (activeBuyinDetails?.expiresAt <= Date.now()/1000) { walletBusy=false; showToast('This invoice has expired. Request a new deposit.'); return; }
+  let submitted = false;
+  const button = $('payBuyinBtn');
+  if (button) { button.disabled = true; button.textContent = 'Approve in your wallet…'; }
+  try {
+    if (!lightningWallet.isConnected()) await lightningWallet.connect();
+    if (localStorage.getItem('ss_authMethod') === 'nip07') await window.StacksProviders.assertIdentity(window.nostr, myPubkeyHex);
+    if (token !== mySessionToken || invoice !== activeBuyinInvoice) throw new Error('Your account or invoice changed. Reopen your buy-in.');
+    await lightningWallet.pay(invoice);
+    submitted = true;
+    if (button) { button.textContent='Waiting for confirmation…'; }
+    const status=$('buyinInvoiceStatus');
+    if (status) status.textContent='Payment submitted. Waiting for confirmation from the server.';
+    showToast('Payment sent. Waiting for the server to confirm your deposit.', 'info');
+  } catch (error) {
+    const status=$('buyinInvoiceStatus');
+    if (status) status.textContent='Payment has not been confirmed. Check your wallet before retrying. A settled payment will be recognized automatically.';
+    showToast(error.message || 'Payment canceled');
+  }
+  finally {
+    walletBusy = false;
+    updateWalletButtons();
+    if (button) { button.disabled = submitted; button.textContent = submitted ? 'Waiting for server confirmation…' : 'Pay with Lightning wallet'; }
+  }
 }
 
 function showWalletModal(title, bodyHtml) {
@@ -2983,16 +2862,24 @@ function showWalletModal(title, bodyHtml) {
   }
   el.innerHTML =
     `<div class="wallet-modal">` +
-    `<button class="wallet-close" data-action="close-wallet">&times;</button>` +
-    `<div class="wallet-title">${title}</div>` +
+    `<button class="wallet-close" data-action="close-wallet" aria-label="Close wallet dialog">&times;</button>` +
+    `<div class="wallet-title" id="walletDialogTitle">${title}</div>` +
     bodyHtml +
     `</div>`;
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'walletDialogTitle');
   el.classList.remove('hidden');
+  focusDialog(el);
 }
 
 function closeWalletModal() {
+  walletRequestPending = false;
+  walletView = null;
+  lastCashoutView = '';
   const el = document.getElementById('walletModal');
   if (el) el.classList.add('hidden');
+  restoreDialogFocus(el);
 }
 
 // ============================================================
@@ -3145,7 +3032,7 @@ function showPlayerProfile(userId) {
     <div style="margin-bottom:12px;">${avatarHTML}</div>
     <div style="font-size:18px;font-weight:800;color:var(--warm-white);margin-bottom:4px;">${safeDisplayName}</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:monospace;">${esc(npubShort)}</div>
-    <div style="font-size:14px;color:var(--warm-white);margin-bottom:16px;">Stack: ${player.stack.toLocaleString()}</div>
+    <div style="font-size:14px;color:var(--warm-white);margin-bottom:16px;">Stack: ${fmt(player.stack)}</div>
     <div style="display:flex;gap:8px;justify-content:center;">
       <button data-action="view-nostr-profile" data-user-id="${safeUserId}"
         style="padding:8px 16px;border-radius:8px;border:2px solid var(--outline);background:var(--navy);color:var(--warm-white);font-weight:700;font-size:13px;cursor:pointer;">
@@ -3180,6 +3067,7 @@ let pendingBuyIn = null;
 let buyinMode = 'sit'; // 'sit' or 'rebuy'
 
 function showBuyinDialog() {
+  if (isRealMoneyTable()) { requestRealMoneyBuyin(); return; }
   const overlay = $('buyinOverlay');
   const slider = $('buyinSlider');
   const display = $('buyinAmountDisplay');
@@ -3199,14 +3087,16 @@ function showBuyinDialog() {
   slider.max = myTableConfig.maxBuyin;
   slider.step = Math.max(500, Math.floor(myTableConfig.minBuyin / 2));
   slider.value = myTableConfig.maxBuyin;
-  if (display) display.textContent = myTableConfig.maxBuyin.toLocaleString();
+  if (display) display.textContent = fmt(myTableConfig.maxBuyin);
 
   overlay.classList.remove('hidden');
+  focusDialog(overlay);
 }
 
 function hideBuyinDialog() {
   const overlay = $('buyinOverlay');
   if (overlay) overlay.classList.add('hidden');
+  restoreDialogFocus(overlay);
   buyinMode = 'sit';
 }
 
@@ -3218,7 +3108,7 @@ function initBuyinDialog() {
 
   if (slider && display) {
     slider.addEventListener('input', () => {
-      display.textContent = parseInt(slider.value).toLocaleString();
+      display.textContent = fmt(parseInt(slider.value));
     });
   }
 
@@ -3290,24 +3180,16 @@ async function init() {
 
   initChat();
   initBuyinDialog();
-  scheduleBolt();
-  checkOrientation();
   initMobileChat();
+  $('mobileAccountActions').addEventListener('click', e => {
+    if (e.target.closest('button')) $('tableOptions').close();
+  }, true);
 
   // Try to restore existing NOSTR session
-  const hasSession = await tryRestoreSession();
-  if (hasSession) {
-    hideLoginOverlay();
-    // If player voluntarily stood up, reconnect as observer — don't auto-rejoin
-    if (localStorage.getItem('ss_stoodUp')) {
-      connectAsObserver();
-    } else {
-      connectToServer();
-    }
-  } else {
-    // No session — connect as observer (see table immediately)
-    connectAsObserver();
-  }
+  showWalletControls();
+  if (await tryRestoreSession()) hideLoginOverlay();
+  // Observation resumes an existing seat without issuing a fresh buy-in.
+  connectAsObserver();
 }
 
 if (document.readyState === 'loading') {
@@ -3322,11 +3204,18 @@ document.addEventListener('click', (e) => {
   if (!actionEl) return;
 
   const action = actionEl.dataset.action;
+  if (actionEl.closest('#mobileAccountActions, #mobileSeatActions')) $('tableOptions').close();
   switch (action) {
+    case 'table-options': openTableOptions(); break;
+    case 'close-table-options': $('tableOptions').close(); break;
+    case 'table-hand-history': openTableHistory(); break;
     case 'sit-back-in': handleSitBackIn(); break;
     case 'sit-out': handleSitOut(); break;
     case 'stand-up': handleStandUp(); break;
-    case 'connect-nwc': window.connectNWC(); break;
+    case 'connect-wallet': window.connectWallet(); break;
+    case 'sign-out': nostrLogout(); showToast('Signed out. Any funds remain recoverable with the same Nostr identity.', 'info'); break;
+    case 'pay-buyin-wallet': payBuyinWithWallet(); break;
+    case 'recover-funds': startCashout(); break;
     case 'copy-qr-link': copyQRLink(); break;
     case 'switch-to-bunker': switchToBunkerFromQR(); break;
     case 'login-go-back': loginGoBack(); break;
@@ -3348,14 +3237,31 @@ document.addEventListener('click', (e) => {
       waitlistPosition = null;
       break;
     case 'observer-sign-in': handleObserverSignIn(); break;
-    case 'copy-invoice':
-      navigator.clipboard.writeText(actionEl.dataset.invoice || '').then(() => showToast('Invoice copied', 'info')).catch(() => {});
-      break;
+    case 'edit-profile': profileEditor.open(); break;
+    case 'account-deposit': showAccountDeposit(); break;
+    case 'account-deposit-invoice': requestAccountDeposit(); break;
+    case 'return-table-stack': returnTableStack(); break;
+    case 'account-buyin': requestRealMoneyBuyin(); break;
     case 'generate-buyin-invoice': generateBuyinInvoice(); break;
     case 'confirm-cashout': confirmCashout(); break;
+    case 'confirm-pasted-cashout': confirmCashout(true); break;
+    case 'refresh-cashout': startCashout(); break;
+    case 'copy-buyin-invoice': copyBuyinInvoice(); break;
     case 'close-wallet': closeWalletModal(); break;
     case 'submit-bunker': submitBunkerLogin(); break;
     case 'nip07-login': handleNIP07Login(); break;
+    case 'show-private-key': showPrivateKeyScreen(); break;
+    case 'create-nostr-account': createNostrAccount(); break;
+    case 'copy-new-nsec': copyCreatedNsec(); break;
+    case 'finish-create-account': finishCreatedAccount(); break;
+    case 'toggle-new-nsec': {
+      const input = $('loginNewNsec');
+      const reveal = input.type === 'password';
+      input.type = reveal ? 'text' : 'password';
+      $('loginRevealNsec').textContent = reveal ? 'Hide nsec' : 'Show nsec';
+      $('loginRevealNsec').setAttribute('aria-pressed', String(reveal));
+      break;
+    }
     case 'start-qr-login': startQRCodeLogin(); break;
     case 'show-bunker': showBunkerScreen(); break;
     case 'deep-link-login': startDeepLinkLogin(actionEl.dataset.provider || 'Nostr'); break;

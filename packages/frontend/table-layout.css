@@ -1,0 +1,135 @@
+/* Six seats around the rail; cards, bets, and position markers live on the felt. */
+body.poker-app .table-area { position: fixed; inset: 150px 96px 225px; }
+body.poker-app .poker-table {
+  --avatar-size: clamp(44px, 5.2vw, 64px);
+  --hole-width: clamp(18px, 2vw, 26px);
+  --hero-width: clamp(38px, 4.2vw, 52px);
+  --board-width: clamp(42px, 5.1vw, 70px);
+  top: 50%; left: 50%; width: min(100%, 1100px); height: min(100%, 360px);
+  transform: translate(-50%, -50%);
+  border-radius: 44% / 50%;
+}
+body.poker-app .seat { transform: translate(-50%, -50%); z-index: 10; }
+body.poker-app .seat-1 { left: 78%; top: 0; }
+body.poker-app .seat-2 { left: 103%; top: 50%; }
+body.poker-app .seat-3 { left: 78%; top: 100%; }
+body.poker-app .seat-4 { left: 22%; top: 100%; }
+body.poker-app .seat-5 { left: -3%; top: 50%; }
+body.poker-app .seat-6 { left: 22%; top: 0; }
+body.poker-app .player-avatar-wrap,
+body.poker-app .empty-avatar { width: var(--avatar-size); height: var(--avatar-size); }
+body.poker-app .player-avatar .avatar-initial { font-size: calc(var(--avatar-size) * .42); border-width: 2px; }
+body.poker-app .seat-6 .player-avatar img { transform: none; }
+body.poker-app .empty-label { font-size: 9px; }
+body.poker-app .empty-avatar { padding: 3px; gap: 2px; }
+body.poker-app .empty-avatar::before { font-size: 19px; }
+body.poker-app .player-nameplate,
+body.poker-app .player-nameplate.hero {
+  width: clamp(104px, 11vw, 132px); min-width: 0; padding: 5px 8px;
+  border-radius: 6px; gap: 0; z-index: 11;
+  transform: translate(-50%, -50%); pointer-events: auto;
+}
+body.poker-app .np-pos-1 { left: 91%; top: 0; }
+body.poker-app .np-pos-2 { left: 102%; top: calc(50% + var(--avatar-size) / 2 + 27px); }
+body.poker-app .np-pos-3 { left: 64%; top: 100%; }
+body.poker-app .np-pos-4 { left: 36%; top: 100%; }
+body.poker-app .np-pos-5 { left: -2%; top: calc(50% + var(--avatar-size) / 2 + 27px); }
+body.poker-app .np-pos-6 { left: 9%; top: 0; }
+body.poker-app .np-content { display: flex; flex-direction: column; width: 100%; gap: 2px; align-items: center; }
+body.poker-app .np-identity { display: flex; gap: 3px; align-items: center; max-width: 100%; }
+body.poker-app .player-nameplate .np-name { font-size: 11px; max-width: 100%; font-weight: 500; }
+body.poker-app .player-nameplate .np-amount { font-size: 14px; line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; }
+body.poker-app .empty-np { display: none; }
+body.poker-app .player-cards { position: absolute; z-index: 8; transform: translate(-50%, -50%); }
+body.poker-app .cards-pos-1 { left: 71%; top: 12%; }
+body.poker-app .cards-pos-2 { left: 97.5%; top: 50%; }
+body.poker-app .cards-pos-3 { left: 71%; top: 88%; }
+body.poker-app .cards-pos-4 { left: 29%; top: 88%; }
+body.poker-app .cards-pos-5 { left: 2.5%; top: 50%; }
+body.poker-app .cards-pos-6 { left: 29%; top: 12%; }
+body.poker-app .player-cards .np-cards {
+  position: relative; inset: auto; height: auto; overflow: visible;
+  transform: none; display: flex; gap: 0;
+}
+body.poker-app .player-cards .np-cards .card { width: var(--hole-width); height: calc(var(--hole-width) * 1.45); border-radius: 4px; }
+body.poker-app .player-cards .np-cards .card + .card { margin-left: -8px; }
+/* Your face-up cards cover your avatar, as they would in a classic poker client. */
+body.poker-app .player-cards.hero { left: 78%; top: calc(100% - 8px); z-index: 12; }
+body.poker-app .player-cards.hero .np-cards .card + .card { margin-left: -12px; }
+body.poker-app .player-cards.hero .np-cards .card { width: var(--hero-width); height: calc(var(--hero-width) * 1.45); }
+body.poker-app .player-bet { z-index: 9; gap: 4px; pointer-events: none; }
+/* Wagers belong to the rail seats; the center is reserved for board and pot. */
+body.poker-app .player-bet .chip-stack-column { width: 22px; flex: none; }
+body.poker-app .bet-pos-1 { left: 78%; top: calc(var(--avatar-size) / 2 + 36px); }
+body.poker-app .bet-pos-2 { left: 92%; top: 60%; }
+body.poker-app .bet-pos-3 { left: 78%; top: calc(100% - var(--avatar-size) / 2 - 48px); }
+body.poker-app .bet-pos-4 { left: 22%; top: calc(100% - var(--avatar-size) / 2 - 48px); }
+body.poker-app .bet-pos-5 { left: 8%; top: 60%; }
+body.poker-app .bet-pos-6 { left: 22%; top: calc(var(--avatar-size) / 2 + 36px); }
+body.poker-app .bet-amount {
+  padding: 2px 6px; border-radius: 4px; background: #0a2828d9; color: #fff5de;
+  font: 600 11px/1.2 var(--club-font); font-variant-numeric: tabular-nums;
+  white-space: nowrap; text-shadow: none;
+}
+/* Reserve all five slots from the flop onward; later cards append on the right. */
+body.poker-app .community-cards { left: 50%; top: 50%; width: calc(5 * var(--board-width) + 24px); min-width: 0; gap: 6px; justify-content: flex-start; }
+body.poker-app .community-card { flex: 0 0 var(--board-width); }
+body.poker-app .community-cards .card { width: var(--board-width); height: calc(var(--board-width) * 1.45); }
+/* Reserve a separate box above the board, including clearance for chip shadows.
+   The SVG fits uniformly inside this box regardless of chip count or viewport. */
+body.poker-app .table-pot-chips {
+  left: 50%; top: auto;
+  bottom: calc(50% + var(--board-width) * .725 + 10px);
+  width: min(26%, 220px);
+  height: clamp(26px, calc(50% - var(--board-width) * .725 - 46px), 64px);
+  overflow: visible; z-index: 1;
+}
+body.poker-app .pot-chip-pile { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 1px 2px #00181780); }
+body.poker-app .table-pot-label { left: 50%; top: calc(50% + var(--board-width) * .725 + 12px); }
+body.poker-app .pot-label { font-size: 11px; padding: 4px 8px; }
+body.poker-app .table-waiting { top: 52%; width: 57%; }
+body.poker-app .table-waiting h1 { font-size: clamp(19px, 2.2vw, 27px); }
+.marker-group { position: absolute; display: flex; gap: 4px; transform: translate(-50%, -50%); z-index: 9; pointer-events: none; }
+/* The dealer button sits beside that seat's wager, directly in front of its avatar. */
+.marker-pos-1 { left: calc(78% - 40px); top: calc(var(--avatar-size) / 2 + 36px); }
+.marker-pos-2 { left: calc(92% - 40px); top: 60%; }
+.marker-pos-3 { left: calc(78% - 40px); top: calc(100% - var(--avatar-size) / 2 - 48px); }
+.marker-pos-4 { left: calc(22% + 40px); top: calc(100% - var(--avatar-size) / 2 - 48px); }
+.marker-pos-5 { left: calc(8% + 40px); top: 60%; }
+.marker-pos-6 { left: calc(22% + 40px); top: calc(var(--avatar-size) / 2 + 36px); }
+.table-marker {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid #ded5bd; background: #f5eedf; color: #24343b;
+  box-shadow: 0 2px 4px #00181766, inset 0 0 0 1px #b1a88e;
+  font: 800 10px/1 var(--club-font);
+}
+.dealer-tray {
+  position: absolute; left: 50%; top: -35px; transform: translateX(-50%); z-index: 12;
+  display: flex; flex-direction: column; align-items: center; gap: 3px; width: 132px;
+  padding: 6px 9px 5px; border-radius: 8px; border: 1px solid #c4aa7270;
+  background: linear-gradient(#2b4148, #14272e); box-shadow: 0 4px 10px #0005;
+  cursor: pointer; color: #e9ddc2;
+}
+.dealer-tray:hover { border-color: #d7bc82; background: #2b4148; }
+.dealer-tray-rack { display: flex; gap: 4px; padding: 3px 5px; background: #0a1c24; border-radius: 4px; box-shadow: inset 0 1px 3px #0008; }
+.dealer-tray-rack i { width: 15px; height: 25px; border-radius: 5px; background: repeating-linear-gradient(0deg, #68a59e 0 3px, #254f52 3px 5px); border: 1px solid #7aaba8; }
+.dealer-tray-rack i:nth-child(2) { background: repeating-linear-gradient(0deg, #d2b263 0 3px, #766339 3px 5px); border-color: #d2b263; }
+.dealer-tray-rack i:nth-child(3) { background: repeating-linear-gradient(0deg, #cecfbf 0 3px, #777e7f 3px 5px); border-color: #cecfbf; }
+.dealer-tray-rack i:nth-child(4) { background: repeating-linear-gradient(0deg, #a57aab 0 3px, #59405c 3px 5px); border-color: #a57aab; }
+.dealer-tray-rack i:nth-child(5) { background: repeating-linear-gradient(0deg, #bb7c60 0 3px, #684837 3px 5px); border-color: #bb7c60; }
+.dealer-tray-caption { font: 500 9px/1.2 var(--club-font); letter-spacing: .3px; }
+.dealer-tray-caption span { margin-left: 5px; }
+.table-options {
+  margin: auto; width: min(360px, calc(100vw - 32px)); padding: 24px; color: #f5eedf;
+  background: #1a2d36; border: 1px solid #6b7c76; border-radius: 14px;
+  box-shadow: 0 24px 80px #0008; font-family: var(--club-font);
+}
+.table-options::backdrop { background: #07151ab3; backdrop-filter: blur(3px); }
+.table-options-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.options-eyebrow { font-size: 9px; letter-spacing: 2px; color: #d7bc82; }
+.table-options h2 { font: 400 26px/1.2 Georgia, serif; margin-top: 6px; }
+.table-options-heading button { width: 34px; height: 34px; border: 1px solid #536970; border-radius: 7px; color: #e4e8dc; background: #2b4148; font-size: 24px; cursor: pointer; }
+.table-options-summary { margin: 14px 0 18px; color: #b2c5c0; font-size: 11px; }
+.table-options .setting-row { padding: 12px 0; border-bottom: 1px solid #53697050; font-size: 13px; }
+.table-options-history { display: flex; justify-content: space-between; width: 100%; margin-top: 18px; padding: 12px; background: #d7bc82; border: 0; border-radius: 7px; color: #1a2d36; font-weight: 600; cursor: pointer; }
+.table-options-hint { margin-top: 18px; color: #a7bbb4; font-size: 10px; line-height: 1.5; }

@@ -31,13 +31,28 @@ if [ ! -d "$APP_DIR/.git" ]; then
 else
     echo "[1/5] Repository already present, pulling latest..."
     cd "$APP_DIR"
-    git pull --ff-only || echo "  ⚠ Pull failed — check for local changes"
+    git pull --ff-only
 fi
 
 # ─── 2. Install Dependencies ─────────────────────────────────────────────────
-echo "[2/5] Installing backend dependencies..."
-cd "$BACKEND_DIR"
-npm install --production
+echo "[2/5] Installing locked workspace dependencies..."
+cd "$APP_DIR"
+if [ "$(node -p 'process.versions.node.split(".")[0]')" != "24" ]; then
+    echo "Node.js 24 is required; update the runtime before deploying."
+    exit 1
+fi
+if [ -f "$BACKEND_DIR/db/satoshistacks.db" ]; then
+    command -v sqlite3 >/dev/null || { echo "sqlite3 is required for the pre-deploy backup"; exit 1; }
+    mkdir -p /var/backups/satoshistacks
+    chmod 700 /var/backups/satoshistacks
+    BACKUP_FILE="/var/backups/satoshistacks/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ).db"
+    sqlite3 "$BACKEND_DIR/db/satoshistacks.db" ".backup '$BACKUP_FILE'"
+    chmod 600 "$BACKUP_FILE"
+fi
+npm ci --omit=dev
+npm audit --omit=dev --audit-level=high
+DEPLOYED_SHA=$(git rev-parse HEAD)
+echo "Deploying commit: $DEPLOYED_SHA"
 
 # ─── 3. Environment Configuration ────────────────────────────────────────────
 echo "[3/5] Configuring environment..."
@@ -87,7 +102,8 @@ sleep 3
 if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
     echo "  ✓ Health check passed (http://localhost:3001/health)"
 else
-    echo "  ⚠ Health check failed — check: pm2 logs satoshistacks"
+    echo "  ✗ Health check failed — inspect pm2 logs and roll back before reopening deposits"
+    exit 1
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────────

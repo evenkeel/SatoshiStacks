@@ -1,7 +1,7 @@
 {
   "name": "satoshistacks",
   "version": "1.0.0",
-  "description": "Play-money poker platform with Lightning integration path",
+  "description": "Six-seat Nostr poker with connected Lightning wallets",
   "private": true,
   "workspaces": [
     "packages/*"
@@ -10,7 +10,8 @@
     "install:all": "npm install && npm install --workspace=packages/backend",
     "dev": "npm run dev --workspace=packages/backend",
     "start": "npm start --workspace=packages/backend",
-    "test": "SATOSHISTACKS_DB_PATH=:memory: node --test --test-concurrency=1 packages/shared/hand-evaluator.test.js packages/backend/poker-game.test.js packages/backend/poker-game.lifecycle.test.js packages/backend/poker-game.allin.test.js packages/backend/poker-game.betting.test.js packages/backend/poker-game.realmoney.test.js packages/backend/services/payments.test.js packages/backend/services/lnurl.test.js"
+    "demo:bots": "node scripts/demo-bots.cjs",
+    "test": "SATOSHISTACKS_DB_PATH=:memory: node --test --test-concurrency=1 packages/shared/*.test.js packages/backend/*.test.js packages/backend/services/*.test.js packages/frontend/js/*.test.js scripts/*.test.cjs"
   },
   "keywords": [
     "poker",
@@ -20,9 +21,11 @@
   "author": "Noah Rexrode",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24 <25"
   },
-  "devDependencies": {
-    "puppeteer": "^24.37.3"
+  "overrides": {
+    "express": {
+      "qs": "^6.16.2"
+    }
   }
 }

@@ -23,9 +23,9 @@ export DEBIAN_FRONTEND=noninteractive
 echo "[1/8] Updating system packages..."
 apt-get update -qq && apt-get upgrade -y -qq
 
-# ─── 2. Node.js 20.x LTS ────────────────────────────────────────────────────
-echo "[2/8] Installing Node.js 20.x..."
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+# ─── 2. Node.js 24.x LTS ────────────────────────────────────────────────────
+echo "[2/8] Installing Node.js 24.x..."
+curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
 apt-get install -y -qq nodejs
 
 echo "  ✓ Node.js $(node -v)"

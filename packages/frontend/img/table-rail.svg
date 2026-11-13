@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-24 -24 1048 728" role="img" aria-label="Worn metal poker table rail with copper and cyan trim">
+  <defs>
+    <linearGradient id="metal" x2="0" y2="1"><stop stop-color="#384649"/><stop offset=".45" stop-color="#172126"/><stop offset="1" stop-color="#0a1117"/></linearGradient>
+  </defs>
+  <g fill="none">
+    <rect width="1000" height="680" rx="500" ry="340" stroke="#080e12" stroke-width="44"/>
+    <rect width="1000" height="680" rx="500" ry="340" stroke="#976a43" stroke-width="39"/>
+    <rect width="1000" height="680" rx="500" ry="340" stroke="url(#metal)" stroke-width="35"/>
+    <rect width="1000" height="680" rx="500" ry="340" stroke="#6bb4ac" stroke-opacity=".65" stroke-width="1.5"/>
+    <rect x="-12" y="-12" width="1024" height="704" rx="512" ry="352" stroke="#738787" stroke-opacity=".3" stroke-width="1" stroke-dasharray="70 230 18 160"/>
+  </g>
+  <g fill="#182327" stroke="#7c8b87" stroke-width="1">
+    <circle cx="425" cy="-12" r="3"/><circle cx="575" cy="-12" r="3"/>
+    <circle cx="425" cy="692" r="3"/><circle cx="575" cy="692" r="3"/>
+    <circle cx="-12" cy="340" r="3"/><circle cx="1012" cy="340" r="3"/>
+  </g>
+</svg>

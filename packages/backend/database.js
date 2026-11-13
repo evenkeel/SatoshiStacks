@@ -81,6 +81,10 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_hand_players_user ON hand_players(user_id);
   `);
 
+  if (!db.prepare('PRAGMA table_info(hands)').all().some(column => column.name === 'events')) {
+    db.exec("ALTER TABLE hands ADD COLUMN events TEXT NOT NULL DEFAULT '[]'");
+  }
+
   // Players table
   db.exec(`
     CREATE TABLE IF NOT EXISTS players (
@@ -194,6 +198,7 @@ function initDatabase() {
     `ALTER TABLE players ADD COLUMN session_token TEXT`,
     `ALTER TABLE players ADD COLUMN session_expires INTEGER`,
     `ALTER TABLE players ADD COLUMN lud16 TEXT`,
+    `ALTER TABLE nostr_challenges ADD COLUMN origin TEXT`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (e) {
@@ -257,7 +262,21 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_ledger_hash   ON ledger_entries(payment_hash);
   `);
 
+  db.exec(`CREATE TABLE IF NOT EXISTS account_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL, table_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    amount_sats INTEGER NOT NULL CHECK(amount_sats > 0),
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  ); CREATE INDEX IF NOT EXISTS idx_account_transfers_user ON account_transfers(user_id);`);
   console.log('[Database] Schema initialized successfully');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wallet_credits (
+      user_id TEXT NOT NULL, table_id TEXT NOT NULL,
+      amount_sats INTEGER NOT NULL DEFAULT 0 CHECK(amount_sats >= 0),
+      PRIMARY KEY(user_id, table_id)
+    );
+  `);
 }
 
 /**
@@ -295,6 +314,7 @@ function saveHand(handData) {
       data.hand_history
     );
 
+    db.prepare('UPDATE hands SET events = ? WHERE hand_id = ?').run(JSON.stringify(data.events || []), data.hand_id);
     for (const player of data.players) {
       insertHandPlayer.run(
         data.hand_id,
@@ -422,14 +442,6 @@ function getPlayerHands(userId, limit = 50) {
     LIMIT ?
   `);
   return stmt.all(userId, limit);
-}
-
-/**
- * Get all tables
- */
-function getTables() {
-  const stmt = db.prepare('SELECT * FROM tables WHERE is_active = 1 ORDER BY created_at DESC');
-  return stmt.all();
 }
 
 /**
@@ -599,12 +611,12 @@ function upsertNostrPlayer(pubkeyHex, npub, nostrName, nostrPicture, lud16) {
 /**
  * Store a NOSTR auth challenge nonce
  */
-function createChallenge(challengeId, nonce, expiresAt) {
+function createChallenge(challengeId, nonce, expiresAt, origin = null) {
   const stmt = db.prepare(`
-    INSERT INTO nostr_challenges (challenge_id, nonce, expires_at)
-    VALUES (?, ?, ?)
+    INSERT INTO nostr_challenges (challenge_id, nonce, expires_at, origin)
+    VALUES (?, ?, ?, ?)
   `);
-  stmt.run(challengeId, nonce, expiresAt);
+  stmt.run(challengeId, nonce, expiresAt, origin);
 }
 
 /**
@@ -635,11 +647,17 @@ function setSessionToken(userId, token, expiresAt) {
   stmt.run(hashedToken, expiresAt, userId);
 }
 
+function revokeSession(token) {
+  if (typeof token !== 'string' || !token) return;
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  db.prepare('UPDATE players SET session_token=NULL, session_expires=NULL WHERE session_token=?').run(hash);
+}
+
 /**
  * Get player by session token. Returns null if expired.
  */
 function getPlayerBySession(token) {
-  if (!token) return null;
+  if (typeof token !== 'string' || !token || token.length > 256) return null;
   const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   const now = Math.floor(Date.now() / 1000);
   const stmt = db.prepare(`
@@ -746,6 +764,7 @@ function saveHandSnapshot(tableId, handId, snapshot) {
     stmt.run(tableId, handId, JSON.stringify(snapshot));
   } catch (error) {
     console.error('[Database] Error saving hand snapshot:', error);
+    throw error;
   }
 }
 
@@ -792,7 +811,7 @@ function deleteHandSnapshot(tableId) {
  *
  * All-or-nothing: if anything fails, nothing is persisted.
  */
-const settleHandTx = db.transaction((handData, playerUpdates) => {
+const settleHandTx = db.transaction((handData, playerUpdates, tableSnapshot) => {
   // 1. Insert hand record
   db.prepare(`
     INSERT INTO hands (
@@ -813,6 +832,8 @@ const settleHandTx = db.transaction((handData, playerUpdates) => {
     JSON.stringify(handData.community_cards || []),
     handData.hand_history
   );
+
+  db.prepare('UPDATE hands SET events = ? WHERE hand_id = ?').run(JSON.stringify(handData.events || []), handData.hand_id);
 
   // 2. Insert hand_players records
   const insertPlayer = db.prepare(`
@@ -873,12 +894,13 @@ const settleHandTx = db.transaction((handData, playerUpdates) => {
   }
 
   // 4. Delete hand snapshot (hand completed successfully)
-  db.prepare('DELETE FROM hand_snapshots WHERE table_id = ?').run(handData.table_id);
+  if (tableSnapshot) saveHandSnapshot(handData.table_id, handData.hand_id, tableSnapshot);
+  else db.prepare('DELETE FROM hand_snapshots WHERE table_id = ?').run(handData.table_id);
 });
 
-function settleHand(handData, playerUpdates) {
+function settleHand(handData, playerUpdates, tableSnapshot) {
   try {
-    settleHandTx(handData, playerUpdates);
+    settleHandTx(handData, playerUpdates, tableSnapshot);
     console.log(`[Database] Settled hand ${handData.hand_id} (atomic)`);
     return { success: true };
   } catch (error) {
@@ -900,6 +922,78 @@ function updateHandNostrEventId(handId, eventId) {
 
 // Initialize on module load
 initDatabase();
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS deposit_invoice_intents (
+    ledger_id INTEGER PRIMARY KEY REFERENCES ledger_entries(id) ON DELETE CASCADE,
+    secret TEXT NOT NULL, expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS withdrawal_fee_budgets (
+    ledger_id INTEGER PRIMARY KEY REFERENCES ledger_entries(id) ON DELETE CASCADE,
+    max_fee_sats INTEGER NOT NULL CHECK(max_fee_sats >= 0)
+  );
+  CREATE TABLE IF NOT EXISTS payment_events (
+    ledger_id INTEGER NOT NULL REFERENCES ledger_entries(id) ON DELETE CASCADE,
+    event TEXT NOT NULL, created_at_ms INTEGER NOT NULL, elapsed_ms INTEGER,
+    PRIMARY KEY(ledger_id,event)
+  );
+`);
+function recordPaymentEvent(id,event,elapsedMs=null) {
+  db.prepare('INSERT OR IGNORE INTO payment_events VALUES(?,?,?,?)').run(id,event,Date.now(),elapsedMs);
+}
+function paymentMetrics() {
+  const events = db.prepare('SELECT event,COUNT(*) AS payments,AVG(elapsed_ms) AS averageMs,MAX(elapsed_ms) AS maxMs FROM payment_events GROUP BY event').all();
+  for (const row of events) {
+    const values = db.prepare('SELECT elapsed_ms FROM payment_events WHERE event=? AND elapsed_ms IS NOT NULL ORDER BY created_at_ms DESC LIMIT 1000').all(row.event).map(item=>item.elapsed_ms).sort((a,b)=>a-b);
+    row.latencySamples = values.length;
+    row.p95Ms = values.length ? values[Math.ceil(values.length*.95)-1] : null;
+  }
+  const unresolved = db.prepare(`SELECT COUNT(*) AS payments,MIN(created_at) AS oldestCreatedAt FROM ledger_entries
+    WHERE direction='withdrawal' AND status IN ('reserved','in_flight','failed')`).get();
+  const invoiceChecks = db.prepare("SELECT COUNT(*) AS payments FROM ledger_entries WHERE direction='deposit' AND status='pending' AND bolt11 IS NULL").get();
+  return {events,unresolvedWithdrawals:unresolved,unresolvedInvoiceCreations:invoiceChecks.payments};
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nostr_profiles (
+    pubkey TEXT PRIMARY KEY REFERENCES players(user_id),
+    event_json TEXT NOT NULL, created_at INTEGER NOT NULL, event_id TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS nip05_claims (
+    name TEXT PRIMARY KEY COLLATE NOCASE,
+    pubkey TEXT NOT NULL UNIQUE REFERENCES players(user_id),
+    claimed_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE TABLE IF NOT EXISTS identifier_purchases (
+    name TEXT PRIMARY KEY COLLATE NOCASE REFERENCES nip05_claims(name),
+    pubkey TEXT NOT NULL UNIQUE REFERENCES players(user_id),
+    amount_sats INTEGER NOT NULL CHECK(amount_sats = 10000),
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE TABLE IF NOT EXISTS identifier_forwarding (
+    pubkey TEXT PRIMARY KEY REFERENCES nip05_claims(pubkey),
+    address TEXT,
+    authorization_event TEXT NOT NULL
+  );
+`);
+function getNostrProfile(pubkey) {
+  const row = db.prepare('SELECT event_json FROM nostr_profiles WHERE pubkey=?').get(pubkey);
+  return row ? JSON.parse(row.event_json) : null;
+}
+function getNip05Claim(pubkey) { return db.prepare('SELECT name FROM nip05_claims WHERE pubkey=?').get(pubkey)?.name || null; }
+function saveNostrProfile(event) {
+  const old = getNostrProfile(event.pubkey);
+  // NIP-01 replaceable event ordering: newest timestamp, then lowest ID.
+  if (old && (old.created_at > event.created_at || (old.created_at === event.created_at && old.id <= event.id))) return false;
+  const profile = JSON.parse(event.content);
+  db.prepare(`INSERT INTO nostr_profiles VALUES (?,?,?,?) ON CONFLICT(pubkey) DO UPDATE SET
+    event_json=excluded.event_json, created_at=excluded.created_at, event_id=excluded.event_id`)
+    .run(event.pubkey, JSON.stringify(event), event.created_at, event.id);
+  db.prepare('UPDATE players SET username=?,nostr_name=?,nostr_picture=?,nip05=?,lud16=? WHERE user_id=?')
+    .run(profile.display_name || profile.name || event.pubkey.slice(0,12), profile.display_name || profile.name || null,
+      profile.picture || null, profile.nip05 || null, profile.lud16 || null, event.pubkey);
+  return true;
+}
 
 /**
  * Clean up expired session tokens (older than 24h expiry)
@@ -938,13 +1032,14 @@ const settleDepositTx = db.transaction((paymentHash, amtPaidSat) => {
   const row = db.prepare(`SELECT * FROM ledger_entries WHERE payment_hash = ? AND direction = 'deposit'`).get(paymentHash);
   if (!row) return { status: 'unknown', row: null };
   if (row.status === 'settled' || row.status === 'settled_unseated') return { status: 'already_settled', row };
-  if (row.status !== 'pending') return { status: row.status, row }; // expired / canceled / amount_mismatch — never credit
+  if (!['pending', 'expired'].includes(row.status)) return { status: row.status, row };
   if (Number(amtPaidSat) !== row.amount_sats) {
-    db.prepare(`UPDATE ledger_entries SET status='amount_mismatch', updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
-    return { status: 'amount_mismatch', row: { ...row, status: 'amount_mismatch' } };
+    if (!Number.isSafeInteger(Number(amtPaidSat)) || Number(amtPaidSat) <= 0) throw new Error('Invalid settled amount');
+    db.prepare(`UPDATE ledger_entries SET status='settled_unseated', amount_sats=?, settled_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id=?`).run(Number(amtPaidSat), row.id);
+    return { status: 'amount_mismatch', row: { ...row, amount_sats: Number(amtPaidSat), status: 'settled_unseated' } };
   }
-  db.prepare(`UPDATE ledger_entries SET status='settled', settled_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
-  return { status: 'settled', row: { ...row, status: 'settled' } };
+  db.prepare(`UPDATE ledger_entries SET status='settled_unseated', settled_at=strftime('%s','now'), updated_at=strftime('%s','now') WHERE id=?`).run(row.id);
+  return { status: 'settled', row: { ...row, status: 'settled_unseated' } };
 });
 function settleDeposit(paymentHash, amtPaidSat) { return settleDepositTx(paymentHash, amtPaidSat); }
 
@@ -979,12 +1074,18 @@ function getPendingLedger() {
   return db.prepare(`
     SELECT * FROM ledger_entries
     WHERE (direction='deposit' AND status='pending')
-       OR (direction='withdrawal' AND status IN ('reserved','in_flight'))
+       OR (direction='withdrawal' AND status IN ('reserved','in_flight','failed'))
     ORDER BY created_at ASC
   `).all();
 }
+// An expired invoice can still settle an HTLC that was accepted before expiry.
+// Recheck a rotating bounded batch so stream outages never hide a late deposit.
+function getExpiredDeposits(limit = 25) {
+  return db.prepare("SELECT * FROM ledger_entries WHERE direction='deposit' AND status='expired' ORDER BY updated_at ASC, id ASC LIMIT ?").all(limit);
+}
 function sumSettledDeposits() {
-  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit' AND status IN ('settled','settled_unseated')`).get().t;
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit'
+    AND status IN ('settled','settled_unseated','credited','withdrawn','refunded','refund_pending','amount_mismatch')`).get().t;
 }
 function sumSucceededWithdrawals() {
   return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='withdrawal' AND status='succeeded'`).get().t;
@@ -992,7 +1093,8 @@ function sumSucceededWithdrawals() {
 // Deposits we still hold for a player who isn't seated (owed back to them): not
 // yet seated/claimed, or a refund in progress. Part of the solvency "owed" total.
 function sumHeldDeposits() {
-  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit' AND status IN ('settled_unseated','refund_pending')`).get().t;
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries
+    WHERE direction='deposit' AND status IN ('settled_unseated','refund_pending','amount_mismatch')`).get().t;
 }
 function getRecentLedger(limit = 100) {
   return db.prepare(`SELECT * FROM ledger_entries ORDER BY created_at DESC, id DESC LIMIT ?`).all(Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500));
@@ -1009,6 +1111,75 @@ function getRefundableDeposits(graceSec) {
   return db.prepare(`SELECT * FROM ledger_entries WHERE direction='deposit' AND status='settled_unseated' AND settled_at IS NOT NULL AND settled_at < ? ORDER BY created_at ASC`).all(cutoff);
 }
 
+// Funds that remain withdrawable without a live seat: idle exits and failed
+// cash-outs. Never use players.current_chips (a play-money/statistics field).
+function getWalletCredit(userId, tableId) {
+  return db.prepare('SELECT amount_sats FROM wallet_credits WHERE user_id=? AND table_id=?').get(userId, tableId)?.amount_sats || 0;
+}
+function addWalletCredit(userId, tableId, amount) {
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error('Invalid wallet credit');
+  if (getWalletCredit(userId, tableId) > Number.MAX_SAFE_INTEGER - amount) throw new Error('Wallet balance exceeds safe integer range');
+  db.prepare(`INSERT INTO wallet_credits(user_id,table_id,amount_sats) VALUES(?,?,?)
+    ON CONFLICT(user_id,table_id) DO UPDATE SET amount_sats=amount_sats+excluded.amount_sats`).run(userId, tableId, amount);
+}
+function takeWalletCredit(userId, tableId, amount) {
+  const r = db.prepare('UPDATE wallet_credits SET amount_sats=amount_sats-? WHERE user_id=? AND table_id=? AND amount_sats>=?').run(amount, userId, tableId, amount);
+  if (amount && r.changes !== 1) throw new Error('Available funds changed — please retry');
+}
+function sumWalletCredits() {
+  return db.prepare('SELECT COALESCE(SUM(amount_sats),0) AS total FROM wallet_credits').get().total;
+}
+function getWalletDeposits(userId, tableId) {
+  return db.prepare(`SELECT payment_hash, amount_sats, status, created_at,
+    (SELECT expires_at FROM deposit_invoice_intents WHERE ledger_id=ledger_entries.id) AS expires_at,
+    CASE WHEN status='pending' THEN bolt11 ELSE NULL END AS bolt11
+    FROM ledger_entries WHERE user_id=? AND table_id=? AND direction='deposit'
+    AND status IN ('pending','settled_unseated') ORDER BY id DESC LIMIT 5`).all(userId, tableId);
+}
+
+// A reserved namespace keeps account liabilities in the existing solvency sum.
+const ACCOUNT = '__account__';
+function recordAccountTransfer(userId, tableId, kind, amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Invalid transfer amount');
+  db.prepare('INSERT INTO account_transfers(user_id,table_id,kind,amount_sats) VALUES(?,?,?,?)').run(userId, tableId, kind, amount);
+}
+// Lazy, transactional migration also collects late legacy refunds/deposits.
+function getAccountBalance(userId) {
+  return db.transaction(() => {
+    const credits = db.prepare('SELECT * FROM wallet_credits WHERE user_id=? AND table_id<>? AND amount_sats>0').all(userId, ACCOUNT);
+    for (const row of credits) {
+      takeWalletCredit(userId, row.table_id, row.amount_sats);
+      addWalletCredit(userId, ACCOUNT, row.amount_sats);
+      recordAccountTransfer(userId, row.table_id, 'recovered_credit', row.amount_sats);
+    }
+    const deposits = db.prepare("SELECT * FROM ledger_entries WHERE user_id=? AND direction='deposit' AND status='settled_unseated'").all(userId);
+    for (const row of deposits) {
+      addWalletCredit(userId, ACCOUNT, row.amount_sats);
+      updateLedgerStatus(row.id, 'credited');
+      recordAccountTransfer(userId, row.table_id, 'deposit', row.amount_sats);
+    }
+    return getWalletCredit(userId, ACCOUNT);
+  })();
+}
+function creditAccount(userId, tableId, kind, amount) {
+  if (!amount) return;
+  db.transaction(() => {
+    addWalletCredit(userId, ACCOUNT, amount);
+    recordAccountTransfer(userId, tableId, kind, amount);
+  })();
+}
+function debitAccount(userId, tableId, kind, amount) {
+  db.transaction(() => {
+    if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Invalid transfer amount');
+    if (getAccountBalance(userId) < amount) throw new Error('Insufficient account balance. Deposit sats first.');
+    takeWalletCredit(userId, ACCOUNT, amount);
+    recordAccountTransfer(userId, tableId, kind, amount);
+  })();
+}
+function getAccountHistory(userId) {
+  return db.prepare('SELECT id,table_id,kind,amount_sats,created_at FROM account_transfers WHERE user_id=? ORDER BY id DESC LIMIT 20').all(userId);
+}
+
 // Cleanup abuse log, expired challenges, and expired sessions every hour.
 // unref() so this timer alone won't keep the process alive — the running
 // server is held open by its HTTP listener, while a bare `require` (tests,
@@ -1020,6 +1191,9 @@ setInterval(() => {
 }, 3600000).unref();
 
 module.exports = {
+  recordPaymentEvent, paymentMetrics,
+  getNostrProfile, saveNostrProfile, getNip05Claim,
+  ACCOUNT, getAccountBalance, creditAccount, debitAccount, recordAccountTransfer, getAccountHistory,
   db,
   saveHand,
   upsertPlayer,
@@ -1027,8 +1201,8 @@ module.exports = {
   updatePlayerLeftAt,
   getPlayer,
   getHand,
+  getHandPlayers: handId => db.prepare('SELECT * FROM hand_players WHERE hand_id = ? ORDER BY seat_index').all(handId),
   getPlayerHands,
-  getTables,
   upsertTable,
   updateTablePlayerCount,
   logAction,
@@ -1047,6 +1221,7 @@ module.exports = {
   createChallenge,
   getAndUseChallenge,
   setSessionToken,
+  revokeSession,
   getPlayerBySession,
   cleanupExpiredChallenges,
   cleanupExpiredSessions,
@@ -1070,10 +1245,16 @@ module.exports = {
   getLedgerByHash,
   getLedgerById,
   getPendingLedger,
+  getExpiredDeposits,
   sumSettledDeposits,
   sumSucceededWithdrawals,
   sumHeldDeposits,
   getRecentLedger,
   getUnseatedDeposits,
   getRefundableDeposits,
+  getWalletCredit,
+  addWalletCredit,
+  takeWalletCredit,
+  sumWalletCredits,
+  getWalletDeposits,
 };

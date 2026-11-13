@@ -4,7 +4,7 @@
  */
 
 const crypto = require('crypto');
-const { finalizeEvent, getPublicKey } = require('nostr-tools/pure');
+const { finalizeEvent, getPublicKey, verifyEvent } = require('nostr-tools/pure');
 const { npubEncode, decode: nip19Decode } = require('nostr-tools/nip19');
 const config = require('../config');
 const db = require('../database');
@@ -48,6 +48,31 @@ async function publishToRelays(event) {
     } catch (e) { /* ignore relay errors */ }
   }
   return published;
+}
+
+// A profile is published only after a relay explicitly acknowledges its ID.
+async function publishProfile(event) {
+  const WebSocket = (await import('ws')).default;
+  const results = await Promise.all(config.RELAYS.map(url => new Promise(resolve => {
+    let ws, timer, finished = false;
+    const finish = accepted => {
+      if (finished) return;
+      finished = true; clearTimeout(timer);
+      try { ws?.close(); } catch (_) {}
+      resolve(accepted ? 1 : 0);
+    };
+    timer = setTimeout(() => finish(false), 3000);
+    try {
+      ws = new WebSocket(url);
+      ws.on('open', () => ws.send(JSON.stringify(['EVENT',event])));
+      ws.on('message', data => {
+        try { const reply = JSON.parse(data.toString()); if (reply[0] === 'OK' && reply[1] === event.id) finish(reply[2] === true); } catch (_) {}
+      });
+      ws.on('error', () => finish(false));
+      ws.on('close', () => finish(false));
+    } catch (_) { finish(false); }
+  })));
+  return results.reduce((sum,count) => sum + count, 0);
 }
 
 // ==================== NIP-58 BADGE SYSTEM ====================
@@ -162,6 +187,18 @@ function publishLiveActivity(tableId, games) {
 
 // ==================== PROFILE FETCHING ====================
 
+function isValidProfileEvent(event, pubkeyHex) {
+  try {
+    if (!event || event.kind !== 0 || event.pubkey !== pubkeyHex || !verifyEvent(event)) return false;
+    if (event.created_at > Math.floor(Date.now() / 1000) + 60) return false;
+    const profile = JSON.parse(event.content);
+    return profile && typeof profile === 'object' && !Array.isArray(profile) &&
+      ['name', 'display_name', 'picture', 'lud16', 'about', 'website', 'nip05'].every(key =>
+        profile[key] === undefined || profile[key] === null ||
+        (typeof profile[key] === 'string' && profile[key].length <= 2048));
+  } catch (_) { return false; }
+}
+
 async function fetchNostrProfile(pubkeyHex, { games, userSockets, io, broadcastGameState }) {
   const WebSocket = (await import('ws')).default;
 
@@ -188,17 +225,18 @@ async function fetchNostrProfile(pubkeyHex, { games, userSockets, io, broadcastG
         ws.on('message', (data) => {
           try {
             const msg = JSON.parse(data.toString());
-            if (msg[0] === 'EVENT' && msg[2] && msg[2].kind === 0) {
+            if (msg[0] === 'EVENT' && msg[1] === subId && isValidProfileEvent(msg[2], pubkeyHex)) {
               const profile = JSON.parse(msg[2].content);
               const name = profile.display_name || profile.name || null;
               const picture = profile.picture || null;
               const lud16 = profile.lud16 || null;
 
-              if (name && !resolved) {
+              if (!resolved) {
                 resolved = true;
                 clearTimeout(timeout);
 
-                db.upsertNostrPlayer(pubkeyHex, npubEncode(pubkeyHex), name, picture, lud16);
+                // Never let a delayed relay reply overwrite a newer edit.
+                if (!db.saveNostrProfile(msg[2])) { resolve({ name, picture, lud16 }); return; }
                 console.log(`[Auth] Relay profile fetched: ${name} (${pubkeyHex.slice(0, 8)}...)${lud16 ? ` lud16: ${lud16}` : ''}`);
 
                 for (const [tableId, game] of games) {
@@ -341,6 +379,8 @@ function publishStartupEvents() {
 }
 
 module.exports = {
+  publishProfile,
+  isValidProfileEvent,
   hasServerKey,
   serverPk,
   publishToRelays,

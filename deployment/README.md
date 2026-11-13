@@ -23,7 +23,7 @@
 | URL                                | Serves                          |
 |------------------------------------|---------------------------------|
 | `satoshistacks.com/`               | Coming Soon landing page        |
-| `satoshistacks.com/playmoney`      | Poker game (play-money beta)    |
+| `satoshistacks.com/station100`      | Poker table (effective demo/real-sats mode)    |
 | `satoshistacks.com/api/*`          | Backend API                     |
 | `satoshistacks.com/socket.io/*`    | WebSocket connections           |
 | `satoshistacks.com/health`         | Health check endpoint           |
@@ -47,7 +47,7 @@ ssh root@YOUR_VPS_IP
 bash server-setup.sh
 ```
 
-This installs Node.js 20, Nginx, PM2, Certbot, SQLite, fail2ban, and UFW firewall.
+This installs Node.js 24, Nginx, PM2, Certbot, SQLite, fail2ban, and UFW firewall.
 
 ### 3. Deploy Application
 
@@ -56,7 +56,7 @@ This installs Node.js 20, Nginx, PM2, Certbot, SQLite, fail2ban, and UFW firewal
 cd /opt
 git clone https://github.com/evenkeel/SatoshiStacks.git
 cd SatoshiStacks/packages/backend
-npm install --production
+npm ci --omit=dev
 
 # Create .env
 cat > .env << 'EOF'
@@ -108,13 +108,35 @@ bash setup-ssl.sh satoshistacks.com
 
 ### Deploy Code Updates
 
+The live demo runs an immutable release under `/opt/satoshistacks-releases/`,
+not the retained `/opt/SatoshiStacks` checkout. A GitHub push updates the pull
+request and runs CI; it does **not** deploy the public site. Pulling the retained
+checkout alone also does not change the running release.
+
 ```bash
-ssh root@YOUR_VPS_IP
-cd /opt/SatoshiStacks
-git pull origin main
-cd packages/backend && npm install --production
-pm2 restart satoshistacks
+ssh satoshistacks
+cat /opt/satoshistacks-releases/current-release.json
+pm2 describe satoshistacks
+curl -fsS http://127.0.0.1:3001/api/tables
 ```
+
+Prepare a new release from the exact tested commit, install its locked
+dependencies using the configured Node 24 runtime, and run the tests before
+copying the live `.env` into place. The test suite must be isolated from the
+live deployment configuration and use its in-memory databases and mocked
+payments. Keep the running release online during preparation.
+
+Before switching, verify there are no active players or hands; back up the demo
+SQLite database with SQLite's backup API, the current-release manifest, and
+the PM2 configuration. Point PM2's script, working directory, and interpreter
+to the new release, preserve the existing demo database, and explicitly retain
+disabled real money, deposits, and withdrawals. Verify health and the actual
+public HTML/assets before saving PM2 and updating the manifest. Roll back to
+the prior release if startup or verification fails.
+
+The original funded database stays separate from the demo database. See the
+[November 13 deployment record](../DEPLOYMENT-2026-11-13.md) for the current
+release and rollback locations.
 
 ### View Logs
 

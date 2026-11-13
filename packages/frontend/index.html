@@ -2,33 +2,62 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1e2730">
+<meta name="theme-color" content="#111e28">
 <meta name="apple-mobile-web-app-title" content="SatoshiStacks">
 <title>Satoshi Stacks</title>
 <link rel="manifest" href="/manifest.json">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=15">
+<link rel="icon" href="/img/brand-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css?v=26">
+<link rel="stylesheet" href="/interface.css?v=4">
+<link rel="stylesheet" href="/club.css?v=4">
+<link rel="stylesheet" href="/motion.css?v=2">
+<link rel="stylesheet" href="/table-layout.css?v=9">
+<link rel="stylesheet" href="/bunker.css?v=18">
+<link rel="stylesheet" href="/phone.css?v=1">
 <!-- CSS extracted to styles.css -->
 </head>
-<body>
+<body class="poker-app">
+<header class="account-bar" aria-label="Account and wallet">
+  <div class="table-identity">
+    <a class="brand-link" href="/" aria-label="Satoshi Stacks home"><img class="brand-wordmark" src="/img/table-wordmark.svg?v=7" alt="Satoshi Stacks" width="156" height="66"></a>
+    <div class="table-meta"><div class="table-title"><strong>Station 100</strong><span class="seat-count" id="seatCount">0 / 6 seated</span></div><span id="tableModeLabel">₿ 50 / ₿ 100 · 6 seats</span></div>
+  </div>
+<nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="editProfileBtn" data-action="edit-profile" hidden>Edit profile</button><button id="walletConnectBtn" data-action="connect-wallet">Connect Lightning wallet</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Account balance</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button></nav>
+</header>
 <div class="game-container">
-<!-- Corner Logo -->
-<div class="corner-logo"><img src="/img/logo-sm.png" alt="SatoshiStacks"></div>
-<!-- Background lightning bolts -->
-<div class="bg-decor" id="bgDecor"></div>
 <div class="middle-row">
 <div class="table-area" id="tableArea">
-<div class="poker-table" id="pokerTable">
+<div class="poker-table is-waiting" id="pokerTable">
+<div class="table-art" aria-hidden="true"><img class="table-felt" src="/img/table-felt.svg" alt=""><img class="table-rail" src="/img/table-rail.svg" alt=""></div>
+<div class="table-neon-sign" role="img" aria-label="Satoshi Stacks table artwork"></div>
+<div class="dealer-station" id="dealerStation">
+<button type="button" class="dealer-tray" id="dealerTray" data-action="table-options" aria-label="Open table options" aria-haspopup="dialog" aria-controls="tableOptions">
+  <span class="dealer-tray-rack" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+  <span class="dealer-tray-caption">Table options <span aria-hidden="true">⚙</span></span>
+</button>
+</div>
+<div id="tableMarkers" aria-label="Dealer position"></div>
+<!-- Hole cards have their own space on the felt, independent of player labels. -->
+<div class="player-cards cards-pos-1" id="playerCards-1"></div>
+<div class="player-cards cards-pos-2" id="playerCards-2"></div>
+<div class="player-cards cards-pos-3" id="playerCards-3"></div>
+<div class="player-cards cards-pos-4" id="playerCards-4"></div>
+<div class="player-cards cards-pos-5" id="playerCards-5"></div>
+<div class="player-cards cards-pos-6" id="playerCards-6"></div>
+<div class="table-waiting" id="tableWaiting" role="status" aria-live="polite" aria-atomic="true">
+  <img src="/img/brand-mark.svg" alt="" width="38" height="40" aria-hidden="true">
+  <span class="waiting-eyebrow">NO-LIMIT HOLD’EM</span>
+  <h1 id="waitingTitle">Waiting for players</h1>
+  <p id="waitingDetail">Choose an open seat. Play starts with two players.</p>
+</div>
 <div class="table-pot-chips" id="tablePotChips"></div>
 <div class="community-cards" id="communityCards"></div>
 <div class="table-pot-label" id="tablePotLabel">
-<span class="pot-label">Pot: <span id="tablePotAmount">0</span></span>
+<span class="pot-label">Pot: <span id="tablePotAmount">₿ 0</span></span>
 </div>
 <!-- Player nameplates -->
 <div class="player-nameplate np-pos-1 empty-np" id="nameplate-1"></div>
@@ -38,12 +67,12 @@
 <div class="player-nameplate np-pos-5 empty-np" id="nameplate-5"></div>
 <div class="player-nameplate np-pos-6 empty-np" id="nameplate-6"></div>
 <!-- Bet chips -->
-<div class="player-bet bet-pos-1" id="bet-1"><div id="betChips-1"></div></div>
-<div class="player-bet bet-pos-2" id="bet-2"><div id="betChips-2"></div></div>
-<div class="player-bet bet-pos-3" id="bet-3"><div id="betChips-3"></div></div>
-<div class="player-bet bet-pos-4" id="bet-4"><div id="betChips-4"></div></div>
-<div class="player-bet bet-pos-5" id="bet-5"><div id="betChips-5"></div></div>
-<div class="player-bet bet-pos-6" id="bet-6"><div id="betChips-6"></div></div>
+<div class="player-bet bet-pos-1" id="bet-1" aria-label="Seat 1 bet"><div id="betChips-1"></div><span class="bet-amount" id="betAmount-1"></span></div>
+<div class="player-bet bet-pos-2" id="bet-2" aria-label="Seat 2 bet"><div id="betChips-2"></div><span class="bet-amount" id="betAmount-2"></span></div>
+<div class="player-bet bet-pos-3" id="bet-3" aria-label="Seat 3 bet"><div id="betChips-3"></div><span class="bet-amount" id="betAmount-3"></span></div>
+<div class="player-bet bet-pos-4" id="bet-4" aria-label="Seat 4 bet"><div id="betChips-4"></div><span class="bet-amount" id="betAmount-4"></span></div>
+<div class="player-bet bet-pos-5" id="bet-5" aria-label="Seat 5 bet"><div id="betChips-5"></div><span class="bet-amount" id="betAmount-5"></span></div>
+<div class="player-bet bet-pos-6" id="bet-6" aria-label="Seat 6 bet"><div id="betChips-6"></div><span class="bet-amount" id="betAmount-6"></span></div>
 <!-- Seats (pre-populated with empty-avatar circles to prevent flash of unstyled content) -->
 <div class="seat seat-1" id="seat-1"><div class="empty-avatar"><span class="empty-label">EMPTY<br>SEAT</span></div></div>
 <div class="seat seat-2" id="seat-2"><div class="empty-avatar"><span class="empty-label">EMPTY<br>SEAT</span></div></div>
@@ -55,6 +84,8 @@
 </div>
 </div>
 </div>
+<div class="mobile-play-status" id="mobileTurnStatus" role="status" aria-live="polite">Connecting to the table…</div>
+<button type="button" class="mobile-options-toggle" data-action="table-options" aria-haspopup="dialog" aria-controls="tableOptions">Table options</button>
 <div class="pre-action-bar" id="preActionBar"></div>
 <div class="controls-area">
 <div class="bet-controls" id="betControls"></div>
@@ -63,24 +94,22 @@
 <div class="connection-status" id="connectionStatus" style="position:fixed;top:10px;right:220px;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:700;background:var(--sage);color:var(--warm-white);box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:1000;display:none;">
   <span id="connectionText">Connected</span>
 </div>
-<!-- Sit Back In Button -->
-<div id="sitBackInBtn" style="position:fixed;bottom:120px;left:50%;transform:translateX(-50%);padding:12px 32px;border-radius:12px;font-size:16px;font-weight:800;background:var(--mustard);color:var(--text-dark);box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;display:none;cursor:pointer;border:2px solid var(--outline);" data-action="sit-back-in">
-  Sit Back In
-</div>
 <!-- Table Actions (Sit Out / Stand Up) -->
 <div class="table-actions-bar" id="tableActionsBar">
+  <button type="button" class="table-action-btn resume" id="sitBackInBtn" style="display:none" data-action="sit-back-in">Sit Back In</button>
   <button class="table-action-btn" id="sitOutBtn" data-action="sit-out">Sit Out Next Hand</button>
   <button class="table-action-btn stand-up" id="standUpBtn" data-action="stand-up">Stand Up</button>
 </div>
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer" style="position:fixed;top:10px;right:220px;z-index:1001;display:flex;flex-direction:column;align-items:flex-end;gap:8px;"></div>
 <!-- Chat Box -->
-<div class="chat-box" id="chatBox">
-<button class="chat-collapse-btn" id="chatCollapseBtn">&#x25BC;</button>
-<div class="chat-tabs" id="chatTabs">
-<div class="chat-tab active" data-tab="chat">Chat</div>
-<div class="chat-tab" data-tab="history">Hand History</div>
-<div class="chat-tab" data-tab="settings">Settings</div>
+<div class="chat-box hide-pbp" id="chatBox">
+<button type="button" id="mobileChatClose" class="mobile-chat-close" aria-label="Close table chat">×</button>
+<button class="chat-collapse-btn" id="chatCollapseBtn" aria-label="Collapse chat panel" aria-expanded="true" aria-controls="chatMessages chatHistory chatSettings chatInputArea">&#x25BC;</button>
+<div class="chat-tabs" id="chatTabs" role="group" aria-label="Table panel views">
+<button type="button" class="chat-tab active" data-tab="chat" aria-pressed="true">Chat</button>
+<button type="button" class="chat-tab" data-tab="history" aria-pressed="false">Hand History</button>
+<button type="button" class="chat-tab" data-tab="settings" aria-pressed="false">Settings</button>
 </div>
 <div class="chat-body" id="chatMessages"></div>
 <div class="chat-history" id="chatHistory">
@@ -88,51 +117,79 @@
 <button class="history-nav-btn" id="histPrev" title="Previous hand">&#x25C0;</button>
 <span class="history-hand-label" id="histLabel">No hands yet</span>
 <button class="history-nav-btn" id="histNext" title="Next hand">&#x25B6;</button>
-<button class="history-nav-btn history-copy-btn" id="histCopy" title="Copy hand history">&#x1F4CB;</button>
+<button type="button" class="history-nav-btn" id="histLive" title="Review the latest hand">Latest</button>
+<button class="history-nav-btn history-copy-btn" id="histCopy" title="Copy hand history">Copy hand</button>
 </div>
-<pre class="history-text" id="histText"></pre>
+<div class="history-reference"><span id="historyHandId"></span><button type="button" class="history-nav-btn" id="histCopyId" title="Copy hand ID" aria-label="Copy hand ID">Copy ID</button></div>
+<pre class="history-text" id="histText" tabindex="0" aria-label="Selected hand history"></pre>
 </div>
 <div class="chat-settings" id="chatSettings">
 <div class="setting-row">
 <span>Sounds</span>
-<div class="setting-cycle" data-setting="sound" data-value="all">All</div>
+<button type="button" class="setting-cycle" data-setting="sound" data-value="all" aria-label="Sounds: All">All</button>
 </div>
 <div class="setting-row">
 <span>Player Chat</span>
-<div class="setting-toggle on" data-setting="playerChat"></div>
+<button type="button" class="setting-toggle on" data-setting="playerChat" role="switch" aria-label="Player chat" aria-checked="true"></button>
 </div>
 <div class="setting-row">
 <span>Play-by-Play</span>
-<div class="setting-toggle on" data-setting="playByPlay"></div>
+<button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button>
 </div>
 <div class="setting-row">
 <span>Auto-Muck Losers</span>
-<div class="setting-toggle on" data-setting="autoMuck"></div>
+<button type="button" class="setting-toggle on" data-setting="autoMuck" role="switch" aria-label="Auto-muck losers" aria-checked="true"></button>
 </div>
-<div class="setting-row nwc-row" id="nwcSettingRow" style="display:none">
+<div class="setting-row wallet-row" id="walletSettingRow" style="display:none">
 <span>⚡ Lightning Wallet</span>
-<button class="setting-btn nwc-btn" id="nwcConnectBtn" data-action="connect-nwc">Connect</button>
+<button class="setting-btn wallet-connect-btn" id="walletSettingsBtn" data-action="connect-wallet">Connect</button>
 </div>
 </div>
 <div class="chat-input-area" id="chatInputArea">
-<input class="chat-input" id="chatInput" type="text" placeholder="Type a message..." maxlength="120">
+<input class="chat-input" id="chatInput" aria-label="Chat message" type="text" placeholder="Type a message..." maxlength="120">
 <button class="chat-send-btn" id="chatSendBtn">Send</button>
 </div>
 </div>
+<dialog class="table-options" id="tableOptions" aria-labelledby="tableOptionsTitle">
+  <div class="table-options-heading"><div><span class="options-eyebrow">STATION 100</span><h2 id="tableOptionsTitle">Table options</h2></div><button type="button" data-action="close-table-options" aria-label="Close table options">×</button></div>
+  <p class="table-options-summary" id="tableOptionsSummary"></p>
+  <div class="setting-row"><label for="tableTheme">Room theme</label><select class="theme-select" id="tableTheme"><option value="bunker">Neon bunker</option><option value="midnight">Midnight station</option><option value="classic">Classic club</option></select></div>
+  <p class="theme-status" id="themeStatus" role="status" aria-live="polite"></p>
+  <div class="setting-row"><span>Sounds</span><button type="button" class="setting-cycle" data-setting="sound" data-value="all" aria-label="Sounds: All">All</button></div>
+  <div class="setting-row"><span>Player chat</span><button type="button" class="setting-toggle on" data-setting="playerChat" role="switch" aria-label="Player chat" aria-checked="true"></button></div>
+  <div class="setting-row"><span>Play-by-play</span><button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button></div>
+  <button type="button" class="table-options-history" data-action="table-hand-history">View hand history <span aria-hidden="true">↗</span></button>
+  <div id="mobileAccountActions" class="mobile-account-actions"></div>
+  <div id="mobileSeatActions"></div>
+  <p class="table-options-hint">D · Dealer &nbsp; SB · Small blind &nbsp; BB · Big blind</p>
+</dialog>
 <!-- NOSTR Login Overlay (hidden by default — triggered by clicking empty seat) -->
-<div class="nostr-login-overlay hidden" id="loginOverlay">
+<div class="nostr-login-overlay hidden" id="loginOverlay" role="dialog" aria-modal="true" aria-label="Sign in with Nostr">
 <div class="login-card">
 <button class="login-close-btn" data-action="login-cancel" aria-label="Close">&times;</button>
 <div class="login-logo">
-<img src="/img/logo.png" alt="Satoshi Stacks" class="login-logo-img">
+<img src="/img/table-wordmark.svg?v=7" alt="Satoshi Stacks" class="login-logo-img" width="220" height="93">
 </div>
-<p class="login-subtitle">6-max No-Limit Hold'em on Lightning</p>
-<div class="login-status" id="loginStatus"></div>
+<div class="login-status" id="loginStatus" role="status" aria-live="polite"></div>
 <!-- Method Selection Screen -->
 <div class="login-methods" id="loginMethods">
   <!-- Dynamically populated by populateLoginMethods() -->
 </div>
 <!-- QR Code Screen (hidden by default — desktop: scan with phone signer) -->
+<div class="login-create-screen hidden" id="loginCreateScreen">
+  <h2 class="login-qr-label">Save your private key.</h2>
+  <p class="login-key-warning" id="loginKeyWarning">This key unlocks your account and funds. Save it somewhere safe: there is no password reset.</p>
+  <input id="loginNewNpub" type="hidden">
+  <label for="loginNewNsec">Private key (nsec)</label>
+  <input class="login-key-input" id="loginNewNsec" type="password" readonly autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="loginKeyWarning">
+  <div class="login-key-actions">
+    <button class="login-qr-copy" data-action="toggle-new-nsec" id="loginRevealNsec" aria-controls="loginNewNsec" aria-pressed="false">Show nsec</button>
+    <button class="login-qr-copy" data-action="copy-new-nsec">Copy nsec</button>
+  </div>
+  <label class="login-backup-check"><input id="loginKeySaved" type="checkbox"> I saved my key and understand it cannot be recovered.</label>
+  <button class="login-method-btn primary" data-action="finish-create-account" id="loginCreateContinue" disabled>Continue</button>
+  <button class="login-back-btn" data-action="login-go-back">Back</button>
+</div>
 <div class="login-qr-screen hidden" id="loginQrScreen">
   <p class="login-qr-label">Scan with your Nostr signer app</p>
   <div class="login-qr-container" id="loginQrContainer"></div>
@@ -145,12 +202,7 @@
 <!-- Bunker URL Screen (hidden by default) -->
 <div class="login-bunker-screen hidden" id="loginBunkerScreen">
   <p class="login-bunker-label">Connect with Bunker URL</p>
-  <p class="login-bunker-instructions">
-    In your Nostr signer app (<a href="https://amber.nostr.dev" target="_blank" rel="noopener">Amber</a>,
-    <a href="https://nostrconnect.org" target="_blank" rel="noopener">Nostr Connect</a>, or similar),
-    find the <strong>"Connect App"</strong> or <strong>"Bunker URL"</strong> option.
-    Copy the <code>bunker://</code> URL and paste it below.
-  </p>
+  <p class="login-bunker-instructions">Paste the connection URL from your signer.</p>
   <input type="text" class="login-bunker-input" id="loginBunkerInput"
     placeholder="bunker://pubkey?relay=wss://...&secret=..."
     autocomplete="off" spellcheck="false">
@@ -158,41 +210,75 @@
   <p class="login-bunker-hint" id="loginBunkerHint"></p>
   <button class="login-back-btn" data-action="login-go-back">Back</button>
 </div>
-<p class="login-help" id="loginHelp"></p>
+<form class="login-key-screen hidden" id="loginKeyScreen">
+  <h2 class="login-qr-label">Use your private key</h2>
+  <p class="login-key-warning" id="loginImportWarning">Only paste your key on a device you trust. A signer keeps it outside this page.</p>
+  <label class="login-key-label" for="loginImportNsec">Private key (nsec)</label>
+  <input class="login-key-input" id="loginImportNsec" type="password" placeholder="nsec1…" autocomplete="off" spellcheck="false" autocapitalize="off" maxlength="100" aria-describedby="loginImportWarning loginImportPrivacy" required>
+  <p class="login-provider-note" id="loginImportPrivacy">Used in this tab until sign-out or exit. Never saved or sent to our server.</p>
+  <button type="submit" class="login-method-btn primary" id="loginKeySubmit">Sign in</button>
+  <button type="button" class="login-back-btn" data-action="login-go-back">Back</button>
+</form>
+</div>
+</div>
+<div class="nostr-login-overlay hidden" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileHeading">
+<div class="login-card profile-card">
+  <button type="button" class="login-close-btn" id="profileClose" data-action="close-profile" aria-label="Close profile editor">&times;</button>
+  <h1 id="profileHeading">Your Nostr profile</h1>
+  <p class="profile-note" id="profileSignerNote"></p>
+  <form id="profileForm">
+    <label for="profilename">Display name</label><input id="profilename" type="text" maxlength="64" autocomplete="nickname">
+    <label for="profileabout">About you</label><textarea id="profileabout" maxlength="500" rows="3"></textarea>
+    <label for="profilepicture">Profile picture URL</label><input id="profilepicture" type="url" placeholder="https://…" maxlength="2048">
+    <label for="profilewebsite">Website</label><input id="profilewebsite" type="url" placeholder="https://…" maxlength="2048">
+    <label class="login-backup-check"><input id="profileClaimToggle" type="checkbox"> Get a name@satoshistacks.com identifier</label>
+    <div id="profileClaimFields" hidden><label for="profileClaimName">Your identifier</label><div class="profile-identifier"><input id="profileClaimName" type="text" pattern="[a-z0-9][a-z0-9_\-]{2,29}" minlength="3" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="profileClaimHelp"><span>@satoshistacks.com</span></div><p class="profile-note" id="profileClaimHelp">Choose 3–30 lowercase letters, numbers, underscores or hyphens. One identifier per account; claimed names cannot be changed or transferred. This is a public Nostr identifier, not an email inbox.</p></div>
+    <div id="profilePurchaseFields" hidden>
+      <p class="profile-note" id="profilePurchaseInfo"></p>
+      <p class="profile-note" id="profilePurchaseAvailability"></p>
+      <label class="login-backup-check"><input id="profilePurchaseConfirm" type="checkbox"> I authorize a one-time payment of ₿ 10,000 sats from my account balance for this username.</label>
+      <button class="wallet-btn secondary" type="button" id="profileFund" hidden>Add sats to account</button>
+    </div>
+    <label for="profilelightningAddress">Receive Lightning payments (optional)</label>
+    <input id="profilelightningAddress" type="text" maxlength="320" placeholder="you@your-wallet.com" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="profileReceivingHelp">
+    <p class="profile-note" id="profileReceivingHelp">With a purchased identifier, forward payments to your existing Lightning address. Payments go directly to that wallet and do not add to your poker balance. Leave blank to disable receiving.</p>
+    <p id="profileStatus" role="status" aria-live="polite"></p>
+    <button class="login-method-btn primary" id="profileSave" type="submit">Save public profile</button>
+  </form>
+  <button type="button" class="login-back-btn" id="profileDone">Done</button>
 </div>
 </div>
 <!-- Buy-In Dialog -->
-<div class="buyin-overlay hidden" id="buyinOverlay">
+<div class="buyin-overlay hidden" id="buyinOverlay" role="dialog" aria-modal="true" aria-labelledby="buyinHeading">
 <div class="buyin-card">
-<div class="buyin-title">Choose your buy-in</div>
+<div class="buyin-title" id="buyinHeading">Choose your buy-in</div>
 <div class="buyin-subtitle">Slide to set your starting stack</div>
-<div class="buyin-amount" id="buyinAmountDisplay">10,000</div>
+<div class="buyin-amount" id="buyinAmountDisplay">₿ 10,000</div>
 <div class="buyin-unit">playsats</div>
-<input type="range" class="buyin-slider" id="buyinSlider" min="2000" max="10000" step="500" value="10000">
+<input type="range" class="buyin-slider" id="buyinSlider" aria-label="Starting stack" min="2000" max="10000" step="500" value="10000">
 <div class="buyin-btns">
 <button class="buyin-btn-sit" id="buyinSitBtn">Sit Down</button>
 <button class="buyin-btn-cancel" id="buyinCancelBtn">Cancel</button>
 </div>
 </div>
 </div>
-<!-- Rotate Phone Overlay (mobile portrait) -->
-<div class="rotate-overlay" id="rotateOverlay">
-  <div class="rotate-content">
-    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="margin-bottom:16px;">
-      <rect x="14" y="4" width="36" height="56" rx="6" stroke="var(--cream)" stroke-width="2.5" fill="none"/>
-      <path d="M56 40 A20 20 0 0 1 36 60" stroke="var(--mustard)" stroke-width="2" fill="none" stroke-linecap="round"/>
-      <path d="M36 60 L40 54 M36 60 L30 58" stroke="var(--mustard)" stroke-width="2" stroke-linecap="round"/>
-    </svg>
-    <div class="rotate-text">Rotate your phone to landscape</div>
-    <div class="rotate-subtext">This game plays best in landscape mode</div>
-  </div>
-</div>
 <!-- QR Code Library (for NIP-46 login) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <!-- NIP-46 (Nostr Connect) dependencies from nostr-tools -->
-<script type="module" src="/js/nip46-loader.js"></script>
+<script type="module" src="/js/nip46-loader.js?v=2"></script>
 <!-- Socket.IO Client -->
 <script src="/socket.io/socket.io.js"></script>
-<script src="/js/app.js?v=15"></script>
+<script src="/js/providers.js?v=21"></script>
+<script src="/js/cards.js?v=22"></script>
+<script src="/js/amounts.js?v=2"></script>
+<script src="/js/wallet-ui.js?v=5"></script>
+<script src="/js/local-account.js?v=3"></script>
+<script src="/js/profile.js?v=5"></script>
+<script src="/js/table-motion.js?v=3"></script>
+<script src="/js/pot-pile.js?v=3"></script>
+<script src="/js/responsive-table.js?v=1"></script>
+<script src="/js/app.js?v=45"></script>
+<script src="/js/desktop-table.js?v=5"></script>
+<script src="/js/table-themes.js?v=6"></script>
 </body>
 </html>

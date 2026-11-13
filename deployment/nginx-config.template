@@ -43,7 +43,6 @@ server {
         proxy_buffering off;
     }
 
-    # (playmoney included in table routes regex above)
 
     # ─── Socket.IO (WebSocket upgrade) ────────────────────────────────────
     location /socket.io/ {
@@ -83,13 +82,26 @@ server {
         proxy_read_timeout 30s;
     }
 
-    # ─── NIP-05 NOSTR identifier verification ─────────────────────────────
-    location /.well-known/ {
+    # ─── NIP-05 and Lightning address discovery ───────────────────────────
+    location ^~ /.well-known/ {
         proxy_pass http://satoshistacks_backend/.well-known/;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # These backend resources must not fall through to the landing page.
+    location = /manifest.json {
+        proxy_pass http://satoshistacks_backend;
+        proxy_set_header Host $host;
+    }
+
+    location = /admin {
+        proxy_pass http://satoshistacks_backend;
+        proxy_set_header Host $host;
     }
 
     # ─── Health check (no rate limit — used by monitoring) ────────────────
@@ -114,8 +126,8 @@ server {
         proxy_pass http://satoshistacks_backend;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
-        expires 7d;
-        add_header Cache-Control "public, immutable";
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
         access_log off;
     }
 

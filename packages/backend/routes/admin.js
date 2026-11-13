@@ -57,6 +57,20 @@ router.use((req, res, next) => {
   next();
 });
 
+// Complete audit record; private cards and structured events stay admin-only.
+router.get('/hand/:handId', (req, res) => {
+  const hand = db.getHand(req.params.handId);
+  if (!hand) {
+    const pending = db.getAllHandSnapshots().find(row => row.hand_id === req.params.handId);
+    if (!pending) return res.status(404).json({success:false,error:'Hand not found'});
+    const state = pending.snapshot;
+    return res.set('Cache-Control','no-store').json({success:true,hand:{hand_id:pending.hand_id, status:state.handInProgress ? 'in_progress' : 'snapshot',
+      hand_history:state.currentHandLog.join('\n'), events:state.currentHandEvents || [], players:state.players.filter(Boolean)}});
+  }
+  res.set('Cache-Control','no-store').json({success:true,hand:{...hand,
+    events:JSON.parse(hand.events || '[]'), players:db.getHandPlayers(hand.hand_id)}});
+});
+
 /**
  * POST /api/admin/ban — ban a player (optionally also ban their IP)
  */
@@ -103,7 +117,7 @@ router.post('/unban', validateBody(schemas.adminUnban), (req, res) => {
  */
 router.get('/abuse-log', (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 100, 500));
     const logs = db.db.prepare('SELECT * FROM abuse_log ORDER BY timestamp DESC LIMIT ?').all(limit);
     res.json(logs);
   } catch (error) {
@@ -194,18 +208,24 @@ router.get('/wallet', (req, res) => {
       succeededWithdrawals: db.sumSucceededWithdrawals(),
       liveStacks,
       outstanding,            // reserved + in_flight withdrawals
-      owed: liveStacks + outstanding, // what the node must be able to cover
+      heldDeposits: db.sumHeldDeposits(),
+      walletCredits: db.sumWalletCredits(),
+      owed: liveStacks + outstanding + db.sumHeldDeposits() + db.sumWalletCredits(),
       pendingDeposits,
     };
 
     const wallet = {
+      metrics:db.paymentMetrics(),
+      feePolicy:{baseSats:config.LIGHTNING.withdrawalFeeBaseSats,ratePpm:config.LIGHTNING.withdrawalFeeRatePpm,
+        limitSats:config.LIGHTNING.withdrawalFeeLimitSats,reserveSats:config.LIGHTNING.feeReserveSats,
+        committedSats:paymentsRef?.outstandingFeeBudgets() || 0,maxPaths:config.LIGHTNING.maxPaymentPaths},
       realMoneyEnabled: config.REALMONEY_ENABLED,
       withdrawalsEnabled: paymentsRef ? paymentsRef.withdrawalsEnabled() : false,
       breaker: paymentsRef ? paymentsRef.breakerState() : { tripped: false, reason: null },
       totals,
       recent,
     };
-    res.json(wallet);
+    res.set('Cache-Control','no-store').json(wallet);
   } catch (error) {
     console.error('[API] Error fetching wallet ledger:', error);
     res.status(500).json({ success: false, error: error.message });
