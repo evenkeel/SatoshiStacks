@@ -213,11 +213,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id}`);
     socket.data ||= {};
-    // Phone play is paused. Keep this connection on public spectator state,
-    // even when it authenticates with an account that already has a seat.
-    socket.data.watchOnly = socket.handshake.auth?.watchOnly === true ||
-      /Android|iPhone|iPod|webOS|BlackBerry|Opera Mini|IEMobile/i.test(socket.handshake.headers?.['user-agent'] || '') ||
-      socket.handshake.headers?.['sec-ch-ua-mobile'] === '?1';
+    // Explicit spectator connections remain read-only; viewport and device
+    // headers never decide whether an authenticated player can take a seat.
+    socket.data.watchOnly = socket.handshake.auth?.watchOnly === true;
     const playEvents = new Set(['join-table', 'join-waitlist', 'waitlist-accept',
       'action', 'sit-back-in', 'sit-out', 'rebuy', 'buyin-request']);
     // Reject malformed packets before destructuring event payloads or hashing
@@ -232,7 +230,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         return;
       }
       if (socket.data.watchOnly && playEvents.has(event)) {
-        socket.emit('error', { message: 'Phones are watch-only for now. Use a desktop to play.' });
+        socket.emit('error', { message: 'This connection is watch-only. Reconnect to play.' });
         return;
       }
       const seated = socketUsers.get(socket.id);

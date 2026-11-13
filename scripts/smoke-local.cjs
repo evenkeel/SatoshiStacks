@@ -8,6 +8,11 @@ const origin = process.env.SMOKE_ORIGIN || 'http://localhost:39002';
 const url = new URL(origin);
 assert.ok(['localhost','127.0.0.1','[::1]'].includes(url.hostname), 'Smoke test only permits loopback');
 const clients=[];
+// Exercise the same complete hand with phone headers as the browser clients.
+const mobileHeaders = process.env.SMOKE_MOBILE === 'true' ? {
+  'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+  'Sec-CH-UA-Mobile':'?1',
+} : {};
 const playThrough = process.env.SMOKE_PLAY_THROUGH === 'true';
 async function post(route,body) {
   const response=await fetch(origin+route,{method:'POST',headers:{'content-type':'application/json',origin},body:JSON.stringify(body)});
@@ -17,7 +22,7 @@ async function run() {
   assert.equal((await fetch(origin+'/health')).status,200);
   const tables=await (await fetch(origin+'/api/tables')).json();
   assert.equal(tables.tables.find(t=>t.id==='station100').realMoney,false,'Refuse to exercise a real-money server');
-  const probe=io(origin,{transports:['websocket'],forceNew:true});
+  const probe=io(origin,{transports:['websocket'],forceNew:true,extraHeaders:mobileHeaders});
   await new Promise((resolve,reject)=>{
     const timer=setTimeout(()=>reject(new Error('Malformed packet check timed out')),5000);
     probe.on('connect',()=>probe.emit('observe-table',null));
@@ -41,7 +46,7 @@ async function run() {
   const done = new Promise((resolve,reject)=>{
     const timeout=setTimeout(()=>reject(new Error('Demo hand did not finish within 25 seconds')),25000);
     for(const player of players) {
-      const socket=io(origin,{transports:['websocket'],forceNew:true}); clients.push(socket);
+      const socket=io(origin,{transports:['websocket'],forceNew:true,extraHeaders:mobileHeaders}); clients.push(socket);
       const acted=new Set();
       socket.on('connect',()=>socket.emit('join-table',{tableId:'station100',sessionToken:player.sessionToken,buyIn:5000}));
       socket.on('connect_error',reject);
@@ -79,7 +84,7 @@ async function run() {
   assert.equal('events' in publicHand.hand,false,'Private audit events never enter the public API');
   // An authenticated observer must reclaim an existing seat without another
   // buy-in; a revoked session must no longer authorize gameplay on that socket.
-  const resumed=io(origin,{transports:['websocket'],forceNew:true});clients.push(resumed);
+  const resumed=io(origin,{transports:['websocket'],forceNew:true,extraHeaders:mobileHeaders});clients.push(resumed);
   await new Promise((resolve,reject)=>{
     const timer=setTimeout(()=>reject(new Error('Seat restoration timed out')),5000);
     resumed.on('connect',()=>resumed.emit('observe-table',{tableId:'station100',sessionToken:players[0].sessionToken}));

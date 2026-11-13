@@ -11,12 +11,13 @@
 <title>Satoshi Stacks</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/img/brand-icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/styles.css?v=25">
+<link rel="stylesheet" href="/styles.css?v=26">
 <link rel="stylesheet" href="/interface.css?v=4">
 <link rel="stylesheet" href="/club.css?v=4">
 <link rel="stylesheet" href="/motion.css?v=2">
-<link rel="stylesheet" href="/table-layout.css?v=8">
+<link rel="stylesheet" href="/table-layout.css?v=9">
 <link rel="stylesheet" href="/bunker.css?v=18">
+<link rel="stylesheet" href="/phone.css?v=1">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
@@ -83,6 +84,8 @@
 </div>
 </div>
 </div>
+<div class="mobile-play-status" id="mobileTurnStatus" role="status" aria-live="polite">Connecting to the table…</div>
+<button type="button" class="mobile-options-toggle" data-action="table-options" aria-haspopup="dialog" aria-controls="tableOptions">Table options</button>
 <div class="pre-action-bar" id="preActionBar"></div>
 <div class="controls-area">
 <div class="bet-controls" id="betControls"></div>
@@ -101,6 +104,7 @@
 <div class="toast-container" id="toastContainer" style="position:fixed;top:10px;right:220px;z-index:1001;display:flex;flex-direction:column;align-items:flex-end;gap:8px;"></div>
 <!-- Chat Box -->
 <div class="chat-box hide-pbp" id="chatBox">
+<button type="button" id="mobileChatClose" class="mobile-chat-close" aria-label="Close table chat">×</button>
 <button class="chat-collapse-btn" id="chatCollapseBtn" aria-label="Collapse chat panel" aria-expanded="true" aria-controls="chatMessages chatHistory chatSettings chatInputArea">&#x25BC;</button>
 <div class="chat-tabs" id="chatTabs" role="group" aria-label="Table panel views">
 <button type="button" class="chat-tab active" data-tab="chat" aria-pressed="true">Chat</button>
@@ -155,6 +159,8 @@
   <div class="setting-row"><span>Player chat</span><button type="button" class="setting-toggle on" data-setting="playerChat" role="switch" aria-label="Player chat" aria-checked="true"></button></div>
   <div class="setting-row"><span>Play-by-play</span><button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button></div>
   <button type="button" class="table-options-history" data-action="table-hand-history">View hand history <span aria-hidden="true">↗</span></button>
+  <div id="mobileAccountActions" class="mobile-account-actions"></div>
+  <div id="mobileSeatActions"></div>
   <p class="table-options-hint">D · Dealer &nbsp; SB · Small blind &nbsp; BB · Big blind</p>
 </dialog>
 <!-- NOSTR Login Overlay (hidden by default — triggered by clicking empty seat) -->
@@ -256,18 +262,6 @@
 </div>
 </div>
 </div>
-<!-- Rotate Phone Overlay (mobile portrait) -->
-<div class="rotate-overlay" id="rotateOverlay">
-  <div class="rotate-content">
-    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style="margin-bottom:16px;">
-      <rect x="14" y="4" width="36" height="56" rx="6" stroke="var(--cream)" stroke-width="2.5" fill="none"/>
-      <path d="M56 40 A20 20 0 0 1 36 60" stroke="var(--mustard)" stroke-width="2" fill="none" stroke-linecap="round"/>
-      <path d="M36 60 L40 54 M36 60 L30 58" stroke="var(--mustard)" stroke-width="2" stroke-linecap="round"/>
-    </svg>
-    <div class="rotate-text">Rotate your phone to landscape</div>
-    <div class="rotate-subtext">Phones are watch-only for now. Use a desktop to play.</div>
-  </div>
-</div>
 <!-- QR Code Library (for NIP-46 login) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <!-- NIP-46 (Nostr Connect) dependencies from nostr-tools -->
@@ -282,8 +276,9 @@
 <script src="/js/profile.js?v=5"></script>
 <script src="/js/table-motion.js?v=3"></script>
 <script src="/js/pot-pile.js?v=3"></script>
-<script src="/js/app.js?v=44"></script>
-<script src="/js/desktop-table.js?v=4"></script>
+<script src="/js/responsive-table.js?v=1"></script>
+<script src="/js/app.js?v=45"></script>
+<script src="/js/desktop-table.js?v=5"></script>
 <script src="/js/table-themes.js?v=6"></script>
 </body>
 </html>

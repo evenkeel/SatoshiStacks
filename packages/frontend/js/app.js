@@ -43,32 +43,6 @@ const nip46Ready = new Promise(resolve => {
   else window.addEventListener('nip46-ready', resolve, { once: true });
 });
 
-if (isMobileDevice) {
-  document.body.classList.add('is-mobile', 'watch-only');
-  const notice = document.createElement('div');
-  notice.className = 'phone-watch-notice';
-  notice.setAttribute('role', 'status');
-  notice.textContent = 'Watch-only on phones · Use a desktop to play';
-  document.body.appendChild(notice);
-
-  // Track true visible height (accounts for Safari toolbar)
-  const setMobileHeight = () => {
-    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
-  };
-  setMobileHeight();
-  window.addEventListener('resize', setMobileHeight);
-
-  // Try Fullscreen API (works on Android Chrome, not iOS Safari)
-  const el = document.documentElement;
-  const rfs = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (rfs) {
-    document.addEventListener('click', () => {
-      if (!document.fullscreenElement) rfs.call(el).catch(() => {});
-    }, { once: true });
-  }
-
-}
-
 // ============================================================
 //  SOUND EFFECTS (Web Audio API — no files needed)
 // ============================================================
@@ -1050,12 +1024,12 @@ async function tryRestoreSession(retries = 2) {
 function connectAsObserver() {
   isObserver = true;
   if (socket) { socket.disconnect(); socket = null; }
-  socket = io(window.location.origin, { auth: { watchOnly: isMobileDevice } });
+  socket = io(window.location.origin);
   window.socket = socket;
 
   socket.on('connect', () => {
     // On connect AND reconnect: if we have a seat, rejoin as player; otherwise observe
-    if (!isMobileDevice && mySeat && mySessionToken) {
+    if (mySeat && mySessionToken) {
       console.log('[Socket] Reconnecting as seated player (seat', mySeat, ')');
       socket.emit('join-table', {
         tableId: myTableId,
@@ -1063,7 +1037,7 @@ function connectAsObserver() {
         buyIn: myTableConfig.maxBuyin
       });
     } else {
-      socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined, resumeSeat: !isMobileDevice && !localStorage.getItem('ss_stoodUp') });
+      socket.emit('observe-table', { tableId: myTableId, sessionToken: mySessionToken || undefined, resumeSeat: !localStorage.getItem('ss_stoodUp') });
       requestWalletState();
     }
   });
@@ -1083,7 +1057,6 @@ function connectAsObserver() {
 //  WEBSOCKET CONNECTION (authenticated player)
 // ============================================================
 function connectToServer() {
-  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   // If already connected as observer, reuse socket — just emit join-table
   if (socket && socket.connected) {
     isObserver = false;
@@ -1100,7 +1073,7 @@ function connectToServer() {
   }
 
   if (socket) { socket.disconnect(); socket = null; }
-  socket = io(window.location.origin, { auth: { watchOnly: isMobileDevice } });
+  socket = io(window.location.origin);
   window.socket = socket;
 
   socket.on('connect', () => {
@@ -1440,6 +1413,12 @@ function render() {
     highlightWinningCards();
     updateBets();
     updatePot();
+    const status = $('mobileTurnStatus');
+    if (status) {
+      status.textContent = gameState.players.every(Boolean) ? 'Table full · join the waitlist' : 'Choose an open seat to play';
+      status.classList.remove('your-turn');
+    }
+    updateTableActions();
     // Hide player controls for observers
     const ca = document.querySelector('.controls-area');
     if (ca) ca.classList.remove('visible');
@@ -1517,7 +1496,7 @@ function updateWaitlistUI() {
   let container = document.getElementById('waitlistUI');
 
   // Only show for observers (not seated players)
-  if (isMobileDevice || !gameState || mySeat) {
+  if (!gameState || mySeat) {
     if (container) container.style.display = 'none';
     return;
   }
@@ -1561,7 +1540,6 @@ function updateWaitlistUI() {
 //  SEAT OFFER PROMPT (waitlist)
 // ============================================================
 function showSeatOfferPrompt(timeoutMs) {
-  if (isMobileDevice) return;
   let remaining = Math.ceil(timeoutMs / 1000);
 
   let el = document.getElementById('seatOfferPrompt');
@@ -1618,8 +1596,8 @@ function renderSeats() {
 
     if (!player) {
       seatEl.className = `seat seat-${visualPos}`;
-      if (isMobileDevice || mySeat) {
-        // Phones only watch; seated players cannot switch seats mid-game.
+      if (mySeat) {
+        // Seated players cannot switch seats mid-game.
         seatEl.innerHTML = '';
       } else {
         // Render clickable empty seat avatar with "EMPTY SEAT" text
@@ -1907,7 +1885,19 @@ function renderControls() {
   if (!bc || !ca) return;
 
   const myPlayer = gameState.players.find(p => p && p.userId === myUserId);
-  if (isMobileDevice || !myPlayer || !gameState.yourTurn || !gameState.handInProgress) {
+  const status = $('mobileTurnStatus');
+  if (status) {
+    const active = gameState.players[gameState.currentPlayerIndex];
+    status.textContent = !myPlayer ? 'Choose an open seat to play' :
+      myPlayer.busted ? 'Stack empty · add chips from your seat' :
+      myPlayer.sittingOut ? 'Sitting out · return from Table options' :
+      !gameState.handInProgress ? 'Waiting for the next hand' :
+      myPlayer.folded ? 'You folded · next hand coming up' :
+      myPlayer.allIn ? 'You’re all in' : gameState.yourTurn ? 'Your turn' :
+      active ? `${truncName(active.nostrName || active.username || 'Player', 16)} is thinking…` : 'Hand in progress';
+    status.classList.toggle('your-turn', !!gameState.yourTurn);
+  }
+  if (!myPlayer || !gameState.yourTurn || !gameState.handInProgress) {
     ca.classList.remove('visible');
     bc.innerHTML = '';
     return;
@@ -1961,7 +1951,7 @@ function renderControls() {
     </div>
     <div class="slider-row">
       <input type="range" class="bet-slider" id="betSlider" aria-label="Raise amount" aria-valuetext="${fmtNumber(minR)}" min="0" max="${SLIDER_STEPS}" value="0" step="1">
-      <input type="number" class="bet-amount-input" id="betInput" aria-label="Bet or raise total" min="${minR}" max="${maxR}" value="${minR}">
+      <input type="number" inputmode="numeric" class="bet-amount-input" id="betInput" aria-label="Bet or raise total" min="${minR}" max="${maxR}" value="${minR}">
     </div>` : ''}
     <div class="action-buttons">
       <button class="action-btn btn-fold" id="foldBtn">Fold</button>
@@ -1983,7 +1973,9 @@ function renderControls() {
     if (rb) rb.textContent = `${v >= maxR ? 'All In' : rLabel} ${fmtNumber(v)}`;
   }
   rb?.addEventListener('click', () => {
-    const bet = sl ? sliderToBet(parseInt(sl.value)) : (bi ? parseInt(bi.value) : minR);
+    // The numeric input is exact; mapping back from a curved slider can
+    // round a preset down by several chips after the label shows its total.
+    const bet = bi ? Math.max(minR, Math.min(maxR, Math.round(Number(bi.value) || minR))) : minR;
     sendAction('raise', bet);
   });
   sl?.addEventListener('input', () => updateBetUI(sliderToBet(parseInt(sl.value))));
@@ -2016,7 +2008,7 @@ function renderPreActions() {
   const isMyTurn = gameState.yourTurn;
 
   // Hide pre-actions when it's our turn, hand over, folded, or all-in
-  if (isMobileDevice || !myPlayer || isMyTurn || !gameState.handInProgress || myPlayer.folded || myPlayer.allIn) {
+  if (!myPlayer || isMyTurn || !gameState.handInProgress || myPlayer.folded || myPlayer.allIn) {
     bar.classList.remove('visible');
     if (!gameState.handInProgress || (myPlayer && myPlayer.folded)) {
       bar.innerHTML = '';
@@ -2098,7 +2090,7 @@ function executePreAction() {
 //  SEND ACTION TO SERVER
 // ============================================================
 function sendAction(action, amount) {
-  if (isMobileDevice || !socket) return;
+  if (!socket) return;
   // Immediately clear the timer/lifebar on the frontend — don't wait for server round-trip
   clearTimer();
   // Generate unique actionId for deduplication (prevents double-submit)
@@ -2457,10 +2449,13 @@ function openTableHistory() {
   panel.classList.remove('collapsed');
   $('chatCollapseBtn').setAttribute('aria-expanded', 'true');
   $('chatCollapseBtn').setAttribute('aria-label', 'Collapse chat panel');
-  if (isMobileDevice) {
+  if (document.body.classList.contains('is-mobile')) {
     panel.classList.add('mobile-open');
     $('mobileChatBackdrop')?.classList.add('visible');
     $('mobileChatToggle')?.classList.add('chat-active');
+    $('mobileChatToggle')?.setAttribute('aria-expanded', 'true');
+    $('mobileChatToggle')?.setAttribute('aria-label', 'Close table chat');
+    focusDialog(panel);
   }
   document.querySelector('.chat-tab[data-tab="history"]')?.click();
 }
@@ -2469,8 +2464,7 @@ function openTableHistory() {
 //  MOBILE CHAT TOGGLE
 // ============================================================
 function initMobileChat() {
-  if (!isMobileDevice) return;
-
+  // Initialize once on every device so resizing can reveal the same panel.
   // Create backdrop
   const backdrop = document.createElement('div');
   backdrop.className = 'mobile-chat-backdrop';
@@ -2481,22 +2475,33 @@ function initMobileChat() {
   const chatToggle = document.createElement('button');
   chatToggle.className = 'mobile-chat-toggle';
   chatToggle.id = 'mobileChatToggle';
-  chatToggle.innerHTML = '&#x1F4AC;';
+  chatToggle.textContent = 'Chat';
+  chatToggle.setAttribute('aria-label', 'Open table chat');
+  chatToggle.setAttribute('aria-controls', 'chatBox');
+  chatToggle.setAttribute('aria-expanded', 'false');
   chatToggle.title = 'Toggle chat';
   document.body.appendChild(chatToggle);
 
   const chatBox = document.getElementById('chatBox');
 
   function openChat() {
+    chatBox.classList.remove('collapsed');
     chatBox.classList.add('mobile-open');
+    chatToggle.setAttribute('aria-expanded', 'true');
+    chatToggle.setAttribute('aria-label', 'Close table chat');
     backdrop.classList.add('visible');
     chatToggle.classList.add('chat-active');
     chatToggle.classList.remove('has-unread');
+    focusDialog(chatBox);
   }
   function closeChat() {
+    const wasOpen = chatBox.classList.contains('mobile-open');
     chatBox.classList.remove('mobile-open');
+    chatToggle.setAttribute('aria-expanded', 'false');
+    chatToggle.setAttribute('aria-label', 'Open table chat');
     backdrop.classList.remove('visible');
     chatToggle.classList.remove('chat-active');
+    if (wasOpen) restoreDialogFocus(chatBox);
   }
 
   chatToggle.addEventListener('click', (e) => {
@@ -2510,47 +2515,21 @@ function initMobileChat() {
 
   // Close on backdrop tap
   backdrop.addEventListener('click', closeChat);
+  $('mobileChatClose').addEventListener('click', closeChat);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && chatBox.classList.contains('mobile-open')) { closeChat(); chatToggle.focus(); }
+  });
+  window.addEventListener('table-layout-change', closeChat);
 }
 
 function signalMobileUnread() {
-  if (!isMobileDevice) return;
+  if (!document.body.classList.contains('is-mobile')) return;
   const chatBox = document.getElementById('chatBox');
   const toggle = document.getElementById('mobileChatToggle');
   if (toggle && chatBox && !chatBox.classList.contains('mobile-open')) {
     toggle.classList.add('has-unread');
   }
 }
-
-// ============================================================
-//  RESIZE / ORIENTATION HANDLERS
-// ============================================================
-let resizeTimer;
-
-function checkOrientation() {
-  if (!isMobileDevice) return;
-  const overlay = document.getElementById('rotateOverlay');
-  if (!overlay) return;
-  const isPortrait = window.innerHeight > window.innerWidth;
-  if (isPortrait) {
-    overlay.classList.add('visible');
-  } else {
-    overlay.classList.remove('visible');
-  }
-}
-
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    checkOrientation();
-    if (gameState) render();
-  }, 100);
-});
-window.addEventListener('orientationchange', () => {
-  setTimeout(() => {
-    checkOrientation();
-    if (gameState) render();
-  }, 300);
-});
 
 // ============================================================
 //  CONNECTION STATUS
@@ -2667,7 +2646,6 @@ function isRealMoneyTable() {
 }
 
 function requestRealMoneyBuyin() {
-  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (!socket) { showToast('Not connected — try again in a moment'); return; }
   if (!mySessionToken) { handleNostrLoginThenSit(); return; }
   const min = (gameState && gameState.minBuyin) || (myTableConfig && myTableConfig.minBuyin) || 5000;
@@ -2717,7 +2695,6 @@ function returnTableStack() {
 }
 
 async function generateBuyinInvoice() {
-  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (walletRequestPending) return;
   if (!socket?.connected || !mySessionToken) { showToast('Reconnect and sign in before paying.'); return; }
   walletRequestPending = true;
@@ -2799,7 +2776,7 @@ function renderCashoutState(state) {
   const invoice = $('cashoutInvoice')?.value;
   const withdrawalAmount = $('withdrawalAmount')?.value;
   walletView = 'cashout';
-  showWalletModal('Your SatoshiStacks account', window.StacksWalletUI.cashoutHTML({ ...state, watchOnly: isMobileDevice }));
+  showWalletModal('Your SatoshiStacks account', window.StacksWalletUI.cashoutHTML(state));
   if (withdrawalAmount && $('withdrawalAmount')) $('withdrawalAmount').value=withdrawalAmount;
   if (invoice && $('cashoutInvoice')) { $('cashoutInvoice').value=invoice; $('cashoutInvoice').closest('details').open=true; }
 }
@@ -2950,7 +2927,7 @@ function updateSitOutButton() { updateTableActions(); }
 // Delegated click handler for EMPTY seats
 document.addEventListener('click', (e) => {
   const emptySeatEl = e.target.closest('[data-empty-seat]');
-  if (!emptySeatEl || isMobileDevice) return;
+  if (!emptySeatEl) return;
 
   const seatIdx = parseInt(emptySeatEl.dataset.emptySeat, 10);
   if (isNaN(seatIdx) || seatIdx < 0 || seatIdx >= NUM_SEATS) return;
@@ -2997,7 +2974,6 @@ document.addEventListener('click', (e) => {
 });
 
 function showRebuyDialog() {
-  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (!gameState || !socket) return;
   // Real-money: you can't top up for free — cash out and buy back in instead.
   if (isRealMoneyTable()) {
@@ -3091,7 +3067,6 @@ let pendingBuyIn = null;
 let buyinMode = 'sit'; // 'sit' or 'rebuy'
 
 function showBuyinDialog() {
-  if (isMobileDevice) { showToast('Phones are watch-only for now. Use a desktop to play.'); return; }
   if (isRealMoneyTable()) { requestRealMoneyBuyin(); return; }
   const overlay = $('buyinOverlay');
   const slider = $('buyinSlider');
@@ -3205,8 +3180,10 @@ async function init() {
 
   initChat();
   initBuyinDialog();
-  checkOrientation();
   initMobileChat();
+  $('mobileAccountActions').addEventListener('click', e => {
+    if (e.target.closest('button')) $('tableOptions').close();
+  }, true);
 
   // Try to restore existing NOSTR session
   showWalletControls();
@@ -3227,6 +3204,7 @@ document.addEventListener('click', (e) => {
   if (!actionEl) return;
 
   const action = actionEl.dataset.action;
+  if (actionEl.closest('#mobileAccountActions, #mobileSeatActions')) $('tableOptions').close();
   switch (action) {
     case 'table-options': openTableOptions(); break;
     case 'close-table-options': $('tableOptions').close(); break;

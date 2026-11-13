@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const source = fs.readFileSync(require.resolve('./desktop-table.js'), 'utf8');
 function layout(width, height, panels = [], mobile = false) {
   let fit;
-  const area = { style: { setProperty(name, value) { this[name] = value; } } };
+  const area = { style: { removeProperty(name) { delete this[name]; }, setProperty(name, value) { this[name] = value; } } };
   const header = { getBoundingClientRect: () => ({ bottom: 92 }) };
   const nodes = panels.map(rect => ({ getBoundingClientRect: () => rect,
     classList: { contains: name => rect.kind === name },
@@ -24,7 +24,7 @@ function layout(width, height, panels = [], mobile = false) {
     ResizeObserver: class { observe() {} }, MutationObserver: class { observe() {} },
     window: { addEventListener(event, callback) { fit = callback; } },
   });
-  return { area, scale: Number(area.style['--table-scale']), resize: fit, nodes };
+  return { area, scale: Number(area.style['--table-scale']), resize: fit, setMobile(value) { mobile = value; fit(); }, nodes };
 }
 function rect(left, top, width, height) { return { left, top, right: left + width, bottom: top + height, width, height }; }
 
@@ -91,4 +91,16 @@ test('collapsing chat does not change the table footprint', () => {
   result.nodes[0].getBoundingClientRect = () => rect(12,844,340,44);
   result.resize();
   assert.equal(Number(result.area.style['--table-scale']),result.scale);
+});
+
+
+test('a phone can grow into desktop and clear desktop sizing when shrunk again', () => {
+  const result = layout(1280, 720, [], true);
+  assert.ok(Number.isNaN(Number(result.area.style['--table-scale'])));
+  result.setMobile(false);
+  assert.ok(Number(result.area.style['--table-scale']) > 0);
+  result.setMobile(true);
+  assert.equal(result.area.style.top, '');
+  assert.equal(result.area.style.height, '');
+  assert.equal(result.area.style['--table-scale'], undefined);
 });

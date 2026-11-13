@@ -78,3 +78,31 @@ test('only the dealer button renders and follows the rotated seat even after fol
   vm.runInContext('renderTableMarkers()', context);
   assert.equal(container.innerHTML, '');
 });
+
+
+test('phone players can send fold, call, check, and raise through the authenticated socket', () => {
+  const sent=[];
+  const start=source.indexOf('function sendAction(');
+  const context={isMobileDevice:true, socket:{emit:(event,payload)=>sent.push({event,payload})},
+    clearTimer(){},crypto:{randomUUID:()=> 'action-id'},myTableId:'station100',gameState:{handCount:9}};
+  vm.createContext(context);
+  vm.runInContext(source.slice(start,source.indexOf('// ============================================================',start)),context);
+  for (const action of ['fold','call','check','raise']) context.sendAction(action,action==='raise'?600:0);
+  assert.deepEqual(sent.map(item=>item.payload.action),['fold','call','check','raise']);
+  assert.ok(sent.every(item=>item.event==='action' && item.payload.handCount===9));
+  assert.equal(sent[3].payload.amount,600);
+});
+
+test('phone observers get clickable open seats and seated players cannot switch seats', () => {
+  const nodes=Array.from({length:6},()=>({innerHTML:''}));
+  const start=source.indexOf('function renderSeats()');
+  const context={isMobileDevice:true,NUM_SEATS:6,mySeat:null,
+    gameState:{players:Array(6).fill(null)},calculateVisualPosition:seat=>seat,$:id=>nodes[Number(id.split('-')[1])-1]};
+  vm.createContext(context);
+  vm.runInContext(source.slice(start,source.indexOf('// ============================================================',start)),context);
+  context.renderSeats();
+  assert.ok(nodes.every((node,i)=>node.innerHTML.includes(`data-empty-seat="${i}"`)));
+  context.mySeat=3;
+  context.renderSeats();
+  assert.ok(nodes.every(node=>node.innerHTML===''));
+});

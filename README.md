@@ -86,3 +86,13 @@ MVP scope: one Station 100 table, 50/100 blinds, 5,000–10,000-sat buy-in, watc
 Mainnet readiness still requires actual Sidecar sign-in/payment/return testing, regtest recovery exercises, reconciliation of pre-existing funds, backup/restore rehearsal, and an approved operator configuration. Unit-test success does not establish those checks.
 
 License: UNLICENSED.
+
+### Responsive phone play
+
+The table switches automatically at 900px wide or 500px tall, including when resizing a desktop window. Portrait uses a vertical six-seat table with your cards at the bottom and a fixed betting dock. Landscape uses a separate betting column. Chat, history, account controls, and seat actions are available through the bottom Chat and Table options buttons. Rotation preserves the current session and the entered bet.
+
+Phone user agents may sign in, buy in, play, and restore a seat under the same authentication rules as desktop. Explicit `auth.watchOnly` socket connections remain read-only. To exercise a complete demo hand with phone headers against an isolated local server:
+
+```sh
+SMOKE_ORIGIN=http://localhost:39007 SMOKE_MOBILE=true SMOKE_PLAY_THROUGH=true node scripts/smoke-local.cjs
+```

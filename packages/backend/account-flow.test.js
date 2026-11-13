@@ -46,7 +46,7 @@ test('authenticated account flow separates deposits, table stacks and withdrawal
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
     const origin=`http://127.0.0.1:${server.address().port}`;
     async function client(options = {}) {const s=connect(origin,{transports:['websocket'],forceNew:true,...options});clients.push(s);await next(s,'connect');return s;}
-    let alice=await client(); const bob=await client();
+    let alice=await client({extraHeaders:{'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'}}); const bob=await client();
     const args={tableId:'station100',sessionToken:'alice-session'};
     for (const tableId of ['__proto__','constructor','pond','table-1']) {
       const error=await request(bob,'observe-table',{tableId},'error');
@@ -62,12 +62,9 @@ test('authenticated account flow separates deposits, table stacks and withdrawal
     assert.equal(state.availableSats,20000);assert.equal(state.seated,false);
     await request(alice,'buyin-request',{...args,amountSats:10000},'account-buyin-confirmed');
     assert.equal(db.getAccountBalance(user),10000);assert.equal(games.get('station100').players[0].stack,10000);
-    // Phones can authenticate and watch, but never reclaim a desktop seat or
-    // spend an account balance to enter play, even if they emit events directly.
+    // Explicit watch-only connections cannot reclaim a seat or spend a balance.
     for (const options of [
       {auth:{watchOnly:true}},
-      {extraHeaders:{'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'}},
-      {extraHeaders:{'Sec-CH-UA-Mobile':'?1'}},
     ]) {
       const phone=await client(options);
       await request(phone,'observe-table',{...args,resumeSeat:true},'observer-joined');
@@ -82,6 +79,19 @@ test('authenticated account flow separates deposits, table stacks and withdrawal
       assert.equal(db.getAccountBalance(user),10000);
       assert.equal(games.get('station100').players[0].stack,10000);
       assert.equal(users.get(user),alice.id);
+      phone.disconnect();
+    }
+    // Phone headers allow authenticated seat restoration without another debit.
+    for (const extraHeaders of [
+      {'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'},
+      {'User-Agent':'Mozilla/5.0 (Linux; Android 15)', 'Sec-CH-UA-Mobile':'?1'},
+    ]) {
+      const phone=await client({extraHeaders});
+      await request(phone,'observe-table',{...args,resumeSeat:true},'seat-assigned');
+      assert.equal(sockets.get(phone.id).userId,user);
+      assert.equal(users.get(user),phone.id);
+      assert.equal(db.getAccountBalance(user),10000);
+      assert.equal(games.get('station100').players[0].stack,10000);
       phone.disconnect();
     }
     // A second tab repeats a buy-in after a lost response: no second debit.

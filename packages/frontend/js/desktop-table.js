@@ -1,7 +1,6 @@
 /* Fit the whole desktop table, including the seats outside its rail. */
 (() => {
   'use strict';
-  if (document.body.classList.contains('is-mobile')) return;
   const area = document.getElementById('tableArea');
   const header = document.querySelector('.account-bar');
   if (!area || !header) return;
@@ -25,6 +24,12 @@
   function fit() {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => {
+      if (document.body.classList.contains('is-mobile')) {
+        area.style.top = '';
+        area.style.height = '';
+        area.style.removeProperty('--table-scale');
+        return;
+      }
       const uiScale = Math.min(1, innerWidth / 1200, innerHeight / 700);
       document.body.style.setProperty('--desktop-ui-scale', uiScale);
       const top = header.getBoundingClientRect().bottom + 8;
@@ -60,5 +65,6 @@
   observer.observe(header);
   panels.forEach(panel => observer.observe(panel));
   window.addEventListener('resize', fit);
+  window.addEventListener('table-layout-change', fit);
   fit();
 })();
