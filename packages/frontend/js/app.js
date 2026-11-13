@@ -446,7 +446,7 @@ async function createNostrAccount() {
     stopLoginAttempt();
     document.querySelectorAll('.login-method-btn').forEach(b => b.disabled = false);
     $('loginCreateContinue').disabled = true;
-    setLoginStatus('Your account is ready. Save your nsec before continuing.', false);
+    setLoginStatus('Your account is ready!', false);
     $('loginRevealNsec').focus();
   } catch (error) { loginFailed(attempt, error); }
 }
