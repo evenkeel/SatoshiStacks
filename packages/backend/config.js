@@ -42,6 +42,9 @@ const LIGHTNING = {
   paymentTimeoutSec: integerSetting('LIGHTNING_PAYMENT_TIMEOUT_SEC', 60, 1, 300),
   readTimeoutMs: integerSetting('LND_READ_TIMEOUT_MS', 10000, 100, 60000),
   invoiceExpirySec: parseInt(process.env.INVOICE_EXPIRY_SEC || '600', 10),
+  // Largest single deposit invoice. An unpaid invoice counts against the
+  // hot-wallet cap until it expires, so one request must not consume it all.
+  maxDepositSats: integerSetting('MAX_DEPOSIT_SATS', 100000, 1),
 };
 
 // Startup guard: a real-money node must have its Lightning wiring + exposure caps
@@ -111,6 +114,7 @@ module.exports = {
   AUTH_RATE_LIMIT: { maxRequests: 10, windowSec: 60 },
   ACTION_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
   JOIN_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
+  WITHDRAWAL_RATE_LIMIT: { maxActions: 5, windowSec: 60 },
   ADMIN_RATE_LIMIT: { maxRequests: 30, windowSec: 60 },
 
   // Observer name generation

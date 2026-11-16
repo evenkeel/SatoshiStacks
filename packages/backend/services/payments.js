@@ -55,9 +55,20 @@ function createPayments(deps) {
     if (!depositsEnabled()) throw new Error('New deposits are temporarily paused');
     amountSats = Number(amountSats);
     if (!Number.isSafeInteger(amountSats) || amountSats <= 0) throw new Error('Invalid amount');
+    // One invoice may not reserve the whole exposure allowance: an unpaid
+    // request counts against the cap until it expires.
+    if (L().maxDepositSats && amountSats > L().maxDepositSats) throw new Error(`Maximum deposit is ${L().maxDepositSats} sats per invoice`);
     const key = `${userId}:${tableId}`;
     if (depositRequests.has(key)) return depositRequests.get(key);
-    let pending = db.getPendingLedger().find(r => r.direction === 'deposit' && r.user_id === userId && r.table_id === tableId && (!r.bolt11 || invoiceExpiry(r) > nowSec()));
+    const mine = db.getPendingLedger().filter(r => r.direction === 'deposit' && r.user_id === userId && r.table_id === tableId);
+    // An invoice request that never returned an invoice cannot be retried once
+    // its fixed expiry has passed: the node rejects a past expiry, so reusing it
+    // would block this account's deposits permanently. Retire it. 'expired' rows
+    // are still reconciled and still credit if the node later reports payment.
+    for (const stale of mine) {
+      if (!stale.bolt11 && invoiceExpiry(stale) <= nowSec()) db.transitionLedgerStatus(stale.id, ['pending'], 'expired');
+    }
+    let pending = mine.find(r => invoiceExpiry(r) > nowSec());
     if (pending?.bolt11) return { bolt11: pending.bolt11, paymentHash: pending.payment_hash, amountSats: pending.amount_sats, expiresAt: invoiceExpiry(pending) };
     if (!pending) {
       const outstanding = db.getPendingLedger().filter(r => r.direction === 'deposit').reduce((s, r) => s + r.amount_sats, 0);
@@ -125,7 +136,7 @@ function createPayments(deps) {
     const existing = game.players.findIndex(p => p && p.userId === userId);
     if (existing !== -1) return existing; // lost response/reconnect must never debit twice
     if (game.players.every(Boolean)) throw new Error('Table is full');
-    if (db.getAccountBalance(userId) < amountSats) throw new Error('Insufficient account balance. Deposit sats first.');
+    if (db.getAccountBalance(userId) < amountSats) throw new Error('Insufficient account balance. Deposit bitcoin first.');
     const before = game.players.slice();
     const previousTimer = game.handStartTimeout;
     try {
@@ -188,6 +199,10 @@ function createPayments(deps) {
     if (dec.amountMsats !== undefined && (!/^\d+$/.test(dec.amountMsats) || BigInt(dec.amountMsats) !== BigInt(amount) * 1000n)) throw new Error(`Invoice amount must equal the withdrawal amount (${amount} sats), with no fractional sats`);
     if (L().ownPubkey && dec.destination === L().ownPubkey) throw new Error('Self-payment is not allowed');
     if (dec.expiresAt && (!Number.isFinite(Date.parse(dec.expiresAt)) || Date.parse(dec.expiresAt) <= Date.now())) throw new Error('Invoice has expired or has an invalid expiry');
+    // The invoice must outlive the send attempt. One that lapses mid-payment is
+    // rejected by the node before a payment exists, leaving nothing to track.
+    const sendWindowMs = ((L().paymentTimeoutSec ?? 60) + 30) * 1000;
+    if (dec.expiresAt && Date.parse(dec.expiresAt) <= Date.now() + sendWindowMs) throw new Error('Invoice expires too soon. Create a new invoice and try again.');
 
     const feeBudget = withdrawalFeeBudget(amount,L());
     const feeReserve = L().feeReserveSats ?? 0;
@@ -260,10 +275,15 @@ function createPayments(deps) {
       return { status: 'succeeded', preimage: result.preimage, feeSats: result.feeSats || 0 };
     }
     if (result && result.status === 'FAILED') {
-      observe(row,'withdrawal_failed');
-      db.updateLedgerStatus(row.id, 'failed');
-      doRefund(row);
-      return { status: 'failed' };
+      // Only the transition out of in_flight may refund; a row already resolved
+      // elsewhere keeps its recorded outcome.
+      if (db.transitionLedgerStatus(row.id, ['in_flight'], 'failed')) {
+        observe(row,'withdrawal_failed');
+        doRefund(row);
+        return { status: 'failed' };
+      }
+      const now = db.getLedgerById(row.id)?.status;
+      return { status: now === 'refunded' ? 'failed' : now || 'unknown' };
     }
     // Any non-terminal/unknown status -> sticky in_flight, alert.
     alert(`Withdrawal ${row.payment_hash} returned non-terminal status ${result && result.status}; left in_flight.`);
@@ -285,10 +305,17 @@ function createPayments(deps) {
   }
 
   function completePayment(row, result) {
-    db.db.transaction(() => {
-      db.updateLedgerStatus(row.id, 'succeeded', { feeSats: result.feeSats || 0, settledAt: nowSec() });
-    })();
-    observe(row,'withdrawal_succeeded',elapsedSince(row,'withdrawal_reserved'));
+    // A payment the node reports as paid must never also be refunded. 'failed'
+    // (refund not yet applied) may still be corrected to succeeded.
+    if (db.transitionLedgerStatus(row.id, ['reserved', 'in_flight', 'failed'], 'succeeded', { feeSats: result.feeSats || 0, settledAt: nowSec() })) {
+      observe(row,'withdrawal_succeeded',elapsedSince(row,'withdrawal_reserved'));
+      return true;
+    }
+    const now = db.getLedgerById(row.id)?.status;
+    if (now === 'refunded') {
+      tripBreaker(`Withdrawal ${row.payment_hash} was reported PAID after its refund was recorded`);
+    }
+    return false;
   }
 
   // ======================= RECONCILE + SOLVENCY ===========================
@@ -299,26 +326,41 @@ function createPayments(deps) {
     reconciling = true;
     try {
     const rows = [...db.getPendingLedger(), ...db.getExpiredDeposits()];
-    for (const row of rows) {
+    const OPEN_DEPOSIT = ['pending', 'expired'];
+    for (const listed of rows) {
+      // The list was read before this pass began awaiting the node. A live
+      // dispatch or the invoice stream may have resolved a row since then, so
+      // every decision uses the row as it is now, and every status change is
+      // compare-and-set. Acting on the stale copy could refund or credit twice.
+      const row = db.getLedgerById(listed.id);
+      if (!row) continue;
       if (row.direction === 'deposit') {
+        if (!OPEN_DEPOSIT.includes(row.status)) continue;
         if (lnd.lookupInvoice) {
           try {
             const invoice = await lnd.lookupInvoice(row.payment_hash);
             if (invoice?.bolt11 && !row.bolt11 && invoice.invoiceAmountSats === row.amount_sats) {
               db.db.transaction(()=>{
-                db.db.prepare('UPDATE ledger_entries SET bolt11=? WHERE id=?').run(invoice.bolt11,row.id);
+                db.db.prepare('UPDATE ledger_entries SET bolt11=? WHERE id=? AND bolt11 IS NULL').run(invoice.bolt11,row.id);
                 db.db.prepare("UPDATE deposit_invoice_intents SET secret='' WHERE ledger_id=?").run(row.id);
               })();
               observe(row,'invoice_recovered');
             }
+            // creditDeposit is idempotent; the others only move a still-open row.
             if (invoice?.confirmed) creditDeposit(row.payment_hash, invoice.amountSats);
-            else if (invoice?.canceled) db.updateLedgerStatus(row.id, 'canceled');
-            else if (invoice?.held) db.updateLedgerStatus(row.id, 'pending');
-            else if (invoice && (invoice.expiresAt || invoiceExpiry(row)) < nowSec()) db.updateLedgerStatus(row.id, 'expired');
-          } catch (e) { alert(`Deposit reconciliation failed: ${e.message}`); }
+            else if (invoice?.canceled) db.transitionLedgerStatus(row.id, OPEN_DEPOSIT, 'canceled');
+            else if (invoice?.held) db.transitionLedgerStatus(row.id, OPEN_DEPOSIT, 'pending');
+            else if (invoice && (invoice.expiresAt || invoiceExpiry(row)) < nowSec()) db.transitionLedgerStatus(row.id, OPEN_DEPOSIT, 'expired');
+          } catch (e) {
+            // No invoice was ever returned and its fixed expiry has passed: it can
+            // no longer be created or paid, so stop holding the account's deposit slot.
+            if (!row.bolt11 && invoiceExpiry(row) < nowSec()) db.transitionLedgerStatus(row.id, OPEN_DEPOSIT, 'expired');
+            else alert(`Deposit reconciliation failed: ${e.message}`);
+          }
         }
         continue;
       }
+      if (!['reserved', 'in_flight', 'failed'].includes(row.status)) continue;
       if (activeDispatches.has(row.id)) continue;
       if (row.status === 'failed') { doRefund(row); continue; }
       // 'reserved' means the process died before the send was ever dispatched
@@ -332,12 +374,15 @@ function createPayments(deps) {
       // 'in_flight' -> ask LND for the authoritative fate; never assume failure.
       try {
         const st = await lnd.trackPayment(row.payment_hash);
+        // A dispatch that started or finished during the await owns the outcome.
+        if (activeDispatches.has(row.id)) continue;
         if (st && st.status === 'SUCCEEDED') {
           completePayment(row, st);
         } else if (st && st.status === 'FAILED') {
-          observe(row,'withdrawal_failed');
-          db.updateLedgerStatus(row.id, 'failed');
-          doRefund({ ...row, status: 'failed' });
+          if (db.transitionLedgerStatus(row.id, ['in_flight'], 'failed')) {
+            observe(row,'withdrawal_failed');
+            doRefund({ ...row, status: 'failed' });
+          }
         } else if (st && st.status === 'NOT_FOUND') {
           // Recover a crash after persisting in_flight but before the RPC reached
           // LND. Resend the SAME invoice/hash; never mint a refund from absence.

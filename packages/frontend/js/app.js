@@ -184,8 +184,27 @@ const CHIP_DEFS = [
 const AVATAR_COLORS = ['#5b9ea6','#d4714e','#8cb49a','#e8a838','#9b7cb4','#5a7d9a'];
 
 // ============================================================
-//  CHIP RENDERING (from beautiful version)
+//  CHIP RENDERING
 // ============================================================
+// Chip artwork is chosen by denomination on the client. Server-provided pot
+// chips only contribute their numeric value; colours and labels never come
+// from the network.
+const CHIP_STYLE = {
+  1:      { fill: '#f6efe0', edge: '#3fa9f5', ink: '#1a1a2e' },
+  5:      { fill: '#e5484d', edge: '#fff8e7', ink: '#fff8e7' },
+  10:     { fill: '#3b82f6', edge: '#fff8e7', ink: '#fff8e7' },
+  50:     { fill: '#ffc72c', edge: '#1a1a2e', ink: '#1a1a2e' },
+  100:    { fill: '#22b8a7', edge: '#fff8e7', ink: '#fff8e7' },
+  500:    { fill: '#f26522', edge: '#fff8e7', ink: '#fff8e7' },
+  1000:   { fill: '#8b5cf6', edge: '#fff8e7', ink: '#fff8e7' },
+  5000:   { fill: '#ff5c8a', edge: '#fff8e7', ink: '#fff8e7' },
+  10000:  { fill: '#2a2a40', edge: '#ffc72c', ink: '#ffc72c' },
+  25000:  { fill: '#3fae4a', edge: '#fff8e7', ink: '#fff8e7' },
+  50000:  { fill: '#b5179e', edge: '#ffc72c', ink: '#fff8e7' },
+  100000: { fill: '#d4a017', edge: '#1a1a2e', ink: '#1a1a2e' },
+};
+const CHIP_LABELS = Object.fromEntries(CHIP_DEFS.map(def => [def.value, def.label]));
+
 function getChipBreakdown(amount) {
   const result = [];
   let rem = Math.floor(amount);
@@ -201,19 +220,22 @@ function getChipBreakdown(amount) {
 }
 
 function renderChipSVG(def, size) {
-  const s = size;
-  const cx = s / 2, cy = s / 2;
-  const outerR = s / 2 - 1;
-  const innerR = outerR * 0.7;
-  const fs = s < 18 ? s * 0.36 : s * 0.32;
-  const stroke = '#3d3228';
+  const s = Number(size) || 24;
+  const value = Number(def?.value);
+  const style = CHIP_STYLE[value] || CHIP_STYLE[100];
+  const label = CHIP_LABELS[value] || '';
+  const c = s / 2, outer = s / 2 - s * 0.04, ring = outer - s * 0.09;
+  // Six edge inserts: a dashed ring whose dash + gap divide the circumference.
+  const unit = 2 * Math.PI * ring / 12;
+  const fs = label.length > 3 ? s * 0.25 : label.length > 2 ? s * 0.29 : s * 0.36;
   return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="${cx}" cy="${cy}" r="${outerR}" fill="${def.fill}" stroke="${stroke}" stroke-width="${s * 0.06}"/>
-    <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="none" stroke="${stroke}" stroke-width="${s * 0.04}" opacity="0.35"/>
-    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
-      font-family="'Nunito',sans-serif" font-weight="900" font-size="${fs}px"
-      fill="${def.text}" stroke="${stroke}" stroke-width="${s * 0.02}"
-      paint-order="stroke">${def.label}</text>
+    <circle cx="${c}" cy="${c}" r="${outer}" fill="${style.fill}" stroke="#1a1a2e" stroke-width="${s * 0.06}"/>
+    <circle cx="${c}" cy="${c}" r="${ring}" fill="none" stroke="${style.edge}" stroke-width="${s * 0.14}" stroke-dasharray="${unit} ${unit}" stroke-dashoffset="${unit / 2}"/>
+    <circle cx="${c}" cy="${c}" r="${outer * 0.6}" fill="${style.fill}" stroke="#1a1a2e" stroke-opacity=".35" stroke-width="${s * 0.035}"/>
+    <path d="M${c - outer * 0.42} ${c - outer * 0.36}A${outer * 0.56} ${outer * 0.56} 0 0 1 ${c + outer * 0.2} ${c - outer * 0.52}" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="${s * 0.05}" stroke-linecap="round"/>
+    <text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central"
+      font-family="'Lilita One','Nunito',system-ui,sans-serif" font-weight="900" font-size="${fs}px"
+      fill="${style.ink}">${label}</text>
   </svg>`;
 }
 
@@ -249,6 +271,7 @@ const tableMotion = window.StacksTableMotion.create({
   cardElement: index => $(`playerCards-${calculateVisualPosition(index + 1)}`),
   cardHTML: renderCardHTML,
   chipHTML: amount => renderChipStack(amount, 24, 3),
+  amountText: amount => `+${window.StacksAmounts.format(amount)}`,
 });
 
 function fmt(n) { return window.StacksAmounts.format(n); }
@@ -880,7 +903,11 @@ function updateWalletButtons() {
   const account = $('accountSignIn');
   if (account) { account.textContent = myUserId ? myUsername : 'Sign in with Nostr'; account.disabled = !!myUserId; }
   const cashout = $('recoverFundsBtn');
-  if (cashout) { cashout.hidden = !myUserId; cashout.textContent = `Account · ${fmt(availableCashoutSats || 0)} sats`; }
+  if (cashout) { cashout.hidden = !myUserId; cashout.textContent = `Account · ${fmt(availableCashoutSats || 0)}`; }
+  // The corner shows only the essentials; profile and sign-out live in the menu.
+  document.body.classList.toggle('signed-in', !!myUserId);
+  const who = $('signedInAs');
+  if (who) who.textContent = myUserId ? `Signed in as ${myUsername}` : '';
   const signOut = $('accountSignOut');
   if (signOut) signOut.hidden = !myUserId;
   if ($('editProfileBtn')) $('editProfileBtn').hidden = !myUserId;
@@ -1144,7 +1171,7 @@ function setupCommonSocketHandlers() {
     tableMotion.play(prevGameState, gameState, motionBefore);
     updateWalletButtons();
     const mode = $('tableModeLabel');
-    if (mode) mode.textContent = `${state.realMoney ? 'Real sats' : 'Demo chips'} · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)} · Buy-in ${fmt(state.minBuyin)}–${fmt(state.maxBuyin)}`;
+    if (mode) mode.textContent = `${state.realMoney ? 'Real bitcoin' : 'Demo chips'} · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)}`;
     requestWalletState();
   });
 
@@ -1190,7 +1217,7 @@ function setupCommonSocketHandlers() {
     walletStateRequestedAt = 0;
     showWalletModal('Your SatoshiStacks account', '<p role="status">Checking your balance…</p>');
     connectAsObserver();
-    showToast(`${fmt(amountSats)} sats returned to your account.`, 'info');
+    showToast(`${fmt(amountSats)} returned to your account.`, 'info');
   });
   socket.on('account-deposit-confirmed', () => requestWalletState());
   socket.on('cashout-pending', () => {
@@ -1242,7 +1269,7 @@ function setupCommonSocketHandlers() {
     addPlayByPlay(line);
     if (type === 'summary') {
       const result = summarizeHandResult(line);
-      if (result) addChatMessage('Hand summary', result, true);
+      if (result) { addChatMessage('Hand summary', result, true); showTableResult(result); }
     }
     currentHandLog.push(line);
 
@@ -1270,7 +1297,7 @@ function setupCommonSocketHandlers() {
               showBadge(vp, m ? `BET ${m[1]}` : 'BET', 'bet');
             } else if (lower.includes('raises')) {
               const m = actionPart.match(/to\s+([\d,]+)/i);
-              showBadge(vp, m ? `RAISE TO ${m[1]}` : 'RAISE', 'raise');
+              showBadge(vp, m ? `RAISE ${m[1]}` : 'RAISE', 'raise');
             }
             break;
           }
@@ -1291,6 +1318,9 @@ function setupCommonSocketHandlers() {
 
   socket.on('disconnect', () => {
     tableMotion.cancel();
+    clearTimer();
+    clearTableResult();
+    document.body.classList.remove('hero-turn');
     gameState = null;
     prevGameState = null;
     updateConnectionStatus(false);
@@ -1361,6 +1391,36 @@ function updateWaitingState() {
 }
 
 // ============================================================
+//  HAND RESULT BANNER — who won, how much, and with what
+// ============================================================
+const tableResult = { hand: null, lines: [], timer: null };
+function clearTableResult() {
+  clearTimeout(tableResult.timer);
+  tableResult.lines = [];
+  tableResult.hand = null;
+  const el = $('tableResult');
+  if (el) { el.hidden = true; el.replaceChildren(); }
+}
+function showTableResult(text) {
+  const el = $('tableResult');
+  if (!el || !text) return;
+  const hand = gameState ? (gameState.handId || gameState.handCount) : null;
+  if (tableResult.hand !== hand) tableResult.lines = [];
+  tableResult.hand = hand;
+  if (tableResult.lines.includes(text)) return;
+  tableResult.lines.push(text);
+  el.replaceChildren(...tableResult.lines.slice(-3).map(line => {
+    const row = document.createElement('div');
+    row.className = 'table-result-line';
+    row.textContent = line;
+    return row;
+  }));
+  el.hidden = false;
+  clearTimeout(tableResult.timer);
+  tableResult.timer = setTimeout(clearTableResult, 7000);
+}
+
+// ============================================================
 //  MAIN RENDER — called on every game-state update
 // ============================================================
 function render() {
@@ -1375,6 +1435,8 @@ function render() {
   }
 
   updateWaitingState();
+  document.body.classList.toggle('hero-turn', !!(mySeat && gameState.yourTurn && gameState.handInProgress));
+  if (gameState.handInProgress && tableResult.hand !== (gameState.handId || gameState.handCount)) clearTableResult();
 
   // In observer mode (no seat), render table but skip player controls
   if (!mySeat) {
@@ -1567,39 +1629,79 @@ function renderSeats() {
     if (!seatEl) continue;
 
     if (!player) {
+      // Seated players cannot switch seats mid-game, so they see no open-seat buttons.
+      const emptyKey = `empty:${idx}:${mySeat ? 'seated' : 'open'}`;
       seatEl.className = `seat seat-${visualPos}`;
-      if (mySeat) {
-        // Seated players cannot switch seats mid-game.
-        seatEl.innerHTML = '';
-      } else {
-        // Render clickable empty seat avatar with "EMPTY SEAT" text
-        seatEl.innerHTML = `
+      // Rebuilding an unchanged button on every update would drop keyboard focus.
+      if (seatEl.getAttribute?.('data-seat-key') === emptyKey) continue;
+      seatEl.setAttribute?.('data-seat-key', emptyKey);
+      seatEl.innerHTML = mySeat ? '' : `
           <button type="button" class="empty-avatar" data-empty-seat="${idx}" aria-label="Take seat ${actualSeat}">
             <span class="empty-label">Take seat</span>
           </button>
         `;
-      }
       continue;
     }
 
     const isActive = gameState.currentPlayerIndex === idx && gameState.handInProgress;
     const isMe = player.userId === myUserId;
-    const avatarColor = isMe ? 'var(--mustard)' : AVATAR_COLORS[idx % AVATAR_COLORS.length];
-    const displayName = esc(player.nostrName || player.username || '?');
     const picture = player.nostrPicture;
     // Only allow http/https image URLs (block javascript: etc.)
-    const safePicture = picture && /^https?:\/\//i.test(picture) ? esc(picture) : null;
-    const initial = displayName[0] ? displayName[0].toUpperCase() : '?';
+    const safePicture = picture && /^https?:\/\//i.test(picture) ? picture : null;
+    const away = player.sittingOut || player.busted;
 
-    seatEl.className = `seat seat-${visualPos}${player.folded ? ' folded' : ''}`;
-    const fallbackAvatar = `<div class="avatar-initial" style="background:${avatarColor};">${initial}</div>`;
-    seatEl.innerHTML = `
-      <div class="player-avatar-wrap ${isActive ? 'active-turn' : ''}">
+    seatEl.className = `seat seat-${visualPos}${player.folded ? ' folded' : ''}${isMe ? ' hero-seat' : ''}${player.wonPot ? ' winner-seat' : ''}${away ? ' away-seat' : ''}${player.allIn && !player.folded ? ' allin-seat' : ''}`;
+    // Keep the avatar node (and any loaded picture) across routine updates.
+    const seatKey = JSON.stringify([player.userId, safePicture, isMe]);
+    if (seatEl.getAttribute('data-seat-key') !== seatKey) {
+      seatEl.setAttribute('data-seat-key', seatKey);
+      seatEl.innerHTML = `
+      <div class="player-avatar-wrap">
+        <svg class="turn-ring" viewBox="0 0 100 100" aria-hidden="true"><circle class="turn-ring-track" cx="50" cy="50" r="47"/><circle class="turn-ring-fill" cx="50" cy="50" r="47" pathLength="100" transform="rotate(-90 50 50)"/></svg>
         <div class="player-avatar" data-seat="${actualSeat}" data-userid="${esc(player.userId)}" data-is-me="${isMe}" style="cursor:pointer;">
-          ${safePicture ? `<img src="${safePicture}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">${fallbackAvatar.replace('style="','style="display:none;')}` : fallbackAvatar}
+          ${safePicture ? `<img class="avatar-photo" src="${esc(safePicture)}" alt="" referrerpolicy="no-referrer">` : window.StacksAvatars.render(player.userId)}
         </div>
       </div>
     `;
+      // A Nostr profile picture is the player's identity and is shown as is. Only
+      // when there is none, or it fails to load, does the house avatar stand in.
+      // (Inline onerror handlers are blocked by the CSP, so the fallback is wired here.)
+      const photo = seatEl.querySelector('.avatar-photo');
+      if (photo) photo.addEventListener('error', () => {
+        const holder = photo.parentElement;
+        if (holder) holder.innerHTML = window.StacksAvatars.render(player.userId);
+      }, { once: true });
+    }
+    const wrap = seatEl.querySelector('.player-avatar-wrap');
+    if (wrap) wrap.classList.toggle('active-turn', isActive);
+    syncTurnRing(seatEl.querySelector('.turn-ring-fill'), idx, isActive);
+  }
+}
+
+// ============================================================
+//  TURN CLOCK — a draining ring around the acting player's avatar
+// ============================================================
+let turnClock = null; // { playerIndex, startedAt, durationMs, bank }
+function syncTurnRing(fill, idx, isActive) {
+  if (!fill) return;
+  const clock = isActive && turnClock && turnClock.playerIndex === idx ? turnClock : null;
+  const stamp = clock ? `${clock.startedAt}:${clock.bank ? 'bank' : 'base'}` : '';
+  if (fill.dataset.clock === stamp) return;
+  fill.dataset.clock = stamp;
+  fill.classList.toggle('bank', !!clock?.bank);
+  fill.style.animation = 'none';
+  if (!clock) return;
+  // Restart from the true elapsed time so a re-rendered seat stays in step.
+  void fill.getBoundingClientRect();
+  const elapsed = Math.max(0, Date.now() - clock.startedAt);
+  fill.style.animation = `turn-drain ${Math.max(1, clock.durationMs)}ms linear ${-elapsed}ms forwards`;
+}
+function syncAllTurnRings() {
+  if (!gameState) return;
+  for (let idx = 0; idx < NUM_SEATS; idx++) {
+    const seatEl = $(`seat-${calculateVisualPosition(idx + 1)}`);
+    const isActive = gameState.currentPlayerIndex === idx && gameState.handInProgress;
+    syncTurnRing(seatEl?.querySelector('.turn-ring-fill'), idx, isActive);
   }
 }
 
@@ -1632,7 +1734,7 @@ function updateNameplates() {
 
     // Build cards HTML
     let cardsHTML = '';
-    if (player.holeCards && player.holeCards.length === 2 && !player.folded) {
+    if (player.holeCards && player.holeCards.length === 2 && !player.folded && !(player.mucked && !isMe)) {
       const card1 = player.holeCards[0];
       const card2 = player.holeCards[1];
       if (card1 === '??' || card2 === '??') {
@@ -1658,7 +1760,8 @@ function updateNameplates() {
         ? `<div class="status-badge ${badgePos}">SITTING OUT</div>`
         : '';
 
-    el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}`;
+    const showAllIn = player.allIn && !player.folded && !player.wonPot;
+    el.className = `player-nameplate np-pos-${visualPos}${isMe ? ' hero' : ''}${player.folded ? ' folded-np' : ''}${isActive ? ' active-np' : ''}${player.wonPot ? ' winner-np' : ''}${showAllIn ? ' allin-np' : ''}${player.sittingOut || player.busted ? ' away-np' : ''}`;
     el.setAttribute('data-userid', player.userId);
     el.setAttribute('data-is-me', isMe);
     el.style.cursor = 'pointer';
@@ -1672,7 +1775,7 @@ function updateNameplates() {
     const savedLifeBar = samePlayer ? el.querySelector('.np-life-bar') : null;
     el.dataset.renderedUser = player.userId;
     el.innerHTML = `
-      ${sitOutBadge}
+      ${sitOutBadge}${showAllIn ? '<div class="np-tag allin">All in</div>' : ''}${player.wonPot ? '<div class="np-tag winner">Winner</div>' : ''}${player.mucked && !player.folded ? '<div class="np-tag mucked">Mucked</div>' : ''}
       <div class="np-life-bar" id="lifeBar-${visualPos}"></div>
       <div class="np-action" id="npAction-${visualPos}"></div>
       <div class="np-content">
@@ -1872,6 +1975,7 @@ function renderControls() {
   if (!myPlayer || !gameState.yourTurn || !gameState.handInProgress) {
     ca.classList.remove('visible');
     bc.innerHTML = '';
+    delete bc.dataset.controlsKey;
     return;
   }
 
@@ -1913,6 +2017,13 @@ function renderControls() {
 
   // Total pot for pot-size calculations
   const totalPot = (gameState.pot || 0) + gameState.players.filter(p => p).reduce((s, p) => s + (p.currentBet || 0), 0);
+
+  // Unrelated table updates (a spectator arriving, a player sitting out) arrive
+  // while the hero is deciding. Rebuilding then would silently reset a typed
+  // or dragged raise to the minimum, so keep the panel while the decision is unchanged.
+  const controlsKey = JSON.stringify([gameState.handId || gameState.handCount, gameState.phase, maxBet, toCall, minR, maxR, canRaise, totalPot, myPlayer.stack]);
+  if (bc.dataset.controlsKey === controlsKey && bc.querySelector('.action-buttons')) return;
+  bc.dataset.controlsKey = controlsKey;
 
   bc.innerHTML = `
     ${canRaise && maxR > minR ? `<div class="bet-presets">
@@ -2111,6 +2222,8 @@ function handleTimerStart(playerIndex, baseMs, timeBankMs, isPreflop) {
   currentTurnTime = baseMs;
   const visualPos = getVisualPosition(playerIndex);
   if (!visualPos) return;
+  turnClock = { playerIndex, startedAt: Date.now(), durationMs: baseMs, bank: false };
+  syncAllTurnRings();
 
   // Base timer runs silently — no lifebar shown.
   // Only the timebank lifebar is displayed (handled by handleTimeBankStart).
@@ -2140,6 +2253,8 @@ function handleTimeBankStart(playerIndex, timeBankMs) {
   currentTurnTime = timeBankMs;
   const visualPos = getVisualPosition(playerIndex);
   if (!visualPos) return;
+  turnClock = { playerIndex, startedAt: Date.now(), durationMs: timeBankMs, bank: true };
+  syncAllTurnRings();
 
   const bar = $(`lifeBar-${visualPos}`);
   if (bar) {
@@ -2180,6 +2295,7 @@ function clearTimer() {
     clearTimeout(actionTimer);
     actionTimer = null;
   }
+  if (turnClock) { turnClock = null; syncAllTurnRings(); }
   for (let i = 1; i <= 6; i++) {
     const bar = $(`lifeBar-${i}`);
     if (bar) {
@@ -2409,8 +2525,9 @@ function initChat() {
 
 function openTableOptions() {
   const state = gameState || myTableConfig;
-  const mode = gameState ? (state.realMoney ? 'Real sats' : 'Demo chips') : 'Connecting…';
-  $('tableOptionsSummary').textContent = `${NUM_SEATS} seats · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)} blinds · ${mode}`;
+  const mode = gameState ? (state.realMoney ? 'Real bitcoin' : 'Demo chips') : 'Connecting…';
+  const seated = gameState ? (gameState.players || []).filter(Boolean).length : 0;
+  $('tableOptionsSummary').textContent = `${seated} / ${NUM_SEATS} seated · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)} blinds · Buy-in ${fmt(state.minBuyin)}–${fmt(state.maxBuyin)} · ${mode}`;
   const dialog = $('tableOptions');
   if (!dialog.open) dialog.showModal();
 }
@@ -2528,21 +2645,12 @@ function showToast(message, type) {
   const container = $('toastContainer');
   if (!container) return;
   const toast = document.createElement('div');
-  toast.style.cssText = `
-    padding: 12px 20px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--warm-white);
-    background: ${type === 'info' ? 'var(--sage)' : 'var(--rust)'};
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    animation: slideIn 0.3s ease;
-    max-width: 300px;
-  `;
+  toast.className = `toast ${type === 'info' ? 'toast-info' : 'toast-error'}`;
+  toast.setAttribute('role', type === 'info' ? 'status' : 'alert');
   toast.textContent = message;
   container.appendChild(toast);
   setTimeout(() => {
-    toast.style.animation = 'slideOut 0.3s ease';
+    toast.classList.add('leaving');
     setTimeout(() => toast.remove(), 300);
   }, 4000);
 }
@@ -2624,12 +2732,12 @@ function requestRealMoneyBuyin() {
   const max = (gameState && gameState.maxBuyin) || (myTableConfig && myTableConfig.maxBuyin) || 10000;
   const body =
     `<p id="buyinAccountBalance" role="status">Checking account balance…</p><div class="wallet-amount">Choose your buy-in</div>` +
-    `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${fmt(max)}</b> sats</div>` +
-    `<input id="rmBuyinSlider" class="wallet-slider" aria-label="Buy-in amount in sats" type="range" min="${min}" max="${max}" step="100" value="${max}">` +
+    `<div class="wallet-buyin-value"><b id="rmBuyinAmt">${fmt(max)}</b></div>` +
+    `<input id="rmBuyinSlider" class="wallet-slider" aria-label="Buy-in amount in bitcoin (sats)" type="range" min="${min}" max="${max}" step="100" value="${max}">` +
     `<div class="wallet-slider-ends"><span>${fmt(min)}</span><span>${fmt(max)}</span></div>` +
-    `<button class="wallet-btn" data-action="generate-buyin-invoice">Buy in from account</button><button class="wallet-btn secondary" data-action="account-deposit">Deposit sats</button>`;
+    `<button class="wallet-btn" data-action="generate-buyin-invoice">Buy in from account</button><button class="wallet-btn secondary" data-action="account-deposit">Deposit bitcoin</button>`;
   showWalletModal('Buy in', body);
-  fetchWalletState().then(state => { const label=$('buyinAccountBalance'); if (label) label.textContent=`Available in your account: ${fmt(state.availableSats)} sats`; }).catch(error=>showToast(error.message));
+  fetchWalletState().then(state => { const label=$('buyinAccountBalance'); if (label) label.textContent=`Available in your account: ${fmt(state.availableSats)}`; }).catch(error=>showToast(error.message));
   const slider = document.getElementById('rmBuyinSlider');
   const amt = document.getElementById('rmBuyinAmt');
   if (slider && amt) slider.addEventListener('input', () => { amt.textContent = fmt(Number(slider.value)); });
@@ -2646,19 +2754,19 @@ async function showAccountDeposit(defaultAmount = 10000) {
       paymentHash:pending.payment_hash, expiresAt:pending.expiresAt}); return; }
   } catch (error) { showToast(error.message); return; }
   walletView = 'deposit-amount';
-  showWalletModal('Deposit sats', `<p>Deposits stay in your SatoshiStacks account until you buy in or withdraw.</p>
-    <label for="accountDepositAmount">Amount in sats</label>
+  showWalletModal('Deposit bitcoin', `<p>Deposits stay in your SatoshiStacks account until you buy in or withdraw.</p>
+    <label for="accountDepositAmount">Amount in bitcoin (sats)</label>
     <input id="accountDepositAmount" class="wallet-invoice-input" type="number" min="1" step="1" value="${Number.isSafeInteger(defaultAmount) && defaultAmount > 0 ? defaultAmount : 10000}">
     <button class="wallet-btn" data-action="account-deposit-invoice">Create Lightning invoice</button>`);
 }
 function requestAccountDeposit() {
   const amountSats = Number($('accountDepositAmount')?.value);
-  if (!Number.isSafeInteger(amountSats) || amountSats <= 0) { showToast('Enter a positive whole number of sats.'); return; }
+  if (!Number.isSafeInteger(amountSats) || amountSats <= 0) { showToast('Enter a positive whole number.'); return; }
   if (!socket?.connected || !mySessionToken || walletRequestPending) return;
   walletRequestPending = true;
   socket.emit('account-deposit-request', {tableId:myTableId, sessionToken:mySessionToken, amountSats});
   walletView = 'deposit-preparing';
-  showWalletModal('Deposit sats', '<p role="status">Creating your Lightning invoice…</p>');
+  showWalletModal('Deposit bitcoin', '<p role="status">Creating your Lightning invoice…</p>');
   setTimeout(async () => {
     if (walletView !== 'deposit-preparing') return;
     walletRequestPending = false;
@@ -2689,7 +2797,7 @@ async function generateBuyinInvoice() {
     if (funds.availableSats < amountSats) { showAccountDeposit(amountSats - funds.availableSats); return; }
 
     walletView = 'buyin-preparing';
-    showWalletModal('Buy in', '<div class="wallet-status" role="status">Moving sats from your account to the table…</div>');
+    showWalletModal('Buy in', '<div class="wallet-status" role="status">Moving bitcoin from your account to the table…</div>');
     socket.emit('buyin-request', { tableId:myTableId, sessionToken:mySessionToken, amountSats });
     // Recover a lost seating response from authoritative state; never pay again.
     setTimeout(async () => {
@@ -2715,7 +2823,7 @@ function showBuyinInvoice(invoice) {
   walletView = 'buyin-invoice';
   const expired = expiresAt && expiresAt <= Date.now()/1000;
   showWalletModal('Deposit to your account',
-    `<div class="wallet-amount"><b class="wallet-balance">${fmt(amountSats)} sats</b></div>`+
+    `<div class="wallet-amount"><b class="wallet-balance">${fmt(amountSats)}</b></div>`+
     `<p class="wallet-status">Pay once using your browser wallet, or scan/copy this invoice in another wallet. Your account is credited after server confirmation. Then choose a table buy-in.</p>`+
     `<div class="wallet-qr" id="buyinQR"></div>`+
     `<button id="payBuyinBtn" class="wallet-btn" data-action="pay-buyin-wallet" ${expired?'disabled':''}>Pay with Lightning wallet</button>`+
@@ -3193,7 +3301,7 @@ document.addEventListener('click', (e) => {
     case 'sit-back-in': handleSitBackIn(); break;
     case 'sit-out': handleSitOut(); break;
     case 'stand-up': handleStandUp(); break;
-    case 'sign-out': nostrLogout(); showToast('Signed out. Any funds remain recoverable with the same Nostr identity.', 'info'); break;
+    case 'sign-out': if ($('tableOptions')?.open) $('tableOptions').close(); nostrLogout(); showToast('Signed out. Any funds remain recoverable with the same Nostr identity.', 'info'); break;
     case 'pay-buyin-wallet': payBuyinWithWallet(); break;
     case 'recover-funds': startCashout(); break;
     case 'copy-qr-link': copyQRLink(); break;
@@ -3217,7 +3325,7 @@ document.addEventListener('click', (e) => {
       waitlistPosition = null;
       break;
     case 'observer-sign-in': handleObserverSignIn(); break;
-    case 'edit-profile': profileEditor.open(); break;
+    case 'edit-profile': if ($('tableOptions')?.open) $('tableOptions').close(); profileEditor.open(); break;
     case 'account-deposit': showAccountDeposit(); break;
     case 'account-deposit-invoice': requestAccountDeposit(); break;
     case 'return-table-stack': returnTableStack(); break;

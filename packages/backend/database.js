@@ -488,15 +488,18 @@ function logAction(userId, ipAddress, actionType) {
 /**
  * Check if user/IP is rate-limited
  */
-function isRateLimited(userId, ipAddress, windowSeconds = 10, maxActions = 10) {
+function isRateLimited(userId, ipAddress, windowSeconds = 10, maxActions = 10, actionType = null) {
+  // A null address (or user) never matches: `= NULL` is not true in SQL.
+  // actionType narrows the count to one kind of request.
   const stmt = db.prepare(`
     SELECT COUNT(*) as count
     FROM abuse_log
     WHERE (user_id = ? OR ip_address = ?)
       AND timestamp > strftime('%s','now') - ?
+      AND (? IS NULL OR action_type = ?)
   `);
 
-  const result = stmt.get(userId, ipAddress, windowSeconds);
+  const result = stmt.get(userId, ipAddress, windowSeconds, actionType, actionType);
   return result.count >= maxActions;
 }
 
@@ -1064,6 +1067,20 @@ function updateLedgerStatus(id, status, opts = {}) {
 function getLedgerByHash(paymentHash, direction) {
   return db.prepare(`SELECT * FROM ledger_entries WHERE payment_hash = ? AND direction = ?`).get(paymentHash, direction);
 }
+// Compare-and-set status change. Returns true only when this call moved the row
+// out of one of the expected states, so a caller acting on a stale read (after
+// an await) can never overwrite a newer terminal state or repeat its side effect.
+function transitionLedgerStatus(id, from, status, opts = {}) {
+  const expected = Array.isArray(from) ? from : [from];
+  if (!expected.length) return false;
+  return db.prepare(`
+    UPDATE ledger_entries
+    SET status = ?, updated_at = strftime('%s','now'),
+        fee_sats = COALESCE(?, fee_sats),
+        settled_at = COALESCE(?, settled_at)
+    WHERE id = ? AND status IN (${expected.map(() => '?').join(',')})
+  `).run(status, opts.feeSats ?? null, opts.settledAt ?? null, id, ...expected).changes === 1;
+}
 function getLedgerById(id) {
   return db.prepare(`SELECT * FROM ledger_entries WHERE id = ?`).get(id);
 }
@@ -1240,6 +1257,7 @@ module.exports = {
   settleDeposit,
   insertWithdrawalReserved,
   updateLedgerStatus,
+  transitionLedgerStatus,
   getLedgerByHash,
   getLedgerById,
   getPendingLedger,

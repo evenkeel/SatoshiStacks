@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#111e28">
+<meta name="theme-color" content="#141a33">
 <meta name="apple-mobile-web-app-title" content="SatoshiStacks">
 <title>Satoshi Stacks</title>
 <link rel="manifest" href="/manifest.json">
@@ -16,8 +16,9 @@
 <link rel="stylesheet" href="/club.css?v=4">
 <link rel="stylesheet" href="/motion.css?v=2">
 <link rel="stylesheet" href="/table-layout.css?v=9">
-<link rel="stylesheet" href="/bunker.css?v=18">
+<link rel="stylesheet" href="/bunker.css?v=19">
 <link rel="stylesheet" href="/phone.css?v=1">
+<link rel="stylesheet" href="/arcade.css?v=3">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
@@ -26,13 +27,13 @@
     <a class="brand-link" href="/" aria-label="Satoshi Stacks home"><img class="brand-wordmark" src="/img/table-wordmark.svg?v=7" alt="Satoshi Stacks" width="156" height="66"></a>
     <div class="table-meta"><div class="table-title"><strong>Station 100</strong><span class="seat-count" id="seatCount">0 / 6 seated</span></div><span id="tableModeLabel">₿ 50 / ₿ 100 · 6 seats</span></div>
   </div>
-<nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="editProfileBtn" data-action="edit-profile" hidden>Edit profile</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Account balance</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button></nav>
+<nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="editProfileBtn" data-action="edit-profile" hidden>Edit profile</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Account balance</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button><button type="button" id="accountMenuBtn" data-action="table-options" aria-haspopup="dialog" aria-controls="tableOptions">Menu</button></nav>
 </header>
 <div class="game-container">
 <div class="middle-row">
 <div class="table-area" id="tableArea">
 <div class="poker-table is-waiting" id="pokerTable">
-<div class="table-art" aria-hidden="true"><img class="table-felt" src="/img/table-felt.svg" alt=""><img class="table-rail" src="/img/table-rail.svg" alt=""></div>
+<div class="table-art" aria-hidden="true"><img class="table-felt" src="/img/table-felt.svg?v=2" alt=""><img class="table-rail" src="/img/table-rail.svg?v=2" alt=""></div>
 <div class="table-neon-sign" role="img" aria-label="Satoshi Stacks table artwork"></div>
 <div class="dealer-station" id="dealerStation">
 <button type="button" class="dealer-tray" id="dealerTray" data-action="table-options" aria-label="Open table options" aria-haspopup="dialog" aria-controls="tableOptions">
@@ -57,8 +58,9 @@
 <div class="table-pot-chips" id="tablePotChips"></div>
 <div class="community-cards" id="communityCards"></div>
 <div class="table-pot-label" id="tablePotLabel">
-<span class="pot-label">Pot: <span id="tablePotAmount">₿ 0</span></span>
+<span class="pot-label"><span class="pot-caption">Pot</span> <span id="tablePotAmount">₿ 0</span></span>
 </div>
+<div class="table-result" id="tableResult" role="status" aria-live="polite" hidden></div>
 <!-- Player nameplates -->
 <div class="player-nameplate np-pos-1 empty-np" id="nameplate-1"></div>
 <div class="player-nameplate np-pos-2 empty-np" id="nameplate-2"></div>
@@ -136,10 +138,6 @@
 <span>Play-by-Play</span>
 <button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button>
 </div>
-<div class="setting-row">
-<span>Auto-Muck Losers</span>
-<button type="button" class="setting-toggle on" data-setting="autoMuck" role="switch" aria-label="Auto-muck losers" aria-checked="true"></button>
-</div>
 </div>
 <div class="chat-input-area" id="chatInputArea">
 <input class="chat-input" id="chatInput" aria-label="Chat message" type="text" placeholder="Type a message..." maxlength="120">
@@ -149,12 +147,13 @@
 <dialog class="table-options" id="tableOptions" aria-labelledby="tableOptionsTitle">
   <div class="table-options-heading"><div><span class="options-eyebrow">STATION 100</span><h2 id="tableOptionsTitle">Table options</h2></div><button type="button" data-action="close-table-options" aria-label="Close table options">×</button></div>
   <p class="table-options-summary" id="tableOptionsSummary"></p>
-  <div class="setting-row"><label for="tableTheme">Room theme</label><select class="theme-select" id="tableTheme"><option value="bunker">Neon bunker</option><option value="midnight">Midnight station</option><option value="classic">Classic club</option></select></div>
+  <div class="setting-row"><label for="tableTheme">Room theme</label><select class="theme-select" id="tableTheme"><option value="bunker">Neon clubhouse</option><option value="midnight">Midnight station</option><option value="classic">Classic club</option></select></div>
   <p class="theme-status" id="themeStatus" role="status" aria-live="polite"></p>
   <div class="setting-row"><span>Sounds</span><button type="button" class="setting-cycle" data-setting="sound" data-value="all" aria-label="Sounds: All">All</button></div>
   <div class="setting-row"><span>Player chat</span><button type="button" class="setting-toggle on" data-setting="playerChat" role="switch" aria-label="Player chat" aria-checked="true"></button></div>
   <div class="setting-row"><span>Play-by-play</span><button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button></div>
   <button type="button" class="table-options-history" data-action="table-hand-history">View hand history <span aria-hidden="true">↗</span></button>
+  <div id="desktopAccountActions" class="desktop-account-actions"><p class="signed-in-as" id="signedInAs"></p><div><button type="button" data-action="edit-profile">Edit profile</button><button type="button" data-action="sign-out">Sign out</button></div></div>
   <div id="mobileAccountActions" class="mobile-account-actions"></div>
   <div id="mobileSeatActions"></div>
   <p class="table-options-hint">D · Dealer &nbsp; SB · Small blind &nbsp; BB · Big blind</p>
@@ -232,8 +231,8 @@
     <div id="profilePurchaseFields" hidden>
       <p class="profile-note" id="profilePurchaseInfo"></p>
       <p class="profile-note" id="profilePurchaseAvailability"></p>
-      <label class="login-backup-check"><input id="profilePurchaseConfirm" type="checkbox"> I authorize a one-time payment of ₿ 10,000 sats from my account balance for this username.</label>
-      <button class="wallet-btn secondary" type="button" id="profileFund" hidden>Add sats to account</button>
+      <label class="login-backup-check"><input id="profilePurchaseConfirm" type="checkbox"> I authorize a one-time payment of ₿ 10,000 from my account balance for this username.</label>
+      <button class="wallet-btn secondary" type="button" id="profileFund" hidden>Add bitcoin to account</button>
     </div>
     <label for="profilelightningAddress">Receive Lightning payments (optional)</label>
     <input id="profilelightningAddress" type="text" maxlength="320" placeholder="you@your-wallet.com" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="profileReceivingHelp">
@@ -250,7 +249,7 @@
 <div class="buyin-title" id="buyinHeading">Choose your buy-in</div>
 <div class="buyin-subtitle">Slide to set your starting stack</div>
 <div class="buyin-amount" id="buyinAmountDisplay">₿ 10,000</div>
-<div class="buyin-unit">playsats</div>
+<div class="buyin-unit">demo chips</div>
 <input type="range" class="buyin-slider" id="buyinSlider" aria-label="Starting stack" min="2000" max="10000" step="500" value="10000">
 <div class="buyin-btns">
 <button class="buyin-btn-sit" id="buyinSitBtn">Sit Down</button>
@@ -265,16 +264,17 @@
 <!-- Socket.IO Client -->
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/providers.js?v=21"></script>
-<script src="/js/cards.js?v=22"></script>
+<script src="/js/cards.js?v=23"></script>
 <script src="/js/amounts.js?v=2"></script>
-<script src="/js/wallet-ui.js?v=6"></script>
+<script src="/js/wallet-ui.js?v=10"></script>
 <script src="/js/local-account.js?v=3"></script>
-<script src="/js/profile.js?v=5"></script>
-<script src="/js/table-motion.js?v=3"></script>
+<script src="/js/profile.js?v=6"></script>
+<script src="/js/avatars.js?v=2"></script>
+<script src="/js/table-motion.js?v=4"></script>
 <script src="/js/pot-pile.js?v=3"></script>
 <script src="/js/responsive-table.js?v=1"></script>
-<script src="/js/app.js?v=46"></script>
-<script src="/js/desktop-table.js?v=5"></script>
-<script src="/js/table-themes.js?v=6"></script>
+<script src="/js/app.js?v=50"></script>
+<script src="/js/desktop-table.js?v=6"></script>
+<script src="/js/table-themes.js?v=7"></script>
 </body>
 </html>

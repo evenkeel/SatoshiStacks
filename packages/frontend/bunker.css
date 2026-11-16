@@ -1,15 +1,16 @@
 /* Industrial bunker atmosphere; game information stays on opaque surfaces. */
 body.poker-app {
-  --theme-accent: #f1ad64;
+  --theme-accent: #ffc72c;
   --mustard: var(--theme-accent);
-  --mustard-dark: #ce8747;
+  --mustard-dark: #c68f00;
   --ui-gold: var(--theme-accent);
   --theme-room:
-    radial-gradient(ellipse at 50% 46%, #193b3d55, transparent 60%),
-    radial-gradient(ellipse at 4% 30%, #d35b2019, transparent 46%),
-    repeating-linear-gradient(90deg, transparent 0 calc(25% - 2px), #03070899 calc(25% - 2px) 25%),
-    repeating-linear-gradient(0deg, #ffffff02 0 1px, transparent 1px 5px),
-    linear-gradient(130deg, #1a2023, #0a1116 58%, #151b20);
+    radial-gradient(ellipse 62% 54% at 50% 44%, #2f3f8a99, transparent 72%),
+    radial-gradient(ellipse at 6% 8%, #f2652233, transparent 42%),
+    radial-gradient(ellipse at 94% 10%, #5ae9ed24, transparent 44%),
+    repeating-linear-gradient(45deg, #ffffff06 0 2px, transparent 2px 28px),
+    repeating-linear-gradient(-45deg, #ffffff06 0 2px, transparent 2px 28px),
+    linear-gradient(165deg, #1b2150, #111535 58%, #0b0e24);
   background: var(--theme-room);
 }
 body.poker-app .account-bar {

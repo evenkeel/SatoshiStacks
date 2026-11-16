@@ -127,8 +127,17 @@ router.post('/verify', validateBody(schemas.authVerify), (req, res) => {
     try {
       if (signedEvent.content) {
         const profile = JSON.parse(signedEvent.content);
-        nostrName = profile.name || profile.display_name || null;
-        nostrPicture = profile.picture || null;
+        // Sign-in content is optional and untrusted: apply the same limits as a
+        // saved profile, and ignore (never store) anything outside them.
+        const name = profile && (profile.name || profile.display_name);
+        if (typeof name === 'string' && name.trim() && name.length <= 64) nostrName = name.replace(/[\u0000-\u001f\u007f]/g, '').trim() || null;
+        const picture = profile && profile.picture;
+        if (typeof picture === 'string' && picture.length <= 2048) {
+          try {
+            const url = new URL(picture);
+            if (url.protocol === 'https:' && !url.username && !url.password) nostrPicture = picture;
+          } catch (_) { /* not a URL */ }
+        }
       }
     } catch (e) {
       // Content isn't JSON profile data — that's fine

@@ -1,9 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-24 -24 1048 728" role="img" aria-label="Dark teal bunker poker felt">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-24 -24 1048 728" role="img" aria-label="Clubhouse teal poker felt">
   <defs>
-    <radialGradient id="felt" cx="50%" cy="42%" r="65%"><stop stop-color="#234c50"/><stop offset=".7" stop-color="#15363c"/><stop offset="1" stop-color="#0a222a"/></radialGradient>
-    <pattern id="weave" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 0H2V2H0ZM2 2H4V4H2Z" fill="#a7e1d1" opacity=".025"/></pattern>
+    <radialGradient id="felt" cx="50%" cy="44%" r="68%"><stop stop-color="#2f8f84"/><stop offset=".55" stop-color="#1f6f69"/><stop offset="1" stop-color="#12474a"/></radialGradient>
+    <radialGradient id="spot" cx="50%" cy="38%" r="46%"><stop stop-color="#bff5e6" stop-opacity=".16"/><stop offset="1" stop-color="#bff5e6" stop-opacity="0"/></radialGradient>
+    <pattern id="weave" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0H7V7H0ZM7 7H14V14H7Z" fill="#dffcf3" opacity=".028"/></pattern>
   </defs>
   <rect width="1000" height="680" rx="500" ry="340" fill="url(#felt)"/>
   <rect width="1000" height="680" rx="500" ry="340" fill="url(#weave)"/>
-  <rect x="16" y="14" width="968" height="652" rx="484" ry="326" fill="none" stroke="#77bab2" stroke-opacity=".3" stroke-dasharray="3 6"/>
+  <rect width="1000" height="680" rx="500" ry="340" fill="url(#spot)"/>
+  <rect x="34" y="30" width="932" height="620" rx="466" ry="310" fill="none" stroke="#fff3c4" stroke-opacity=".2" stroke-width="2"/>
+  <rect x="42" y="38" width="916" height="604" rx="458" ry="302" fill="none" stroke="#0b3336" stroke-opacity=".35" stroke-width="1"/>
 </svg>

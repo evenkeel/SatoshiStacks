@@ -1,7 +1,8 @@
 /* Presentation only. Server state always renders immediately; motion never gates play. */
 (function(root) {
   'use strict';
-  const TIMING = Object.freeze({ deal:240, dealStagger:42, reveal:320, boardStagger:65, chips:340, payout:460 });
+  const TIMING = Object.freeze({ deal:240, dealStagger:42, reveal:320, boardStagger:65, chips:340, payout:460, celebrate:1500 });
+  const SPARKS = 10;
   function handKey(state) { return state?.handId || `${state?.tableId}:${state?.handCount}`; }
   function planTransition(previous, next) {
     const plan = { newHand:false, deal:[], board:[], reveal:[], bets:[], collect:[], winners:[] };
@@ -34,7 +35,7 @@
     return plan;
   }
 
-  function create({table, seatElement, betElement, cardElement = seatElement, cardHTML, chipHTML, media = root.matchMedia?.('(prefers-reduced-motion: reduce)')}) {
+  function create({table, seatElement, betElement, cardElement = seatElement, cardHTML, chipHTML, amountText = null, media = root.matchMedia?.('(prefers-reduced-motion: reduce)')}) {
     const running = new Set(), transient = new Set();
     let layer;
     const enabled = () => !media?.matches && !root.document.hidden && typeof table.animate === 'function';
@@ -85,6 +86,47 @@
         {offset:.6,transform:transform(from.x+(to.x-from.x)*.67,from.y+(to.y-from.y)*.67-8,1,1),opacity:1},
         {transform:transform(to.x,to.y,kind==='card'?1:.87),opacity:0}
       ],{duration,delay,fill:'both'},()=>remove(packet));
+    }
+    function ensureLayer() {
+      if (!layer) {
+        layer = root.document.createElement('div');
+        layer.className = 'table-motion-layer';
+        layer.setAttribute('aria-hidden','true');
+        table.appendChild(layer);
+      }
+      return layer;
+    }
+    // A brief, bounded flourish at the winner's seat: the amount won rises and
+    // fades while a handful of sparks scatter. Never loops and never gates play.
+    function celebrate(at, amount, delay=0) {
+      if (!at) return;
+      const host = ensureLayer();
+      if (amountText && amount > 0) {
+        const tag = own(root.document.createElement('div'));
+        tag.className = 'motion-win-amount';
+        tag.textContent = amountText(amount);
+        host.appendChild(tag);
+        const place = y => `translate3d(${at.x}px,${at.y+y}px,0) translate(-50%,-50%)`;
+        animate(tag,[
+          {transform:`${place(-at.height/2-4)} scale(.7)`,opacity:0},
+          {offset:.18,transform:`${place(-at.height/2-22)} scale(1.08)`,opacity:1},
+          {offset:.3,transform:`${place(-at.height/2-24)} scale(1)`,opacity:1},
+          {offset:.82,transform:`${place(-at.height/2-34)} scale(1)`,opacity:1},
+          {transform:`${place(-at.height/2-44)} scale(1)`,opacity:0}
+        ],{duration:TIMING.celebrate,delay,fill:'both',easing:'ease-out'},()=>remove(tag));
+      }
+      for (let i=0;i<SPARKS;i++) {
+        const spark = own(root.document.createElement('i'));
+        spark.className = `motion-spark spark-${i%4}`;
+        host.appendChild(spark);
+        const angle = (i/SPARKS)*Math.PI*2 + .35, reach = 34 + (i%3)*14;
+        const dx = Math.cos(angle)*reach, dy = Math.sin(angle)*reach*.8 - 10;
+        animate(spark,[
+          {transform:`translate3d(${at.x}px,${at.y}px,0) scale(.3)`,opacity:0},
+          {offset:.2,opacity:1},
+          {transform:`translate3d(${at.x+dx}px,${at.y+dy}px,0) scale(1) rotate(${90+i*40}deg)`,opacity:0}
+        ],{duration:620,delay:delay+i*12,fill:'both',easing:'cubic-bezier(.16,.84,.44,1)'},()=>remove(spark));
+      }
     }
     function reveal(wrapper, delay=0) {
       const front = wrapper?.querySelector('.card');
@@ -141,6 +183,7 @@
         if (nameplate) animate(nameplate,[{boxShadow:'0 0 0 0 #d7bc8200'},
           {offset:.4,boxShadow:'0 0 0 3px #d7bc8240, 0 0 22px #d7bc8220'},
           {boxShadow:'0 0 0 0 #d7bc8200'}],{delay:payoutDelay+TIMING.payout*.6,duration:600});
+        celebrate(after.seats[seat], amount, payoutDelay+TIMING.payout*.55+i*60);
       }
     }
     const onVisibility = () => { if (root.document.hidden) cancel(); };

@@ -56,13 +56,13 @@ function back() {
   for (let n = -140; n <= 140; n += 9) {
     lattice += `<path d="M8 ${n} 92 ${n+84}M8 ${n} 92 ${n-84}"/>`;
   }
-  return `<rect x="6" y="6" width="88" height="133" rx="4" fill="#193248"/>
-    <svg x="9" y="9" width="82" height="127" viewBox="9 9 82 127"><g stroke="#b7a16b" stroke-width="0.55" opacity="0.48">${lattice}</g></svg>
-    <rect x="10" y="10" width="80" height="125" rx="2" fill="none" stroke="#c5aa72" stroke-width="0.8"/>
-    <path d="M50 36 75 72.5 50 109 25 72.5Z" fill="#193248" stroke="#c5aa72" stroke-width="1.2"/>
-    <path d="M50 42 70 72.5 50 103 30 72.5Z" fill="none" stroke="#c5aa72" stroke-width="0.6"/>
-    <text x="50" y="83" fill="#dec38b" font-family="Georgia,serif" font-size="32" text-anchor="middle">₿</text>
-    <g fill="#dec38b"><path d="m50 19 3 5-3 5-3-5Zm0 97 3 5-3 5-3-5Z"/></g>`;
+  // House back: clubhouse navy, orange lattice, sun-yellow trim.
+  return `<rect x="6" y="6" width="88" height="133" rx="5" fill="#232a5c"/>
+    <svg x="9" y="9" width="82" height="127" viewBox="9 9 82 127"><g stroke="#f26522" stroke-width="0.9" opacity="0.5">${lattice}</g></svg>
+    <rect x="10" y="10" width="80" height="125" rx="3" fill="none" stroke="#ffc72c" stroke-width="1.6"/>
+    <path d="M50 34 77 72.5 50 111 23 72.5Z" fill="#1a1a2e" stroke="#ffc72c" stroke-width="2"/>
+    <text x="50" y="84" fill="#ffc72c" font-family="Georgia,serif" font-weight="700" font-size="34" text-anchor="middle">₿</text>
+    <g fill="#ffc72c"><path d="m50 17 3.5 5.5-3.5 5.5-3.5-5.5Zm0 100 3.5 5.5-3.5 5.5-3.5-5.5Z"/></g>`;
 }
 function renderCardHTML(card, sizeClass = '') {
   const hidden = !card || card === '??';

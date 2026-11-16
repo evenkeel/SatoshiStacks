@@ -14,7 +14,8 @@ test('sats display covers zero, balances and grouped amounts', () => {
 
 test('wallet displays sats while preserving numeric withdrawal values', () => {
   const html = cashoutHTML({withdrawalsEnabled:true, availableSats:9800});
-  assert.ok(html.includes('₿\u00a09,800 sats'));
+  assert.ok(html.includes('₿\u00a09,800'));
+  assert.ok(!/₿\u00a0[\d,]+ sats/.test(html), 'the symbol already names the unit');
   assert.match(html, /max="9800"/);
   assert.match(html, /value="9800"/);
   assert.doesNotMatch(html, /(?:value|max)="₿/);

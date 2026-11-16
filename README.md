@@ -29,6 +29,8 @@ Account funds use the reserved `__account__` wallet-credit namespace and remain 
 
 Existing table credits and settled, unseated deposits move into the account exactly once on authenticated access. Old pending table invoices settle into the account without automatically seating a player. Existing in-flight withdrawals continue through the original reconciliation path. Legacy `refund_pending` rows still require operator verification.
 
+A single deposit invoice is capped by `MAX_DEPOSIT_SATS` (default 100,000). Receiving invoices must remain valid for the whole send attempt, and withdrawal requests are limited to five per minute per player.
+
 Withdrawals reserve only their requested account amount before sending. Definitive failures restore it once; ambiguous outcomes stay pending until LND reconciliation. Leaving a table requires no external payment. The operator must cover all liabilities and payment fees.
 
 ## Development
@@ -58,7 +60,7 @@ NODE_ENV=production npm test
 npm audit
 ```
 
-Tests cover evaluation, betting, side pots, lifecycle, site-bound authentication, cancellation, session revocation, provider changes, payment timeouts, duplicate payouts, crash recovery, fractional-sat invoice rejection, late deposit settlement, snapshot rollback, and a 200-hand conservation simulation. Mocked-LND tests do not replace real signer/wallet and regtest verification.
+Tests cover reconciler races, deposit recovery, per-player rate limits, crash-recovery idle clocks, evaluation, betting, side pots, lifecycle, site-bound authentication, cancellation, session revocation, provider changes, payment timeouts, duplicate payouts, crash recovery, fractional-sat invoice rejection, late deposit settlement, snapshot rollback, and a 200-hand conservation simulation. Mocked-LND tests do not replace real signer/wallet and regtest verification.
 
 ## Architecture
 
@@ -71,8 +73,16 @@ Table motion follows server-state transitions: clockwise dealing, board reveals,
 grouped bets and pot collection, and payouts to every winner. Repeated updates
 and reconnects do not replay animations. Motion never delays actions; reduced-motion
 preferences, tab visibility, resizing, and a new hand cancel transient overlays.
-Player labels and avatars sit around the rail, separate from hole cards and
-labeled wagers on the felt. The dealer button follows the dealer's seat; blind
+There is no top bar: on desktop the table identity and the account button sit
+in the top corners, and profile and sign-out are in the Table options menu.
+At showdown, hands are tabled in order and a beaten hand is mucked unseen
+unless a player is all-in; mucked cards never reach other players or any
+shared history. Player labels and avatars sit around the rail, separate from
+hole cards and labeled wagers on the felt. Each seat shows the player's Nostr profile picture;
+players without one (or whose picture fails to load) get a fixed house avatar
+chosen from their public key. A ring around the acting player's avatar drains with the action clock, and a
+banner under the board names each winner. `arcade.css` is the final
+presentation layer (see [the November 15 review](REVIEW-2026-11-15.md)). The dealer button follows the dealer's seat; blind
 markers are omitted. The pot uses a bounded sample of up to 24 chip icons above
 the board, with the exact amount shown below it. The top-center chip tray opens
 sound/chat settings and hand history.

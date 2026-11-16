@@ -4,14 +4,14 @@ const assert=require('node:assert/strict');
 const {cashoutHTML}=require('./wallet-ui');
 test('pending funds cannot expose a new payment button',()=>{
   const html=cashoutHTML({withdrawalsEnabled:true,availableSats:0,payments:[{amount_sats:5000,status:'in_flight'}]});
-  assert.match(html,/5,000 sats are reserved/);assert.doesNotMatch(html,/data-action="confirm-/);
+  assert.match(html,/₿\s5,000 is reserved/);assert.doesNotMatch(html,/₿\s[\d,]+ sats/);assert.doesNotMatch(html,/data-action="confirm-/);
 });
 test('a paused wallet never offers a withdrawal even when a balance exists',()=>{
   assert.doesNotMatch(cashoutHTML({withdrawalsEnabled:false,availableSats:10000}),/data-action="confirm-/);
 });
 test('a recovered balance supports both WebLN and a receiving invoice',()=>{
   const html=cashoutHTML({withdrawalsEnabled:true,availableSats:500});
-  assert.match(html,/up to ₿\s500 sats/);assert.match(html,/confirm-cashout/);assert.match(html,/confirm-pasted-cashout/);
+  assert.match(html,/up to ₿\s500 in your receiving wallet/);assert.match(html,/confirm-cashout/);assert.match(html,/confirm-pasted-cashout/);
 });
 test('server errors are escaped before rendering in the wallet',()=>{
   const html=cashoutHTML({error:'<img src=x onerror=alert(1)>',withdrawalsEnabled:true,availableSats:10000});
@@ -24,7 +24,7 @@ test('account balance remains withdrawable while a table stack is in an active h
 });
 test('pending payments older than the recent history remain visible in the reserved total',()=>{
   const html=cashoutHTML({withdrawalsEnabled:true,availableSats:0,payments:[...Array.from({length:5},()=>({amount_sats:10,status:'succeeded'})),{amount_sats:900,status:'in_flight'}]});
-  assert.match(html,/900 sats are reserved/);
+  assert.match(html,/₿\s900 is reserved/);
 });
 
 test('unresolved invoice creation explains recovery without rendering a null invoice',()=>{
@@ -47,14 +47,14 @@ test('pre-node accounts show disabled payment controls without offering a funded
   assert.match(html,/Lightning payments are not enabled yet/);
   assert.match(html,/Demo chips are separate/);
   assert.match(html,/data-action="account-deposit" disabled/);
-  assert.match(html,/disabled>Withdraw sats/);
+  assert.match(html,/disabled>Withdraw bitcoin/);
   assert.match(html,/No account activity yet/);
   assert.doesNotMatch(html,/data-action="confirm-|data-action="account-buyin"/);
   assert.doesNotMatch(html,/marked to sit out/);
 });
 test('authoritative pending total includes payments outside the displayed history',()=>{
   const html=cashoutHTML({availableSats:0,pendingWithdrawalSats:700,payments:[]});
-  assert.match(html,/700 sats are reserved/);
+  assert.match(html,/₿\s700 is reserved/);
 });
 test('pending invoices are discoverable from the account',()=>{
   const html=cashoutHTML({availableSats:0,depositsEnabled:true,deposits:[{amount_sats:5000,status:'pending',bolt11:'test',expiresAt:Date.now()/1000+600}]});

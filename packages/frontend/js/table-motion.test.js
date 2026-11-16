@@ -96,3 +96,39 @@ test('interrupted motion cancels only its own overlays and leaves the real pot i
     motion.destroy();
   } finally {if(original===undefined)delete global.document;else global.document=original;}
 });
+
+test('a win shows the amount won and a bounded burst that cancel() removes; reduced motion shows neither', () => {
+  const original = global.document;
+  function harness(reduced) {
+    const made = [], animations = [];
+    function element() {
+      return {style:{},children:[],setAttribute(){},appendChild(child){this.children.push(child);},
+        remove(){this.removed=true;},getBoundingClientRect(){return {left:0,top:0,width:100,height:50};},
+        animate(frames, options) { const animation={options,cancelled:false,finished:{then(){}},cancel(){this.cancelled=true;}}; animations.push(animation); return animation; }};
+    }
+    const pot=element(), seat=element(), bet=element();
+    const table={...element(),offsetWidth:100,offsetHeight:50,clientLeft:0,clientTop:0,clientWidth:100,clientHeight:50,
+      querySelector:selector=>selector==='#tablePotChips'?pot:null};
+    global.document={hidden:false,addEventListener(){},removeEventListener(){},createElement(){const el=element();made.push(el);return el;}};
+    const motion=create({table,media:{matches:reduced},seatElement:()=>seat,betElement:()=>bet,chipHTML:()=>'<svg></svg>',amountText:amount=>`+${amount}`});
+    const before=state({pot:400,players:[player('a',{stack:4800}),player('b',{stack:4800})]});
+    const settled=state({handInProgress:false,players:[player('a',{stack:5200,wonPot:true}),player('b',{stack:4800})]});
+    motion.play(before,settled,motion.capture());
+    return {motion,made,animations};
+  }
+  try {
+    const live=harness(false);
+    const tags=live.made.filter(el=>el.className==='motion-win-amount');
+    assert.equal(tags.length,1); assert.equal(tags[0].textContent,'+400');
+    const sparks=live.made.filter(el=>/^motion-spark /.test(el.className));
+    assert.ok(sparks.length>0 && sparks.length<=12,'a handful of sparks, never a storm');
+    // Everything is finite and brief: no animation repeats, and none outlasts two and a half seconds.
+    assert.ok(live.animations.every(a=>a.options.iterations===undefined && (a.options.duration+(a.options.delay||0))<=2500));
+    live.motion.cancel();
+    assert.ok([...tags,...sparks].every(el=>el.removed));
+    live.motion.destroy();
+    const calm=harness(true);
+    assert.equal(calm.made.length,0); assert.equal(calm.animations.length,0);
+    calm.motion.destroy();
+  } finally {if(original===undefined)delete global.document;else global.document=original;}
+});

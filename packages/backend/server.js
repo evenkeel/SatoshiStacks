@@ -194,6 +194,10 @@ app.use('/api/profile', createProfileRoutes({
 app.get('/admin', (req, res) => {
   res.sendFile(__dirname + '/admin.html');
 });
+// The dashboard script is a separate file: the CSP forbids inline scripts.
+app.get('/admin.js', (req, res) => {
+  res.type('application/javascript').sendFile(__dirname + '/admin-dashboard.js');
+});
 
 // Global error handler — prevents leaking stack traces to clients
 app.use((err, req, res, _next) => {
@@ -226,6 +230,8 @@ function recoverInProgressHands() {
           player.disconnected = true;
           player.sittingOutNextHand = true;
           if (!game.handInProgress) player.sittingOut = true;
+          // Reconnecting into a seat that is not sitting out cancels this clock
+          // (see setDisconnected); seats nobody returns to are still released.
           game.startSitOutKickTimer(player.userId);
         }
         games.set(table_id, game);

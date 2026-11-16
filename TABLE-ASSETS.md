@@ -80,3 +80,32 @@ Card artwork stays in the existing house-deck renderer (`cards.js`), using
 100 × 145 coordinates. Room selection currently leaves the deck unchanged;
 any future deck skin must preserve rank/suit semantics, hidden-card handling,
 accessible labels, card aspect ratio, and small-card readability.
+
+## Arcade clubhouse layer (November 15)
+
+`arcade.css` loads last and owns the current look. It keeps every coordinate
+above except these:
+
+- Your hole cards (78 logical px wide) sit above your nameplate at 64% / 93% − 96px,
+  leaving your avatar and its turn ring visible.
+- Side-seat wagers and the dealer disc for those seats sit at 87.5% / 12.5%, 61%.
+- The pot pile box is 336 × 128; the pot pill and the result banner share the
+  band under the board.
+- Phones show 38px avatars: above the upper side plates, below the lower ones,
+  and left of the top and hero plates. Wagers are labelled pills on the felt
+  side of each seat; landscape moves them into the gaps beside the plates.
+
+The felt and rail SVGs were redrawn on the same viewBox (padded navy rail,
+orange piping, forty marquee bulbs spaced by arc length). Regenerate the bulbs
+with any script that walks the 500 × 340 ellipse; nothing else depends on them.
+
+Type is Lilita One (display) and Nunito (text), self-hosted as WOFF2 in
+`packages/frontend/fonts/` with `font-display: swap` and system fallbacks. The
+wordmark itself is still outlined paths. Licences: `scripts/licenses/`.
+
+A seat shows the player's Nostr profile picture when they have one. Otherwise
+`js/avatars.js` draws a house avatar as inline SVG on a 100 × 100 grid from a
+hash of the player's public key. It is one fixed face per player and does not
+react to play. Replacement art must keep `render(seed)`.
+Chip artwork is selected by denomination in `app.js` (`CHIP_STYLE`); pot chips
+from the server contribute only their value.

@@ -99,6 +99,14 @@ class PokerGame {
     const player = this.players.find(p => p && p.userId === userId);
     if (!player || !!player.disconnected === disconnected) return;
     player.disconnected = disconnected;
+    // A player who reconnects into a seat that is not sitting out is present:
+    // any idle-kick clock armed while they were away (crash recovery arms one
+    // for every seat) must not later fold and remove them mid-session. A seat
+    // that is still sitting out or busted keeps its clock.
+    if (!disconnected && !player.sittingOut && !player.busted && !player._pendingRemoval && this.sitOutKickTimers.has(userId)) {
+      clearTimeout(this.sitOutKickTimers.get(userId));
+      this.sitOutKickTimers.delete(userId);
+    }
     if (this.handInProgress && player.participatedThisHand) {
       this.emitLog(`${player.username}: ${disconnected ? 'disconnected' : 'reconnected'}`, 'connection');
       this.recordEvent('connection', { userId, disconnected });
@@ -350,6 +358,7 @@ class PokerGame {
     this.players.forEach(p => {
       if (p) {
         p.holeCards = [];
+        p.mucked = false;
         p.allIn = false;
         p.currentBet = 0;
         p.totalInvested = 0;
@@ -683,6 +692,8 @@ class PokerGame {
     this.collectBetsToPot();
     this.actedThisRound = [];
     this.lastRaise = this.bigBlind;
+    // The last player to bet or raise on the final street shows first.
+    if (this.phase === 'river') this.showdownFirstSeat = this.lastAggressor;
     this.lastAggressor = -1;
 
     const active = this.getActivePlayers();
@@ -801,6 +812,39 @@ class PokerGame {
   /**
    * Clear any pending dramatic runout timeouts
    */
+  /**
+   * Showdown procedure. Sets `mucked` on each live hand and returns the order
+   * in which hands are shown.
+   *
+   * - If any player still in the hand is all-in, every live hand is tabled
+   *   (hands are turned face up once an all-in is called and betting is over).
+   * - Otherwise the last player to bet or raise on the river shows first; with
+   *   no river bet, the first live player left of the button does. Showing then
+   *   proceeds clockwise, and a player whose hand cannot beat or tie the best
+   *   hand already shown mucks without revealing it.
+   *
+   * A mucked hand is never sent to other players, written to the hand log, or
+   * published; only its owner can still see their own cards.
+   */
+  markMuckedHands(active) {
+    active.forEach(p => { p.mucked = false; });
+    const first = this.showdownFirstSeat;
+    this.showdownFirstSeat = -1;
+    const startsAt = Number.isInteger(first) && active.some(p => p.seatIndex === first)
+      ? first : (this.dealerSeat + 1) % NUM_SEATS;
+    const order = [...active].sort((a, b) =>
+      ((a.seatIndex - startsAt + NUM_SEATS) % NUM_SEATS) - ((b.seatIndex - startsAt + NUM_SEATS) % NUM_SEATS));
+    if (active.some(p => p.allIn)) return order;
+    let best = null;
+    for (const p of order) {
+      const cmp = !best ? 1 : p.hand.rank > best.rank ? 1
+        : p.hand.rank === best.rank ? this.compareTiebreakers(p.hand.tb, best.tb) : -1;
+      if (cmp < 0) p.mucked = true;
+      else if (cmp > 0) best = p.hand;
+    }
+    return order;
+  }
+
   clearRunoutTimeouts() {
     if (this.runoutTimeouts) {
       this.runoutTimeouts.forEach(t => clearTimeout(t));
@@ -847,6 +891,8 @@ class PokerGame {
       active.forEach(p => {
         p.hand = evaluateHand([...p.holeCards, ...this.communityCards]);
       });
+      // Decide which hands are tabled and which are mucked unseen.
+      const showOrder = this.markMuckedHands(active);
 
       // Calculate side pots and distribute
       const pots = this.calculateSidePots();
@@ -875,9 +921,12 @@ class PokerGame {
         potResults.push({ pot, potWinners, share, potName });
       });
 
-      // Log showdown cards and winners
-      active.forEach(p => {
-        if (p.holeCards && p.holeCards.length === 2 && p.hand) {
+      // A hand that wins any part of the pot is always tabled.
+      winners.forEach(w => { w.mucked = false; });
+      // Log the showdown in order. A mucked hand is never written to any log.
+      showOrder.forEach(p => {
+        if (p.mucked) this.emitLog(`${p.username}: mucks hand`, 'showdown');
+        else if (p.holeCards && p.holeCards.length === 2 && p.hand) {
           this.emitLog(`${p.username}: shows ${this.cardsStr(p.holeCards)} (${p.hand.name})`, 'showdown');
         }
       });
@@ -939,7 +988,7 @@ class PokerGame {
           this.emitLog(`${label} collected (${share})`, 'summary');
         }
       } else if (active.includes(p)) {
-        if (p.hand) {
+        if (p.hand && !p.mucked) {
           this.emitLog(`${label} showed ${this.cardsStr(p.holeCards)} and lost with ${p.hand.name}`, 'summary');
         } else {
           this.emitLog(`${label} mucked`, 'summary');
@@ -1285,10 +1334,11 @@ class PokerGame {
           // Only show hole cards if:
           // 1. It's the requesting player's own cards
           // 2. Showdown phase and player is active
-          holeCards: (p.userId === userId || (this.phase === 'showdown' && !p.folded))
+          holeCards: (p.userId === userId || (this.phase === 'showdown' && !p.folded && !p.mucked))
             ? p.holeCards
             : p.holeCards.length > 0 ? ['??', '??'] : [],
-          hand: (this.phase === 'showdown' && !p.folded) ? p.hand : null,
+          hand: (this.phase === 'showdown' && !p.folded && (!p.mucked || p.userId === userId)) ? p.hand : null,
+          mucked: !!p.mucked,
           wonPot: p.wonPot || false,
           canRaise: this.handInProgress && this.phase !== 'showdown' && this.canPlayerRaise(p)
         };
@@ -1374,7 +1424,14 @@ class PokerGame {
     const maxBet = this.getMaxBet();
     
     // No betting into a dry side pot: the lone actor only responds if owing chips.
-    if (acting.length <= 1) return acting.every(p => p.currentBet >= maxBet);
+    // Compare against what the remaining opponents actually have in front of
+    // them, not the preflop big-blind floor: when a big blind is all-in for no
+    // more than the lone actor has already posted, there is nothing to decide,
+    // and asking would let a timeout fold a hand that is already covered.
+    if (acting.length <= 1) {
+      return acting.every(p => p.currentBet >= Math.max(0, ...this.players
+        .filter(o => o && o !== p && !o.folded).map(o => o.currentBet)));
+    }
 
     // Round is done if all acting players have:
     // 1. Acted this round
@@ -1600,6 +1657,9 @@ class PokerGame {
     const player = this.players.find(p => p && p.userId === userId);
     if (!player) return { success: false, error: 'Player not found' };
     if (!player.sittingOut) return { success: false, error: 'Not sitting out' };
+    // An empty stack cannot be dealt in; returning would only cancel the bust
+    // timer and hold the seat indefinitely.
+    if (player.stack <= 0) return { success: false, error: 'Add chips before sitting back in' };
 
     player.sittingOut = false;
     this.logPlayerStatus(player, 'returns to table for next hand');
@@ -1743,6 +1803,7 @@ class PokerGame {
           lud16: p.lud16,
           stack: p.stack,
           holeCards: p.holeCards,
+          mucked: !!p.mucked,
           folded: p.folded,
           allIn: p.allIn,
           currentBet: p.currentBet,
@@ -1779,6 +1840,7 @@ class PokerGame {
       handCount: this.handCount,
       handStartedAt: this.handStartedAt,
       lastAggressor: this.lastAggressor,
+      showdownFirstSeat: this.showdownFirstSeat ?? -1,
       currentHandLog: [...this.currentHandLog],
       currentHandId: this.getHandId(),
       currentHandEvents: this.currentHandEvents.map(event => structuredClone(event)),
@@ -1816,6 +1878,7 @@ class PokerGame {
         lud16: p.lud16,
         stack: p.stack,
         holeCards: p.holeCards || [],
+        mucked: !!p.mucked,
         folded: p.folded,
         allIn: p.allIn,
         currentBet: p.currentBet,
@@ -1853,6 +1916,7 @@ class PokerGame {
     game.handCount = snapshot.handCount || 0;
     game.handStartedAt = snapshot.handStartedAt || Date.now();
     game.lastAggressor = snapshot.lastAggressor;
+    game.showdownFirstSeat = snapshot.showdownFirstSeat ?? -1;
     game.currentHandLog = snapshot.currentHandLog || [];
     game.currentHandId = snapshot.currentHandId || (snapshot.handStartedAt ? `${snapshot.tableId}-${snapshot.handStartedAt}-${snapshot.handCount}` : null);
     game.currentHandEvents = snapshot.currentHandEvents || [];

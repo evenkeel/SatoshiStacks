@@ -4,7 +4,8 @@
   const area = document.getElementById('tableArea');
   const header = document.querySelector('.account-bar');
   if (!area || !header) return;
-  const panels = [...document.querySelectorAll('.chat-box, .controls-area, .pre-action-bar, .table-actions-bar')];
+  // Bottom docks plus the two top-corner clusters (table identity, account).
+  const panels = [...document.querySelectorAll('.chat-box, .controls-area, .pre-action-bar, .table-actions-bar, .table-identity, .account-bar nav')];
   // An octagonal envelope includes the rail, dealer, avatars and nameplates,
   // while leaving the lower corners available for chat and betting controls.
   const envelopeWidth = 1220;

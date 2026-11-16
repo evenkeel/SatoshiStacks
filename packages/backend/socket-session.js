@@ -13,4 +13,20 @@ function authenticatedSocketId(io, userSockets, userId) {
   return null;
 }
 
-module.exports = { authenticatedSocketId };
+// The address rate limits and IP bans should apply to. Behind the bundled
+// Nginx proxy every socket's peer address is the loopback interface, which
+// would put all players in one shared bucket. When (and only when) the direct
+// peer is loopback, use the address the proxy appended to X-Forwarded-For: the
+// right-most entry, which a client cannot forge. This mirrors Express's
+// `trust proxy = 1` used for the HTTP routes.
+const net = require('node:net');
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+function clientAddress(socket) {
+  const peer = socket?.handshake?.address || '';
+  if (!LOOPBACK.has(peer)) return peer;
+  const header = socket.handshake.headers?.['x-forwarded-for'];
+  const forwarded = (Array.isArray(header) ? header.join(',') : String(header || '')).split(',').map(part => part.trim()).filter(Boolean).pop();
+  return forwarded && net.isIP(forwarded) ? forwarded : peer;
+}
+
+module.exports = { authenticatedSocketId, clientAddress };

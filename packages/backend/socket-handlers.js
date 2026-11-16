@@ -7,7 +7,7 @@ const config = require('./config');
 const db = require('./database');
 const PokerGame = require('./poker-game');
 const nostr = require('./services/nostr');
-const { authenticatedSocketId } = require('./socket-session');
+const { authenticatedSocketId, clientAddress } = require('./socket-session');
 const { accountState } = require('./services/account-state');
 
 function generateObserverName() {
@@ -191,17 +191,29 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
 
   }
 
+  // One disconnect-grace timer per player. A reconnect cancels it, so a later
+  // disconnect always receives the full grace period.
+  const disconnectGraceTimers = new Map();
+  function clearDisconnectGrace(userId) {
+    clearTimeout(disconnectGraceTimers.get(userId));
+    disconnectGraceTimers.delete(userId);
+  }
+
   function resumeExistingSeat(socket, userId, tableId, displayName) {
     if (socket.data?.watchOnly) return false;
     const game = games.get(tableId);
     const seatIndex = game?.players.findIndex(player => player && player.userId === userId) ?? -1;
-    if (seatIndex === -1 || db.isBanned(userId) || db.isIpBanned(socket.handshake.address)) return false;
+    if (seatIndex === -1 || db.isBanned(userId) || db.isIpBanned(clientAddress(socket))) return false;
     const previousSocket = userSockets.get(userId);
     if (previousSocket && previousSocket !== socket.id) socketUsers.delete(previousSocket);
     observerSockets.delete(socket.id);
     removeFromWaitlist(socket.id, tableId);
     userSockets.set(userId, socket.id);
     socketUsers.set(socket.id, { userId, tableId, seatIndex });
+    clearDisconnectGrace(userId);
+    // Returning before the hand ends cancels a deferred departure; otherwise the
+    // seat they were just handed back would be removed under them moments later.
+    if (game.players[seatIndex]._pendingRemoval) game.players[seatIndex]._pendingRemoval = false;
     game.setDisconnected(userId, false);
     socket.join(`table-${tableId}`);
     socket.emit('seat-assigned', { seatIndex, displayName });
@@ -462,7 +474,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         const displayName = playerData.nostr_name || playerData.username;
         const nostrName = playerData.nostr_name;
         const nostrPicture = playerData.nostr_picture;
-        const clientIp = socket.handshake.address;
+        const clientIp = clientAddress(socket);
 
         // Ban checks
         if (db.isIpBanned(clientIp)) {
@@ -476,7 +488,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         }
 
         // Rate limit
-        if (db.isRateLimited(userId, clientIp, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions)) {
+        // Counted per request type: gameplay by others at the same address (a
+        // household, a venue) must not use up this player's allowance to sit down.
+        if (db.isRateLimited(userId, clientIp, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions, 'join-table')) {
           socket.emit('error', { message: 'Too many actions. Please wait.' });
           db.logAction(userId, clientIp, 'rate-limited');
           return;
@@ -502,11 +516,10 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           console.log(`[Server] ${displayName} buying in for ${chips} playsats at ${tableConfig.name}`);
         }
 
-        // Clean up observer + waitlist tracking
-        if (observerSockets.has(socket.id)) {
-          observerSockets.delete(socket.id);
-        }
-        removeFromWaitlist(socket.id, tableId);
+        // The observer entry is released only once a seat is actually taken
+        // (resumeExistingSeat does so itself). A refused join — table full —
+        // must leave this socket watching the table.
+        const observerEntry = observerSockets.get(socket.id);
 
         // A refresh or a new signed session resumes the funded seat without
         // issuing another invoice or losing the personal game-state channel.
@@ -544,6 +557,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           preferredSeat: typeof preferredSeat === 'number' ? preferredSeat : undefined
         });
 
+        if (observerEntry) observerSockets.delete(socket.id);
+        removeFromWaitlist(socket.id, tableId);
+        clearDisconnectGrace(userId);
         const reconnectedPlayer = game.players[assignedSeat];
         if (reconnectedPlayer && reconnectedPlayer.disconnected) {
           game.setDisconnected(userId, false);
@@ -573,12 +589,16 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         return;
       }
 
-      const clientIp = socket.handshake.address;
-      if (db.isRateLimited(user.userId, clientIp, config.ACTION_RATE_LIMIT.windowSec, config.ACTION_RATE_LIMIT.maxActions)) {
+      // Seated actions are limited per authenticated player only. Counting by
+      // address as well lets anyone sharing it (a proxy, a household, a NAT)
+      // exhaust another player's allowance and force them to time out.
+      const clientIp = clientAddress(socket);
+      if (db.isRateLimited(user.userId, null, config.ACTION_RATE_LIMIT.windowSec, config.ACTION_RATE_LIMIT.maxActions)) {
         socket.emit('error', { message: 'Too many actions. Slow down.' });
         return;
       }
-      db.logAction(user.userId, clientIp, `action-${action}`);
+      const actionLabel = ['fold', 'check', 'call', 'raise'].includes(action) ? action : 'invalid';
+      db.logAction(user.userId, clientIp, `action-${actionLabel}`);
 
       const game = games.get(tableId);
       if (!game) {
@@ -615,7 +635,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       if (game && config.isRealMoney(leavingTableId)) {
         const funds = game.canCashOut(user.userId);
         if (!funds.ok) {
-          game.voluntarySitOut(user.userId);
+          // voluntarySitOut toggles. Only request it when not already chosen.
+          const leaving = game.players.find(p => p && p.userId === user.userId);
+          if (leaving && !leaving.sittingOutNextHand && !leaving.sittingOut) game.voluntarySitOut(user.userId);
           socket.emit('error', { message: 'Finish this hand before returning your stack to your account.' });
           if (ack) ack({ ok: false, error: 'hand-in-progress' });
           return;
@@ -716,9 +738,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         if (!playerData) { socket.emit('auth-error', { message: 'Sign in to buy in' }); return; }
         socket.data.sessionToken = sessionToken;
         const userId = playerData.pubkey_hex;
-        const clientIp = socket.handshake.address;
+        const clientIp = clientAddress(socket);
         if (db.isIpBanned(clientIp) || db.isBanned(userId)) { socket.emit('error', { message: 'Not allowed' }); return; }
-        if (db.isRateLimited(userId, clientIp, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions)) {
+        if (db.isRateLimited(userId, clientIp, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions, 'buyin-request')) {
           socket.emit('error', { message: 'Too many actions. Please wait.' }); return;
         }
         // Tie this live socket to the authenticated user, so the deposit can seat
@@ -745,9 +767,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         const player = sessionToken && db.getPlayerBySession(sessionToken);
         if (!player) { socket.emit('auth-error', { message: 'Sign in to deposit' }); return; }
         const userId = player.pubkey_hex;
-        if (db.isBanned(userId) || db.isIpBanned(socket.handshake.address)) throw new Error('Not allowed');
-        if (db.isRateLimited(userId, socket.handshake.address, config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions)) throw new Error('Too many requests. Please wait.');
-        db.logAction(userId, socket.handshake.address, 'account-deposit-request');
+        if (db.isBanned(userId) || db.isIpBanned(clientAddress(socket))) throw new Error('Not allowed');
+        if (db.isRateLimited(userId, clientAddress(socket), config.JOIN_RATE_LIMIT.windowSec, config.JOIN_RATE_LIMIT.maxActions, 'account-deposit-request')) throw new Error('Too many requests. Please wait.');
+        db.logAction(userId, clientAddress(socket), 'account-deposit-request');
         const payments = getPayments();
         if (!payments) throw new Error('Account wallet is temporarily unavailable');
         const invoice = await payments.createDepositInvoice({ userId, tableId: db.ACCOUNT, amountSats });
@@ -782,6 +804,11 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         if (!config.isRealMoney(tableId)) throw new Error('Real-money accounts are unavailable in demo mode');
         const player = sessionToken && db.getPlayerBySession(sessionToken);
         if (!player) { socket.emit('auth-error', { message: 'Sign in to withdraw' }); return; }
+        const userId = player.pubkey_hex;
+        if (db.isBanned(userId) || db.isIpBanned(clientAddress(socket))) throw new Error('Not allowed');
+        // Each withdrawal can spend operator-paid routing fees; bound the request rate per player.
+        if (db.isRateLimited(userId, null, config.WITHDRAWAL_RATE_LIMIT.windowSec, config.WITHDRAWAL_RATE_LIMIT.maxActions, 'cashout-request')) throw new Error('Too many withdrawal requests. Please wait a minute.');
+        db.logAction(userId, clientAddress(socket), 'cashout-request');
         const payments = getPayments();
         if (!payments) throw new Error('Account wallet is temporarily unavailable');
         const result = await payments.requestWithdrawal({ userId: player.pubkey_hex, tableId: db.ACCOUNT, bolt11,
@@ -829,9 +856,11 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
                 userSockets.delete(user.userId);
                 console.log(`${user.userId} socket mapping cleaned up after grace period`);
               }
-            }, config.SOCKET_CLEANUP_MS);
+            }, config.SOCKET_CLEANUP_MS).unref?.();
 
-            setTimeout(() => {
+            clearDisconnectGrace(user.userId);
+            const graceTimer = setTimeout(() => {
+              if (disconnectGraceTimers.get(user.userId) === graceTimer) disconnectGraceTimers.delete(user.userId);
               if (player.disconnected && !player.sittingOut) {
                 console.log(`${user.userId} did not reconnect - sitting out`);
                 player.sittingOutNextHand = true;
@@ -846,6 +875,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
                 broadcastGameState(user.tableId);
               }
             }, config.DISCONNECT_GRACE_MS);
+            // Housekeeping timers must not hold the process open during shutdown.
+            graceTimer.unref?.();
+            disconnectGraceTimers.set(user.userId, graceTimer);
           } else {
             userSockets.delete(user.userId);
             socketUsers.delete(socket.id);
