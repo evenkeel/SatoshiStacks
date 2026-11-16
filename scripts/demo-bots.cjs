@@ -39,7 +39,9 @@ async function main() {
   const config = await (await fetch(origin+'/api/tables')).json();
   const table = config.tables.find(t=>t.id===tableId);
   if (!table || table.realMoney !== false) throw Error('Demo bots require an explicitly play-money table');
-  for (const [index,name] of ['Mira','Theo','June','River','Neon','Ghost'].entries()) {
+  // DEMO_BOTS=5 leaves a seat open for a person to sit in and play against them.
+  const count = Math.max(1, Math.min(6, Number(process.env.DEMO_BOTS) || 6));
+  for (const [index,name] of ['Mira','Theo','June','River','Neon','Ghost'].slice(0,count).entries()) {
     const key = generateSecretKey();
     const challenge = await post('/api/auth/challenge',{});
     const signedEvent = finalizeEvent({kind:22242,created_at:Math.floor(Date.now()/1000),

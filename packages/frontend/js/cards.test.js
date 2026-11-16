@@ -48,3 +48,11 @@ test('face-down and invalid cards render the house back', () => {
     assert.match(html, /aria-label="Face-down card"/);
   }
 });
+
+test('face-up cards name their suit so the four-color deck can recolour clubs and diamonds', () => {
+  assert.match(renderCardHTML('Ac'), /class="card black suit-c "/);
+  assert.match(renderCardHTML('Td', 'small'), /class="card red suit-d small"/);
+  assert.match(renderCardHTML('Ks'), /class="card black suit-s "/);
+  assert.match(renderCardHTML('2h'), /class="card red suit-h "/);
+  assert.ok(!/suit-/.test(renderCardHTML(null)));
+});

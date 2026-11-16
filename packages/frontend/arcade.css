@@ -492,6 +492,55 @@ body.poker-app:not(.is-mobile) .chat-box:has(:is(.chat-history, .chat-settings).
 /* Who is watching sits with the seat count, under the table's name. */
 body.poker-app:not(.is-mobile) .spectator-badge { bottom: auto; margin: 0; transform-origin: top left; }
 
+/* ---------- Desktop docks: one table size, watching or seated ----------
+   The oval leaves a pocket in each corner of the window. Betting lives in the
+   bottom-right pocket and the seat buttons in the bottom-left one, above the
+   message box, so the table does not have to give up room along its whole
+   lower edge. desktop-table.js reserves both docks at all times: sitting down,
+   standing up and turn changes never resize or move the table.
+   The betting dock is 288 × 166 at its base size: Your-move tag, four presets,
+   slider and amount, then Fold, Check/Call and Bet/Raise as three equal buttons
+   that always keep the same places. */
+body.poker-app:not(.is-mobile) .controls-area {
+  width: 288px; height: 166px; right: 12px; bottom: 12px; padding: 0;
+  align-items: flex-end; overflow: visible;
+  /* --dock-scale: grown by desktop-table.js where the pocket has room to spare. */
+  transform: scale(calc(var(--desktop-ui-scale, 1) * var(--dock-scale, 1))); transform-origin: bottom right;
+}
+body.poker-app:not(.is-mobile) .bet-controls { gap: 8px; }
+body.poker-app.hero-turn:not(.is-mobile) .bet-controls::before,
+body.poker-app.hero-turn:not(.is-mobile) .bet-controls:has(.bet-presets)::before {
+  position: static; align-self: flex-end; padding: 0 10px; font-size: 13px; line-height: 18px;
+}
+body.poker-app:not(.is-mobile) .bet-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+body.poker-app:not(.is-mobile) .bet-preset { min-height: 0; height: 30px; padding: 0 2px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 0 #141a3d; }
+body.poker-app:not(.is-mobile) .slider-row { gap: 8px; height: 34px; }
+body.poker-app:not(.is-mobile) .bet-amount-input { width: 88px; min-height: 0; height: 34px; font-size: 16px; }
+/* Three equal columns even when raising is not possible, so Fold and Call never move. */
+body.poker-app:not(.is-mobile) .action-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+body.poker-app:not(.is-mobile) .action-btn {
+  min-height: 0; height: 52px; padding: 0 4px; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+}
+body.poker-app:not(.is-mobile) .action-btn .act-verb { font-size: 17px; line-height: 1.1; }
+body.poker-app:not(.is-mobile) .action-btn .act-amount { font: 800 14px/1.1 var(--club-font); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+/* Pre-actions sit over the tag and presets, never over a button that commits
+   chips: a click that lands just as the turn arrives can only pick a bet size. */
+body.poker-app:not(.is-mobile) .pre-action-bar {
+  left: auto; right: 12px; width: 288px; height: 44px; padding: 0; gap: 8px;
+  bottom: calc(12px + 122px * var(--desktop-ui-scale, 1) * var(--dock-scale, 1));
+  transform: scale(calc(var(--desktop-ui-scale, 1) * var(--dock-scale, 1))); transform-origin: bottom right;
+}
+body.poker-app:not(.is-mobile) .pre-action-btn { min-height: 0; height: 40px; }
+body.poker-app:not(.is-mobile) .table-actions-bar {
+  left: 12px; width: 240px; height: 40px; gap: 8px;
+  bottom: calc(12px + 56px * var(--desktop-ui-scale, 1));
+}
+body.poker-app:not(.is-mobile) .table-action-btn { flex: 1 1 auto; min-height: 0; height: 36px; padding: 0 8px; font-size: 12px; }
+/* While seated the chat feed starts above the seat buttons. */
+body.poker-app:not(.is-mobile) .chat-body { margin-bottom: var(--feed-lift, 0px); }
+body.poker-app:not(.is-mobile):has(.table-actions-bar.visible) .chat-box { --feed-lift: 48px; }
+
 /* ============================================================
    Phone portrait and landscape
    ============================================================ */

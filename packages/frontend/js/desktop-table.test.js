@@ -3,20 +3,29 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-const { fitTable, fitChat, uiScale, SHAPES, GAP, EDGE } = require('./desktop-table');
+const { fitTable, fitDock, fitChat, uiScale, SHAPES, GAP, EDGE } = require('./desktop-table');
 const source = fs.readFileSync(require.resolve('./desktop-table.js'), 'utf8');
 
 function rect(left, top, width, height) { return { left, top, right: left + width, bottom: top + height, width, height }; }
-// The desktop docks and corner clusters as the stylesheets place them. Chat is
-// not among the panels: the table is fitted first and chat takes what is left.
-function room(width, height, seated = true) {
+// The desktop docks and corner clusters as the stylesheets place them: betting
+// in the bottom-right corner (with the pre-action bar inside its top edge) and
+// the seat buttons bottom left, above the message box. They are reserved for
+// spectators as well as players. Chat is not among the panels: the table is
+// fitted first and chat takes what is left.
+function room(width, height) {
   const ui = uiScale(width, height);
   const corners = [rect(12, 10, 112 * ui, 135 * ui), rect(width - 12 - 222 * ui, 10, 222 * ui, 42 * ui)];
   const chat = rect(12, height - 12 - 248 * ui, 340 * ui, 248 * ui);
-  const docks = [rect(width - 8 - 520 * ui, height - 8 - 176 * ui, 520 * ui, 176 * ui),
-    rect(24 + 340 * ui, height - 12 - 48 * ui, 280 * ui, 48 * ui),
-    rect(24 + 340 * ui, height - 12 - 104 * ui, 280 * ui, 48 * ui)];
-  return { ui, corners, chat, docks, panels: [...corners, ...(seated ? docks : [])] };
+  const betting = (size = 1) => rect(width - 12 - 288 * ui * size, height - 12 - 166 * ui * size, 288 * ui * size, 166 * ui * size);
+  const seatRow = rect(12, height - 12 - 96 * ui, 240 * ui, 40 * ui);
+  const preActions = rect(width - 12 - 288 * ui, height - 12 - 166 * ui, 288 * ui, 44 * ui);
+  const docks = [betting(), seatRow, preActions];
+  return { ui, corners, chat, docks, betting, fixed: [...corners, seatRow], panels: [...corners, betting(), seatRow] };
+}
+// What the page does: fit the table, growing the betting dock into spare room.
+function pageFit(width, height) {
+  const { fixed, betting } = room(width, height);
+  return fitDock(width, height, fixed, betting);
 }
 // Every shape as a viewport rectangle, plus an independent point test.
 function silhouette(width, { scale, centerY }) {
@@ -52,10 +61,11 @@ const windows = [[901, 501], [950, 930], [1000, 700], [1024, 768], [1100, 1000],
 
 test('the table never overlaps a dock or corner cluster and never leaves the window', () => {
   for (const [width, height] of windows) {
-    for (const seated of [true, false]) {
-      const { panels } = room(width, height, seated);
-      assertClear(width, height, panels, fitTable(width, height, panels));
-    }
+    const { panels, fixed, betting } = room(width, height);
+    assertClear(width, height, panels, fitTable(width, height, panels));
+    // Also with the betting dock grown as the page grows it.
+    const grown = pageFit(width, height);
+    assertClear(width, height, [...fixed, betting(grown.dock)], grown.fit);
   }
 });
 
@@ -64,10 +74,10 @@ test('a tall or square window gets a full-width table instead of one squeezed un
     const { panels, corners, docks } = room(width, height);
     const fit = fitTable(width, height, panels);
     const widest = (width - 2 * EDGE) / 1148;
-    assert.ok(fit.scale > widest * .995, `${width}x${height} should be limited only by its width`);
-    // It rests between the clusters above and the docks below, not against either.
+    assert.ok(fit.scale > widest * .985, `${width}x${height} should be limited only by its width`);
+    // It rests between the clusters above and the corner docks below, not against either.
     const top = fit.centerY - 375 * fit.scale, bottom = fit.centerY + 363 * fit.scale;
-    assert.ok(top > corners[1].bottom && bottom < docks[0].top, `${width}x${height} should rest between`);
+    assert.ok(top > corners[1].bottom && bottom < docks[0].bottom, `${width}x${height} should rest between`);
     assert.ok(Math.abs(fit.centerY - height / 2) < height * .12, `${width}x${height} should rest near the middle`);
   }
 });
@@ -85,19 +95,32 @@ test('the table keeps growing with the window, up to very large displays', () =>
   assert.ok(fitTable(3840, 2160, panels).scale * 726 > 2160 * .95);
 });
 
-test('landscape windows fill most of their height beside the bottom docks', () => {
-  for (const [width, height, share] of [[1280, 720, .7], [1440, 900, .75], [1920, 1080, .82], [2560, 1440, .9]]) {
+test('landscape windows fill nearly all of their height beside the corner docks', () => {
+  for (const [width, height, share] of [[1280, 720, .8], [1440, 900, .85], [1920, 1080, .95], [2560, 1440, .95]]) {
     const { panels } = room(width, height);
     assert.ok(fitTable(width, height, panels).scale * 726 >= height * share, `${width}x${height}`);
   }
 });
 
-test('spectators get the room a seated player needs for betting controls', () => {
-  for (const [width, height] of [[1280, 720], [1440, 900], [1920, 1080]]) {
-    const seated = fitTable(width, height, room(width, height, true).panels).scale;
-    const watching = fitTable(width, height, room(width, height, false).panels).scale;
-    assert.ok(watching > seated * 1.05, `${width}x${height}`);
+test('the corner docks cost the table little or nothing compared with an empty room', () => {
+  for (const [width, height, share] of [[1280, 720, .86], [1440, 900, .9], [1728, 1000, .99], [1920, 1080, .99], [2560, 1440, .99]]) {
+    const { corners, panels } = room(width, height);
+    const empty = fitTable(width, height, corners).scale;
+    assert.ok(fitTable(width, height, panels).scale >= empty * share, `${width}x${height}`);
   }
+});
+
+test('the betting dock grows only into room the table does not need', () => {
+  for (const [width, height] of windows) {
+    const { panels } = room(width, height);
+    const base = fitTable(width, height, panels).scale;
+    const { dock, fit } = pageFit(width, height);
+    assert.ok(dock >= 1 && dock <= 1.5, `${width}x${height}`);
+    assert.ok(fit.scale >= base * .999, `${width}x${height} keeps its table`);
+  }
+  // A cramped laptop window keeps the base dock; a wide window has a roomy pocket.
+  assert.ok(pageFit(1280, 720).dock < 1.05);
+  assert.ok(pageFit(1920, 970).dock > 1.2);
 });
 
 test('docks keep their designed size on ordinary desktops, shrink in small windows and grow on huge ones', () => {
@@ -114,6 +137,7 @@ function layout(width, height, { seated = true, mobile = false } = {}) {
   const make = (box, classes = []) => {
     const set = new Set(classes);
     return { box, getBoundingClientRect() { return this.box; }, classList: { contains: name => set.has(name) },
+      get offsetWidth() { return this.box.width / ui; }, get offsetHeight() { return this.box.height / ui; },
       style: { setProperty(name, value) { this[name] = value; } },
       setClass(name, on) { if (on) set.add(name); else set.delete(name); } };
   };
@@ -140,8 +164,7 @@ function layout(width, height, { seated = true, mobile = false } = {}) {
 
 test('the page places the table where the fit says, scaled as one unit', () => {
   const result = layout(1440, 900);
-  const { panels } = room(1440, 900);
-  const fit = fitTable(1440, 900, panels);
+  const { fit } = pageFit(1440, 900);
   assert.equal(Number(result.area.style['--table-scale']), fit.scale);
   assert.equal(parseFloat(result.area.style.height), 680 * fit.scale);
   assert.equal(parseFloat(result.area.style.top), fit.centerY - 340 * fit.scale);
@@ -177,62 +200,55 @@ test('chat has no say in the table: it is the same size with chat open, closed o
     assert.equal(result.snapshot(), initial);
   }
   // And it is exactly the table a window with no chat at all would get.
-  assert.equal(Number(result.area.style['--table-scale']), fitTable(1440, 900, room(1440, 900).panels).scale);
+  assert.equal(Number(result.area.style['--table-scale']), pageFit(1440, 900).fit.scale);
 });
 
 test('chat takes the corner the table leaves, and its clear lines never touch the table', () => {
   for (const [width, height] of windows) {
-    for (const seated of [true, false]) {
-      const fit = fitTable(width, height, room(width, height, seated).panels);
-      const { corner } = chatCorner(width, height);
-      const column = fitChat(width, fit, corner);
-      assert.ok(column.width >= corner.minWidth - .01 && column.width <= corner.maxWidth + .01);
-      if (column.room <= 0) continue;
-      const shapes = silhouette(width, fit);
-      for (let x = 0; x <= corner.left + column.width; x += 3) {
-        for (let y = corner.bottom - corner.composer - column.room + 1; y <= corner.bottom; y += 3) {
-          assert.ok(!shapes.some(shape => shape.covers(x, y)), `chat meets the table at ${x},${y} in ${width}x${height}`);
-        }
+    const { fit } = pageFit(width, height);
+    const { corner } = chatCorner(width, height);
+    const column = fitChat(width, fit, corner);
+    assert.ok(column.width >= corner.minWidth - .01 && column.width <= corner.maxWidth + .01);
+    if (column.room <= 0) continue;
+    const shapes = silhouette(width, fit);
+    for (let x = 0; x <= corner.left + column.width; x += 3) {
+      for (let y = corner.bottom - corner.composer - column.room + 1; y <= corner.bottom; y += 3) {
+        assert.ok(!shapes.some(shape => shape.covers(x, y)), `chat meets the table at ${x},${y} in ${width}x${height}`);
       }
     }
   }
 });
 
-test('chat is full width with a long feed where the table leaves room, and narrows beside a full-height table', () => {
-  // Seated in landscape, the table stops above the betting controls: chat gets a tall column.
-  let fit = fitTable(1440, 900, room(1440, 900, true).panels);
-  let column = fitChat(1440, fit, chatCorner(1440, 900).corner);
-  assert.equal(column.width, 340);
-  assert.ok(column.room > 200);
+test('chat is full width under a width-limited table, and keeps to its corner beside a full-height one', () => {
   // A tall window leaves the whole band under the table.
-  fit = fitTable(950, 930, room(950, 930, true).panels);
-  column = fitChat(950, fit, chatCorner(950, 930).corner);
+  let column = fitChat(950, pageFit(950, 930).fit, chatCorner(950, 930).corner);
   assert.ok(column.width > 260 * uiScale(950, 930) && column.room > 120);
-  // A spectator's table fills the height, so chat keeps to the corner beside the bottom-left seat.
-  fit = fitTable(1440, 900, room(1440, 900, false).panels);
-  column = fitChat(1440, fit, chatCorner(1440, 900).corner);
-  assert.ok(column.width < 340 && column.width >= 160);
+  // A landscape table fills the height, so chat keeps to the corner beside the bottom-left seat.
+  column = fitChat(1440, pageFit(1440, 900).fit, chatCorner(1440, 900).corner);
+  assert.ok(column.width <= 340 && column.width >= 160);
   assert.ok(column.room > 40, 'a few lines stay clear even then');
 });
 
 test('the page hands chat its fitted column', () => {
   const result = layout(1440, 900);
   const chat = result.nodes['.chat-box'].style;
-  assert.equal(chat['--chat-width'], '340px');
-  assert.ok(parseFloat(chat['--feed-height']) > 200);
-  assert.ok(parseFloat(chat['--feed-clear']) < parseFloat(chat['--feed-height']));
+  const column = fitChat(1440, pageFit(1440, 900).fit, chatCorner(1440, 900).corner);
+  assert.equal(chat['--chat-width'], `${column.width}px`);
+  assert.ok(parseFloat(chat['--feed-height']) >= 66);
+  assert.ok(parseFloat(chat['--feed-clear']) <= parseFloat(chat['--feed-height']));
 });
 
-test('taking a seat makes room for the betting controls and standing up gives it back', () => {
-  const result = layout(1440, 900, { seated: false });
-  const watching = Number(result.area.style['--table-scale']);
-  result.nodes['.table-actions-bar'].setClass('visible', true);
-  result.refit();
-  const seated = Number(result.area.style['--table-scale']);
-  assert.ok(seated < watching);
-  result.nodes['.table-actions-bar'].setClass('visible', false);
-  result.refit();
-  assert.equal(Number(result.area.style['--table-scale']), watching);
+test('the table is the same size and in the same place watching, seated and after standing up', () => {
+  for (const [width, height] of [[1280, 720], [1440, 900], [2000, 1217]]) {
+    const result = layout(width, height, { seated: false });
+    const watching = result.snapshot();
+    assert.equal(layout(width, height, { seated: true }).snapshot(), watching);
+    for (const seated of [true, false]) {
+      result.nodes['.table-actions-bar'].setClass('visible', seated);
+      result.refit();
+      assert.equal(result.snapshot(), watching, `${width}x${height}`);
+    }
+  }
 });
 
 test('phone layouts keep their own sizing, and desktop sizing is cleared when a window shrinks to one', () => {

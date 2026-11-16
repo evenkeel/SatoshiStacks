@@ -23,6 +23,8 @@ body.deck-preview {
   box-shadow: 0 5px 0 var(--night), 0 14px 30px #0007;
 }
 .deck-feature { display: flex; flex-wrap: wrap; gap: 16px; padding: 28px; }
+.deck-feature.four-color-deck { margin-bottom: 24px; }
+.deck-preview section > h2 { margin-top: 28px; }
 .deck-feature .card { width: 100px; height: 145px; }
 .deck-detail { display: flex; gap: 24px; flex-wrap: wrap; margin: 24px 0 36px; }
 .deck-detail > div { flex: 1 1 280px; padding: 20px 24px 24px; }

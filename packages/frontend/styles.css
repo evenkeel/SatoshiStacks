@@ -457,6 +457,10 @@ overflow: hidden;
 }
 .card.red { color: #e0364a; }
 .card.black { color: #1a1a2e; }
+/* Optional four-color deck: clubs green, diamonds blue. Spades and hearts keep
+   the colours above. Set on <body> by the Table options switch. */
+.four-color-deck .card.suit-c { color: #14805b; }
+.four-color-deck .card.suit-d { color: #1f66e0; }
 .card .deck-art { display: block; width: 100%; height: 100%; }
 /* Below 64px wide the pips and court figures are too small to read, so the
    card shows its glance face instead: one rank, one large suit. */

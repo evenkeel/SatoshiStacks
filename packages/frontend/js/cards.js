@@ -7,6 +7,8 @@
 //   club    – three separate round lobes with open notches between them
 //   heart   – two round lobes with a deep cleft, pointed bottom
 //   diamond – four sharp points joined by inward-curving sides
+// Each face-up card also carries a suit-s/h/d/c class so styles.css can give
+// clubs and diamonds their own colours for the optional four-color deck.
 const SUITS = {
   s: { name: 'spades', path: 'M0-14C-2-8.5-12.5-3.5-12.5 3.5C-12.5 7.6-9.6 10.2-6.2 10.2C-3.9 10.2-2 9-.9 7.1C-1.2 9.8-2.6 11.8-5.2 13.5H5.2C2.6 11.8 1.2 9.8.9 7.1C2 9 3.9 10.2 6.2 10.2C9.6 10.2 12.5 7.6 12.5 3.5C12.5-3.5 2-8.5 0-14Z' },
   h: { name: 'hearts', path: 'M0 13.5C-2.5 9-13 3.5-13-4.5C-13-9-9.9-12.5-6.5-12.5C-3.4-12.5-1-10.3 0-6.6C1-10.3 3.4-12.5 6.5-12.5C9.9-12.5 13-9 13-4.5C13 3.5 2.5 9 0 13.5Z' },
@@ -101,7 +103,7 @@ function renderCardHTML(card, sizeClass = '') {
     // styles.css swaps to the glance face when the card itself is narrow.
     art = `<g class="deck-full">${art}</g><g class="deck-glance">${glance(rank,s,false)}</g>`;
   }
-  return `<div class="card ${hidden ? 'face-down' : ('hd'.includes(s) ? 'red' : 'black')} ${sizeClass}" role="img" aria-label="${label}"><svg class="deck-art" viewBox="0 0 100 145" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">${art}</svg></div>`;
+  return `<div class="card ${hidden ? 'face-down' : `${'hd'.includes(s) ? 'red' : 'black'} suit-${s}`} ${sizeClass}" role="img" aria-label="${label}"><svg class="deck-art" viewBox="0 0 100 145" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">${art}</svg></div>`;
 }
 const api = { renderCardHTML };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;

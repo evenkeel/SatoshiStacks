@@ -2005,7 +2005,11 @@ function renderControls() {
   const allOpponentsAllIn = opponents.length > 0 && opponents.every(p => p.allIn);
   const canRaise = myPlayer.canRaise !== false && !allOpponentsAllIn && myPlayer.stack > toCall;
 
-  const callText = canCheck ? 'Check' : (toCall >= myPlayer.stack ? 'All In' : `Call ${fmtNumber(toCall)}`);
+  // Action and amount are separate parts so the desktop buttons can stack them
+  // and stay equal in size; on phones they read as one line.
+  const actionLabel = (verb, amount) => `<span class="act-verb">${verb}</span>` +
+    (amount == null ? '' : ` <span class="act-amount">${fmtNumber(amount)}</span>`);
+  const callText = canCheck ? actionLabel('Check') : (toCall >= myPlayer.stack ? actionLabel('All In') : actionLabel('Call', toCall));
   const rLabel = maxBet === 0 ? 'Bet' : 'Raise';
 
   // Non-linear slider mapping
@@ -2044,8 +2048,8 @@ function renderControls() {
     <div class="action-buttons">
       <button class="action-btn btn-fold" id="foldBtn">Fold</button>
       <button class="action-btn btn-check-call" id="ccBtn">${callText}</button>
-      ${canRaise && maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${rLabel} ${fmtNumber(minR)}</button>` :
-       (canRaise && toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">All In ${fmtNumber(myPlayer.stack)}</button>` : '')}
+      ${canRaise && maxR > minR ? `<button class="action-btn btn-raise" id="raiseBtn">${actionLabel(rLabel, minR)}</button>` :
+       (canRaise && toCall < myPlayer.stack && maxR > maxBet ? `<button class="action-btn btn-raise" id="raiseBtn">${actionLabel('All In', myPlayer.stack)}</button>` : '')}
     </div>
   `;
 
@@ -2058,7 +2062,7 @@ function renderControls() {
     v = Math.max(minR, Math.min(maxR, Math.round(v)));
     if (sl) { sl.value = betToSlider(v); sl.setAttribute('aria-valuetext', fmtNumber(v)); }
     if (bi) bi.value = v;
-    if (rb) rb.textContent = `${v >= maxR ? 'All In' : rLabel} ${fmtNumber(v)}`;
+    if (rb) rb.innerHTML = actionLabel(v >= maxR ? 'All In' : rLabel, v);
   }
   rb?.addEventListener('click', () => {
     // The numeric input is exact; mapping back from a curved slider can
@@ -2073,7 +2077,7 @@ function renderControls() {
     if (!isNaN(v)) {
       const clamped = Math.max(minR, Math.min(maxR, Math.round(v)));
       if (sl) { sl.value = betToSlider(clamped); sl.setAttribute('aria-valuetext', fmtNumber(clamped)); }
-      if (rb) rb.textContent = `${clamped >= maxR ? 'All In' : rLabel} ${fmtNumber(clamped)}`;
+      if (rb) rb.innerHTML = actionLabel(clamped >= maxR ? 'All In' : rLabel, clamped);
     }
   });
   bi?.addEventListener('blur', () => updateBetUI(parseInt(bi.value) || minR));
@@ -2134,8 +2138,9 @@ function renderPreActions() {
     const callAmt = Math.min(toCall, myPlayer.stack);
     const callLabel = callAmt >= myPlayer.stack ? 'Call All-In' : `Call ${fmtNumber(callAmt)}`;
     let buttonsHTML = '';
-    buttonsHTML += `<button class="pre-action-btn" data-pa="call">${callLabel}</button>`;
+    // Same left-to-right order as the action buttons: Fold, then Call.
     buttonsHTML += '<button class="pre-action-btn" data-pa="fold">Fold</button>';
+    buttonsHTML += `<button class="pre-action-btn" data-pa="call">${callLabel}</button>`;
     bar.innerHTML = buttonsHTML;
     bar.querySelectorAll('.pre-action-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2313,7 +2318,17 @@ function clearTimer() {
 // ============================================================
 //  CHAT SYSTEM
 // ============================================================
-const chatSettings = { sound: 'all', playerChat: true, playByPlay: false, autoMuck: true };
+const chatSettings = { sound: 'all', playerChat: true, playByPlay: false, autoMuck: true, fourColorDeck: false };
+// The deck choice is a lasting preference, so unlike the chat switches it is remembered.
+const FOUR_COLOR_KEY = 'satoshistacks.four-color-deck.v1';
+try { chatSettings.fourColorDeck = localStorage.getItem(FOUR_COLOR_KEY) === '1'; } catch {}
+function applyDeckColors() {
+  document.body.classList.toggle('four-color-deck', chatSettings.fourColorDeck);
+  document.querySelectorAll('.setting-toggle[data-setting="fourColorDeck"]').forEach(button => {
+    button.classList.toggle('on', chatSettings.fourColorDeck);
+    button.setAttribute('aria-checked', String(chatSettings.fourColorDeck));
+  });
+}
 
 function summarizeHandResult(line) {
   // The server's final seat summaries already aggregate split and side-pot
@@ -2514,6 +2529,7 @@ function initChat() {
   if (log && window.ResizeObserver) new ResizeObserver(() => { if (!box.classList.contains('reading')) log.scrollTop = log.scrollHeight; }).observe(log);
 
   // Settings toggles
+  applyDeckColors();
   document.querySelectorAll('.setting-toggle').forEach(tog => {
     tog.addEventListener('click', () => {
       const key = tog.dataset.setting;
@@ -2526,6 +2542,10 @@ function initChat() {
       const box = $('chatBox');
       if (key === 'playerChat') box?.classList.toggle('hide-chat', !chatSettings.playerChat);
       if (key === 'playByPlay') box?.classList.toggle('hide-pbp', !chatSettings.playByPlay);
+      if (key === 'fourColorDeck') {
+        document.body.classList.toggle('four-color-deck', chatSettings.fourColorDeck);
+        try { localStorage.setItem(FOUR_COLOR_KEY, chatSettings.fourColorDeck ? '1' : '0'); } catch {}
+      }
     });
   });
 

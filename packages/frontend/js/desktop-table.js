@@ -1,6 +1,7 @@
 /* Fit the desktop table: the largest scale, and the vertical position, at which
-   its real silhouette clears the corner clusters and a seated player's docks.
-   Chat is then fitted into whatever corner the table has left. */
+   its real silhouette clears the corner clusters and the player docks. The docks
+   are reserved whether or not anyone is seated, so the table is one size for
+   watching and for playing. Chat is then fitted into the corner that is left. */
 (root => {
   'use strict';
   const GAP = 12;   // clearance around a dock or corner cluster
@@ -85,6 +86,24 @@
     return { scale, centerY: band ? (band[0] + band[1]) / 2 : height / 2 };
   }
 
+  // The betting dock sits in the bottom-right pocket beside the oval. Where that
+  // pocket has room to spare, the dock grows into it for larger buttons, but
+  // only as far as costs the table nothing. `dockAt(scale)` is the dock's
+  // viewport rectangle at a given scale; returns that scale and the table fit.
+  function fitDock(width, height, panels, dockAt, max = 1.5) {
+    const around = scale => fitTable(width, height, [...panels, dockAt(scale)]);
+    const floor = around(1).scale * .999;
+    let low = 1, high = max;
+    if (around(max).scale >= floor) low = max;
+    else for (let i = 0; i < 10; i++) {
+      const candidate = (low + high) / 2;
+      if (around(candidate).scale >= floor) low = candidate; else high = candidate;
+    }
+    // Whole hundredths: a dock that could grow by a hair stays at its base size.
+    const dock = Math.floor(low * 100) / 100;
+    return { dock, fit: around(dock) };
+  }
+
   // The lowest point of a fitted table above the window columns left..right,
   // or -Infinity where the table does not reach those columns at all.
   function tableBottomOver(width, { scale, centerY }, left, right) {
@@ -129,7 +148,7 @@
     return large > 1 ? large ** .6 : Math.min(1, width / 1200, height / 700);
   }
 
-  const api = { fitTable, fitChat, tableBottomOver, uiScale, SHAPES, GAP, EDGE };
+  const api = { fitTable, fitDock, fitChat, tableBottomOver, uiScale, SHAPES, GAP, EDGE };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.StacksTableFit = api;
   if (typeof document !== 'object') return;
@@ -140,8 +159,11 @@
   const chat = find('.chat-box');
   const seatActions = find('.table-actions-bar');
   const corners = [find('.table-identity'), find('.account-bar nav')].filter(Boolean);
-  // Betting, pre-action and seat buttons exist only for a seated player.
-  const playerDocks = [find('.controls-area'), find('.pre-action-bar'), seatActions].filter(Boolean);
+  // Betting and seat buttons: used only by a seated player, but their corners
+  // are kept clear for everyone (see fit below). The pre-action bar lies inside
+  // the betting dock's rectangle and needs no room of its own.
+  const betting = find('.controls-area');
+  const playerDocks = [betting, seatActions].filter(Boolean);
   const live = panel => {
     const rect = panel.getBoundingClientRect();
     return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
@@ -159,12 +181,22 @@
       const ui = uiScale(innerWidth, innerHeight);
       document.body.style.setProperty('--desktop-ui-scale', ui);
       const panels = corners.map(live);
-      // A seated player's docks are reserved even while their buttons are
-      // hidden: a turn update must never change the table's size or position.
-      // Spectators have no such buttons, so the table takes that room too.
-      if (seatActions?.classList.contains('visible')) panels.push(...playerDocks.map(live));
-      const fitted = fitTable(innerWidth, innerHeight,
-        panels.filter(panel => panel.right > panel.left && panel.bottom > panel.top));
+      // The docks are reserved even while their buttons are hidden, and for
+      // spectators too: neither a turn update nor sitting down may change the
+      // table's size or position.
+      if (seatActions) panels.push(live(seatActions));
+      const solid = panels.filter(panel => panel.right > panel.left && panel.bottom > panel.top);
+      let fitted;
+      if (betting) {
+        // The dock scales about its bottom-right corner, which therefore stays
+        // put; its layout size is unaffected by the scale already applied.
+        const { right, bottom } = live(betting);
+        const dockAt = size => ({ right, bottom,
+          left: right - betting.offsetWidth * ui * size, top: bottom - betting.offsetHeight * ui * size });
+        const grown = fitDock(innerWidth, innerHeight, solid, dockAt);
+        fitted = grown.fit;
+        document.body.style.setProperty('--dock-scale', grown.dock);
+      } else fitted = fitTable(innerWidth, innerHeight, solid);
       const { scale, centerY } = fitted;
       area.style.top = `${centerY - TABLE_HEIGHT * scale / 2}px`;
       area.style.height = `${TABLE_HEIGHT * scale}px`;
@@ -180,7 +212,7 @@
       const design = (name, fallback) => (parseFloat(style.getPropertyValue(name)) || fallback) * ui;
       const maxWidth = design('--chat-max-width', 340);
       const column = fitChat(innerWidth, fitted, {
-        left: rect.left, bottom: rect.bottom, composer: design('--composer-height', 48),
+        left: rect.left, bottom: rect.bottom, composer: design('--composer-height', 48) + design('--feed-lift', 0),
         ceiling: (identity ? identity.bottom : 0) + 40 * ui,
         minWidth: design('--chat-min-width', 160), maxWidth, step: 10 * ui,
       });

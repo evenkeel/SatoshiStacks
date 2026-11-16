@@ -11,14 +11,14 @@
 <title>Satoshi Stacks</title>
 <link rel="manifest" href="/manifest.json?v=2">
 <link rel="icon" href="/img/brand-icon.svg?v=2" type="image/svg+xml">
-<link rel="stylesheet" href="/styles.css?v=29">
+<link rel="stylesheet" href="/styles.css?v=30">
 <link rel="stylesheet" href="/interface.css?v=6">
 <link rel="stylesheet" href="/club.css?v=6">
 <link rel="stylesheet" href="/motion.css?v=2">
 <link rel="stylesheet" href="/table-layout.css?v=9">
 <link rel="stylesheet" href="/bunker.css?v=21">
 <link rel="stylesheet" href="/phone.css?v=1">
-<link rel="stylesheet" href="/arcade.css?v=8">
+<link rel="stylesheet" href="/arcade.css?v=10">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
@@ -137,6 +137,10 @@
 <span>Play-by-Play</span>
 <button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button>
 </div>
+<div class="setting-row">
+<span>Four-Color Deck</span>
+<button type="button" class="setting-toggle" data-setting="fourColorDeck" role="switch" aria-label="Four-color deck" aria-checked="false"></button>
+</div>
 </div>
 <div class="chat-input-area" id="chatInputArea">
 <input class="chat-input" id="chatInput" aria-label="Chat message" type="text" placeholder="Message the table…" maxlength="120">
@@ -152,6 +156,7 @@
   <div class="setting-row"><span>Sounds</span><button type="button" class="setting-cycle" data-setting="sound" data-value="all" aria-label="Sounds: All">All</button></div>
   <div class="setting-row"><span>Player chat</span><button type="button" class="setting-toggle on" data-setting="playerChat" role="switch" aria-label="Player chat" aria-checked="true"></button></div>
   <div class="setting-row"><span>Play-by-play</span><button type="button" class="setting-toggle" data-setting="playByPlay" role="switch" aria-label="Play-by-play" aria-checked="false"></button></div>
+  <div class="setting-row"><span>Four-color deck</span><button type="button" class="setting-toggle" data-setting="fourColorDeck" role="switch" aria-label="Four-color deck" aria-checked="false"></button></div>
   <button type="button" class="table-options-history" data-action="table-hand-history">View hand history <span aria-hidden="true">↗</span></button>
   <div id="desktopAccountActions" class="desktop-account-actions"><p class="signed-in-as" id="signedInAs"></p><div><button type="button" data-action="edit-profile">Edit profile</button><button type="button" data-action="sign-out">Sign out</button></div></div>
   <div id="mobileAccountActions" class="mobile-account-actions"></div>
@@ -264,7 +269,7 @@
 <!-- Socket.IO Client -->
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/providers.js?v=21"></script>
-<script src="/js/cards.js?v=26"></script>
+<script src="/js/cards.js?v=27"></script>
 <script src="/js/amounts.js?v=2"></script>
 <script src="/js/wallet-ui.js?v=10"></script>
 <script src="/js/local-account.js?v=3"></script>
@@ -273,8 +278,8 @@
 <script src="/js/table-motion.js?v=4"></script>
 <script src="/js/pot-pile.js?v=3"></script>
 <script src="/js/responsive-table.js?v=1"></script>
-<script src="/js/app.js?v=53"></script>
-<script src="/js/desktop-table.js?v=8"></script>
+<script src="/js/app.js?v=56"></script>
+<script src="/js/desktop-table.js?v=9"></script>
 <script src="/js/table-themes.js?v=8"></script>
 </body>
 </html>

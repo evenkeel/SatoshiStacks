@@ -49,7 +49,8 @@ test('the betting panel is rebuilt when the decision itself changes and cleared 
   ui.context.gameState.players[1].currentBet = 900;
   ui.render();
   assert.equal(ui.writes(), 2);
-  assert.match(ui.bc.innerHTML, /Call 800/);
+  // The label is two parts (action, amount) so desktop buttons can stack them.
+  assert.match(ui.bc.innerHTML, /id="ccBtn"><span class="act-verb">Call<\/span> <span class="act-amount">800<\/span>/);
   ui.context.gameState.yourTurn = false;
   ui.render();
   assert.equal(ui.bc.innerHTML, '');
