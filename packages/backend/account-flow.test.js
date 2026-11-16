@@ -36,7 +36,7 @@ test('authenticated account flow separates deposits, table stacks and withdrawal
     async decodeInvoice(invoice) {const [,amount,paymentHash]=invoice.split(':');return {amountSats:Number(amount),paymentHash,destination:'peer'};},
     async sendPayment() {return {status:'SUCCEEDED'};},
   };
-  payments=createPayments({db,lnd,config,getGame:id=>games.get(id),onSeatPlayer:handlers.seatFromDeposit});
+  payments=createPayments({db,lnd,config,getGame:id=>games.get(id),onDeposit:handlers.accountDepositConfirmed});
   const user='a'.repeat(64), other='b'.repeat(64);
   for (const [id,token] of [[user,'alice-session'],[other,'bob-session']]) {
     db.upsertNostrPlayer(id,'npub-test','Player',null);
@@ -56,6 +56,20 @@ test('authenticated account flow separates deposits, table stacks and withdrawal
     await request(alice,'observe-table',args,'observer-joined');
     const unauthorized=await request(bob,'account-deposit-request',{tableId:'station100',npub:user,amountSats:10000},'auth-error');
     assert.match(unauthorized.message,/Sign in/);
+    // Account management works before the node is enabled, but no money can move.
+    config.isRealMoney=()=>false;
+    const preNode=await request(alice,'wallet-state-request',args,'wallet-state');
+    assert.equal(preNode.lightningStatus,'disabled');
+    assert.equal(preNode.availableSats,0);
+    assert.equal(preNode.depositsEnabled,false);
+    assert.equal(preNode.withdrawalsEnabled,false);
+    for (const event of ['account-deposit-request','cashout-request']) {
+      const disabled=await request(alice,event,{...args,amountSats:20000,bolt11:'mock:1:disabled'},'error');
+      assert.match(disabled.message,/demo mode/);
+    }
+    assert.equal(invoiceCount,0);
+    assert.equal(db.getAccountBalance(user),0);
+    config.isRealMoney=()=>true;
     const invoice=await request(alice,'account-deposit-request',{...args,amountSats:20000},'buyin-invoice');
     payments.creditDeposit(invoice.paymentHash,20000);
     const state=await request(alice,'wallet-state-request',args,'wallet-state');
@@ -112,6 +126,11 @@ test('authenticated account flow separates deposits, table stacks and withdrawal
     assert.equal(payment.status,'succeeded'); assert.equal(games.get('station100').players[0].stack,10000);
     assert.equal(db.getAccountBalance(user),7000);
     walletAvailable=false;
+    const offline=await request(bob,'wallet-state-request',args,'wallet-state');
+    assert.equal(offline.lightningStatus,'offline');
+    assert.equal(offline.availableSats,7000);
+    assert.equal(offline.canReturnStack,true);
+    assert.equal(offline.withdrawalsEnabled,false);
     await request(bob,'table-cashout-request',args,'account-table-cashout');
     assert.equal(db.getAccountBalance(user),17000);assert.equal(games.get('station100').players[0],null);
     walletAvailable=true;

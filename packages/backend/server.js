@@ -310,9 +310,8 @@ if (config.REALMONEY_ENABLED) {
     config,
     getGame: (id) => games.get(id),
     liveStacksTotal,
-    onSeatPlayer: (row) => walletHandlers.seatFromDeposit(row),
+    onDeposit: (row) => walletHandlers.accountDepositConfirmed(row),
     onRefund: (row) => walletHandlers.refundToPlayer(row),
-    onDeposit: (row) => { if (row.table_id === db.ACCOUNT) walletHandlers.seatFromDeposit(row); },
     alert: (m) => console.error('[Wallet][ALERT]', m),
   });
   accountPayments = connectedPayments;

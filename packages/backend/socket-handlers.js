@@ -8,6 +8,7 @@ const db = require('./database');
 const PokerGame = require('./poker-game');
 const nostr = require('./services/nostr');
 const { authenticatedSocketId } = require('./socket-session');
+const { accountState } = require('./services/account-state');
 
 function generateObserverName() {
   const adj = config.OBSERVER_ADJECTIVES[Math.floor(Math.random() * config.OBSERVER_ADJECTIVES.length)];
@@ -511,10 +512,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         // issuing another invoice or losing the personal game-state channel.
         if (resumeExistingSeat(socket, userId, tableId, displayName)) return;
 
-        // Real-money tables: you cannot take a fresh seat for free — chips must be
-        // backed by a paid Lightning deposit. (Reconnection to an existing seat was
-        // handled above and is always allowed.) Seating happens via the deposit
-        // settlement flow (buyin-request -> pay invoice -> seatFromDeposit).
+        // Fresh real-money seats require an account-funded buy-in. Restoring an
+        // existing funded seat above never charges again. Deposits themselves
+        // do not seat a player (buyin-request -> debit account -> seat).
         if (config.isRealMoney(tableId)) {
           // Session restoration may refer to an old seat (cash-out, idle exit,
           // or failed payout). Keep the user connected as an authenticated
@@ -794,18 +794,9 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
       const player = sessionToken && db.getPlayerBySession(sessionToken);
       if (!player || !config.TABLE_CONFIGS[tableId]) return;
       try {
-        const payments = getPayments();
-        const availableSats = db.getAccountBalance(player.pubkey_hex);
-        const stack = games.get(tableId)?.players.find(p => p && p.userId === player.pubkey_hex);
-        const tableFunds = stack && games.get(tableId).canCashOut(player.pubkey_hex);
-        socket.emit('wallet-state', { tableId, userId: player.pubkey_hex, availableSats,
-          tableStackSats: stack?.stack || 0, seated: !!stack, canReturnStack: !!tableFunds?.ok,
-          error: !payments ? 'Account wallet is temporarily unavailable. Your balance remains recorded.' : undefined,
-          payments: db.db.prepare("SELECT payment_hash,amount_sats,status FROM ledger_entries WHERE user_id=? AND direction='withdrawal' ORDER BY id DESC LIMIT 20").all(player.pubkey_hex),
-          deposits: db.getWalletDeposits(player.pubkey_hex, db.ACCOUNT).map(row => ({ ...row, expiresAt: row.expires_at || row.created_at + config.LIGHTNING.invoiceExpirySec })),
-          transfers: db.getAccountHistory(player.pubkey_hex),
-          depositsEnabled: !!payments?.depositsEnabled(),
-          creditSats: availableSats, withdrawalsEnabled: !!payments?.withdrawalsEnabled() });
+        socket.emit('wallet-state', accountState({ db, config, games,
+          payments: getPayments(), userId: player.pubkey_hex, tableId,
+          watchOnly: socket.data.watchOnly }));
       } catch (error) { socket.emit('error', { message: error.message }); }
     });
 
@@ -870,7 +861,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
   });
 
   // ==================== REAL-MONEY SEATING HELPERS ====================
-  // Invoked by the payments service (onSeatPlayer / onRefund) — defined at setup
+  // Invoked by the payments service (onDeposit / onRefund) — defined at setup
   // scope because they act across sockets, not on a single connection.
 
   function findSocketId(userId) {
@@ -887,7 +878,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
   }
 
   // Legacy table invoices issued before this upgrade settle into the account.
-  function seatFromDeposit(row) {
+  function accountDepositConfirmed(row) {
     db.getAccountBalance(row.user_id);
     const socketId = findSocketId(row.user_id);
     if (socketId) io.to(socketId).emit('account-deposit-confirmed', { amountSats: row.amount_sats });
@@ -902,7 +893,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     if (config.TABLE_CONFIGS[tableId]) broadcastGameState(tableId);
   }
 
-  return { seatFromDeposit, refundToPlayer, wireGame };
+  return { accountDepositConfirmed, refundToPlayer, wireGame };
 }
 
 module.exports = { setup };

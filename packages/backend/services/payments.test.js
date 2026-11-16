@@ -60,124 +60,136 @@ function setup({ stacks = [10000], lndOverrides = {}, cfgOverrides = {} } = {}) 
     },
     ...cfgOverrides,
   };
-  const seated = [], refunded = [];
+  const notified = [], refunded = [];
   const payments = createPayments({
     lnd, db, config, getGame: () => game,
     liveStacksTotal: () => game.players.reduce((s, p) => (p ? s + p.stack + (p.currentBet || 0) : s), 0) + (game.pot || 0),
-    onSeatPlayer: (row) => seated.push(row),
+    onDeposit: (row) => notified.push(row),
     onRefund: (row) => refunded.push(row),
     alert: () => {},
   });
-  return { game, lnd, config, payments, seated, refunded };
+  return { game, lnd, config, payments, notified, refunded };
+}
+
+function fundedSetup(options = {}) {
+  const fixture = setup(options);
+  db.creditAccount('u0', db.ACCOUNT, 'deposit', 10000);
+  return fixture;
 }
 
 // ======================= DEPOSITS =======================
 
-test('deposit credits + seats exactly once (idempotent on payment_hash)', async () => {
-  const { payments, seated } = setup({ stacks: [] });
-  const inv = await payments.createDepositInvoice({ userId: 'd0', tableId: 'station100', amountSats: 10000, seatIndex: 0 });
+test('deposit credits the account exactly once without seating', async () => {
+  const { payments, game, notified } = setup({ stacks: [] });
+  const inv = await payments.createDepositInvoice({ userId: 'd0', tableId: db.ACCOUNT, amountSats: 10000, seatIndex: 0 });
   const r1 = payments.creditDeposit(inv.paymentHash, 10000);
   const r2 = payments.creditDeposit(inv.paymentHash, 10000); // LND redelivery
   assert.equal(r1.status, 'settled');
-  assert.equal(r2.status, 'already_settled');
-  assert.equal(seated.length, 1, 'seated exactly once despite double settle');
+  assert.equal(r2.status, 'credited');
+  assert.equal(notified.length, 1);
+  assert.equal(db.getAccountBalance('d0'),10000);
+  assert.ok(game.players.every(player=>player===null));
 });
 
-test('deposit with a mismatched paid amount is NOT credited', async () => {
-  const { payments, seated } = setup({ stacks: [] });
-  const inv = await payments.createDepositInvoice({ userId: 'd1', tableId: 'station100', amountSats: 10000 });
+test('deposit amount mismatch credits only the actual received sats without seating', async () => {
+  const { payments, game, notified } = setup({ stacks: [] });
+  const inv = await payments.createDepositInvoice({ userId: 'd1', tableId: db.ACCOUNT, amountSats: 10000 });
   const r = payments.creditDeposit(inv.paymentHash, 9000);
   assert.equal(r.status, 'amount_mismatch');
-  assert.equal(seated.length, 0);
+  assert.equal(db.getAccountBalance('d1'),9000);
+  assert.ok(game.players.every(player=>player===null));
 });
 
 // ======================= WITHDRAWALS =======================
 
 test('withdrawal invoice for more than the stack is rejected (no ledger row, still seated)', async () => {
-  const { payments, game } = setup({ stacks: [10000] });
+  const { payments, game } = fundedSetup({ stacks: [10000] });
   const hash = 'over_' + Date.now();
   await assert.rejects(
-    payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(15000, hash) }),
-    /must equal your stack/,
+    payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(15000, hash) }),
+    /available account balance/,
   );
   assert.equal(db.getLedgerByHash(hash, 'withdrawal'), undefined);
   assert.equal(game.players[0].stack, 10000, 'untouched');
 });
 
-test('full-stack withdrawal succeeds: seat freed, ledger succeeded', async () => {
-  const { payments, game } = setup({ stacks: [10000] });
+test('account withdrawal succeeds without removing the table seat', async () => {
+  const { payments, game } = fundedSetup({ stacks: [10000] });
   const hash = 'ok_' + Date.now();
-  const res = await payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000, hash) });
+  const res = await payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000, hash) });
   assert.equal(res.status, 'succeeded');
-  assert.equal(game.players[0], null, 'seat freed');
+  assert.equal(game.players[0].stack, 10000, 'table funds untouched');
+  assert.equal(db.getAccountBalance('u0'),0);
   assert.equal(db.getLedgerByHash(hash, 'withdrawal').status, 'succeeded');
 });
 
-test('concurrent withdrawals on one seat: exactly one succeeds, never double-pays', async () => {
-  const { payments, game } = setup({ stacks: [10000] });
+test('concurrent account withdrawals reserve the same available balance only once', async () => {
+  const { payments, game } = fundedSetup({ stacks: [10000] });
   const h1 = 'c1_' + Date.now(), h2 = 'c2_' + Date.now();
   const results = await Promise.allSettled([
-    payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000, h1) }),
-    payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000, h2) }),
+    payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000, h1) }),
+    payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000, h2) }),
   ]);
   const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.status === 'succeeded');
   assert.equal(succeeded.length, 1, 'exactly one withdrawal succeeded');
-  assert.equal(game.players[0], null);
+  assert.equal(game.players[0].stack, 10000);
+  assert.equal(db.getAccountBalance('u0'),0);
   const rows = [db.getLedgerByHash(h1, 'withdrawal'), db.getLedgerByHash(h2, 'withdrawal')].filter(Boolean);
   assert.equal(rows.length, 1, 'only one reserved ledger row exists');
 });
 
 test('payment timeout leaves the withdrawal in_flight and does NOT refund', async () => {
-  const { payments, game, refunded } = setup({ stacks: [10000], lndOverrides: { sendShouldThrow: true } });
+  const { payments, game, refunded } = fundedSetup({ stacks: [10000], lndOverrides: { sendShouldThrow: true } });
   const hash = 'tmo_' + Date.now();
-  const res = await payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000, hash) });
+  const res = await payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000, hash) });
   assert.equal(res.status, 'in_flight');
   assert.equal(db.getLedgerByHash(hash, 'withdrawal').status, 'in_flight');
   assert.equal(refunded.length, 0, 'NO refund while the payment fate is unknown');
-  assert.equal(game.players[0], null, 'chips stay removed (not double-credited)');
+  assert.equal(game.players[0].stack, 10000, 'table stack stays untouched');
+  assert.equal(db.getAccountBalance('u0'),0, 'pending withdrawal stays reserved');
 });
 
 test('definitive FAILED triggers exactly one refund', async () => {
-  const { payments, refunded } = setup({ stacks: [10000], lndOverrides: { sendResult: { status: 'FAILED' } } });
+  const { payments, refunded } = fundedSetup({ stacks: [10000], lndOverrides: { sendResult: { status: 'FAILED' } } });
   const hash = 'fail_' + Date.now();
-  const res = await payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000, hash) });
+  const res = await payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000, hash) });
   assert.equal(res.status, 'failed');
   assert.equal(db.getLedgerByHash(hash, 'withdrawal').status, 'refunded');
   assert.equal(refunded.length, 1);
 });
 
 test('reconciler resolves an in_flight withdrawal to succeeded via trackPayment', async () => {
-  const { payments, lnd } = setup({ stacks: [10000], lndOverrides: { sendShouldThrow: true } });
+  const { payments, lnd } = fundedSetup({ stacks: [10000], lndOverrides: { sendShouldThrow: true } });
   const hash = 'rec_' + Date.now();
-  await payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000, hash) });
+  await payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000, hash) });
   assert.equal(db.getLedgerByHash(hash, 'withdrawal').status, 'in_flight');
   lnd.trackResult = { status: 'SUCCEEDED', feeSats: 2 };
   await payments.reconcilePending();
   assert.equal(db.getLedgerByHash(hash, 'withdrawal').status, 'succeeded');
 });
 
-test('cash-out is rejected mid-hand (committed chips)', async () => {
-  const { payments, game } = setup({ stacks: [10000, 10000] });
+test('table-funded withdrawals are rejected even during a hand', async () => {
+  const { payments, game } = fundedSetup({ stacks: [10000, 10000] });
   game.startNewHand();
   const active = game.players[game.currentPlayerIndex].userId;
   await assert.rejects(
     payments.requestWithdrawal({ userId: active, tableId: 'station100', bolt11: wInvoice(10000) }),
-    /active hand/,
+    /only spend the account balance/,
   );
 });
 
 test('self-pay invoice (destination == our own node) is rejected', async () => {
-  const { payments } = setup({ stacks: [10000] });
+  const { payments } = fundedSetup({ stacks: [10000] });
   await assert.rejects(
-    payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000, 'sp_' + Date.now(), 'OURNODE') }),
+    payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000, 'sp_' + Date.now(), 'OURNODE') }),
     /Self-payment/,
   );
 });
 
 test('kill switch (WITHDRAWALS_ENABLED=false) rejects withdrawals', async () => {
-  const { payments } = setup({ stacks: [10000], cfgOverrides: { WITHDRAWALS_ENABLED: false } });
+  const { payments } = fundedSetup({ stacks: [10000], cfgOverrides: { WITHDRAWALS_ENABLED: false } });
   await assert.rejects(
-    payments.requestWithdrawal({ userId: 'u0', tableId: 'station100', bolt11: wInvoice(10000) }),
+    payments.requestWithdrawal({ userId: 'u0', tableId: db.ACCOUNT, bolt11: wInvoice(10000) }),
     /paused/,
   );
 });
@@ -210,78 +222,78 @@ test('solvency rejects malformed balances instead of reporting wallet readiness'
   }
 });
 
-// ======================= CASH-OUT TO LUD16 =======================
+// ======================= ACCOUNT PAYMENT RECOVERY =======================
 
 test('lost cash-out responses can be retried with the same invoice without a second send', async () => {
   let sends=0;
-  const {payments}=setup({lndOverrides:{async sendPayment(){sends++;return {status:'SUCCEEDED'};}}});
-  const args={userId:'u0',tableId:'station100',bolt11:wInvoice(10000,'retry-reply')};
+  const {payments}=fundedSetup({lndOverrides:{async sendPayment(){sends++;return {status:'SUCCEEDED'};}}});
+  const args={userId:'u0',tableId:db.ACCOUNT,bolt11:wInvoice(10000,'retry-reply')};
   assert.equal((await payments.requestWithdrawal(args)).status,'succeeded');
   assert.equal((await payments.requestWithdrawal(args)).status,'succeeded');
   assert.equal(sends,1);
 });
 test('fractional sats cannot be hidden by a rounded-down invoice amount', async () => {
-  const {payments,game}=setup({lndOverrides:{async decodeInvoice(){return {amountSats:10000,amountMsats:'10000001',paymentHash:'fractional',destination:'peer'};}}});
-  await assert.rejects(payments.requestWithdrawal({userId:'u0',tableId:'station100',bolt11:'mock'}),/fractional sats/);
+  const {payments,game}=fundedSetup({lndOverrides:{async decodeInvoice(){return {amountSats:10000,amountMsats:'10000001',paymentHash:'fractional',destination:'peer'};}}});
+  await assert.rejects(payments.requestWithdrawal({userId:'u0',tableId:db.ACCOUNT,bolt11:'mock'}),/fractional sats/);
   assert.equal(game.players[0].stack,10000);assert.equal(db.getLedgerByHash('fractional','withdrawal'),undefined);
 });
 test('reconciliation cannot race an active dispatch into a refund', async () => {
   let finish, tracks=0;
-  const {payments}=setup({lndOverrides:{sendPayment:()=>new Promise(resolve=>{finish=resolve;}),async trackPayment(){tracks++;return {status:'FAILED'};}}});
-  const pending=payments.requestWithdrawal({userId:'u0',tableId:'station100',bolt11:wInvoice(10000,'live-send')});
+  const {payments}=fundedSetup({lndOverrides:{sendPayment:()=>new Promise(resolve=>{finish=resolve;}),async trackPayment(){tracks++;return {status:'FAILED'};}}});
+  const pending=payments.requestWithdrawal({userId:'u0',tableId:db.ACCOUNT,bolt11:wInvoice(10000,'live-send')});
   while(!finish) await new Promise(resolve=>setImmediate(resolve));
   await payments.reconcilePending();assert.equal(tracks,0);
   finish({status:'SUCCEEDED'});await pending;
-  assert.equal(db.getWalletCredit('u0','station100'),0);
+  assert.equal(db.getAccountBalance('u0'),0);
   assert.equal(db.getLedgerByHash('live-send','withdrawal').status,'succeeded');
 });
 test('restart after reservation but before LND accepts it re-dispatches the same invoice', async () => {
-  const {payments,lnd}=setup({lndOverrides:{sendShouldThrow:true,trackResult:{status:'NOT_FOUND'}}});
-  const args={userId:'u0',tableId:'station100',bolt11:wInvoice(10000,'never-reached-lnd')};
+  const {payments,lnd}=fundedSetup({lndOverrides:{sendShouldThrow:true,trackResult:{status:'NOT_FOUND'}}});
+  const args={userId:'u0',tableId:db.ACCOUNT,bolt11:wInvoice(10000,'never-reached-lnd')};
   await payments.requestWithdrawal(args);
   lnd.sendShouldThrow=false;
   await payments.reconcilePending();
   assert.equal(db.getLedgerByHash('never-reached-lnd','withdrawal').status,'succeeded');
-  assert.equal(db.getWalletCredit('u0','station100'),0);
+  assert.equal(db.getAccountBalance('u0'),0);
 });
 test('transport errors during reconciliation never refund or resend an unknown payment', async () => {
   let sends=0;
-  const {payments}=setup({lndOverrides:{async sendPayment(){sends++;throw new Error('offline');},async trackPayment(){throw new Error('offline');}}});
-  await payments.requestWithdrawal({userId:'u0',tableId:'station100',bolt11:wInvoice(10000,'unknown')});
+  const {payments}=fundedSetup({lndOverrides:{async sendPayment(){sends++;throw new Error('offline');},async trackPayment(){throw new Error('offline');}}});
+  await payments.requestWithdrawal({userId:'u0',tableId:db.ACCOUNT,bolt11:wInvoice(10000,'unknown')});
   await payments.reconcilePending();assert.equal(sends,1);
-  assert.equal(db.getLedgerByHash('unknown','withdrawal').status,'in_flight');assert.equal(db.getWalletCredit('u0','station100'),0);
+  assert.equal(db.getLedgerByHash('unknown','withdrawal').status,'in_flight');assert.equal(db.getAccountBalance('u0'),0);
 });
 test('reservation notification failure cannot lose or roll back a withdrawal', async () => {
-  const {payments}=setup();
-  const result=await payments.requestWithdrawal({userId:'u0',tableId:'station100',bolt11:wInvoice(10000,'notify'),onReserved(){throw new Error('disconnected');}});
+  const {payments}=fundedSetup();
+  const result=await payments.requestWithdrawal({userId:'u0',tableId:db.ACCOUNT,bolt11:wInvoice(10000,'notify'),onReserved(){throw new Error('disconnected');}});
   assert.equal(result.status,'succeeded');
 });
 test('a deposit that settles after expiry is recovered even after the invoice stream was offline',async()=>{
   const {payments,lnd}=setup({stacks:[]});
-  const inv=await payments.createDepositInvoice({userId:'late-deposit',tableId:'station100',amountSats:5000});
+  const inv=await payments.createDepositInvoice({userId:'late-deposit',tableId:db.ACCOUNT,amountSats:5000});
   db.updateLedgerStatus(db.getLedgerByHash(inv.paymentHash,'deposit').id,'expired');
   lnd.lookupInvoice=async()=>({confirmed:true,amountSats:5000});
   await payments.reconcilePending();await payments.reconcilePending();
-  assert.equal(payments.availableFunds('late-deposit','station100').stack,5000);
-  assert.equal(db.getLedgerByHash(inv.paymentHash,'deposit').status,'settled_unseated');
+  assert.equal(db.getAccountBalance('late-deposit'),5000);
+  assert.equal(db.getLedgerByHash(inv.paymentHash,'deposit').status,'credited');
 });
 test('an expired invoice with an accepted HTLC keeps reserving deposit exposure',async()=>{
   const {payments,lnd,config}=setup({stacks:[]});config.LIGHTNING.hotWalletCapSats=5000;
-  const inv=await payments.createDepositInvoice({userId:'held-deposit',tableId:'station100',amountSats:5000});
+  const inv=await payments.createDepositInvoice({userId:'held-deposit',tableId:db.ACCOUNT,amountSats:5000});
   db.db.prepare("UPDATE ledger_entries SET created_at=0 WHERE payment_hash=?").run(inv.paymentHash);
   lnd.lookupInvoice=async()=>({confirmed:false,held:true});
   await payments.reconcilePending();
   assert.equal(db.getLedgerByHash(inv.paymentHash,'deposit').status,'pending');
-  await assert.rejects(payments.createDepositInvoice({userId:'other-deposit',tableId:'station100',amountSats:5000}),/exposure/);
+  await assert.rejects(payments.createDepositInvoice({userId:'other-deposit',tableId:db.ACCOUNT,amountSats:5000}),/exposure/);
 });
 
 // Persistent npub account: external payments and table transfers are independent.
 test('account deposits settle once without seating and can be made while playing', async () => {
-  const {payments,game,seated}=setup();
+  const {payments,game,notified}=setup();
   const inv=await payments.createDepositInvoice({userId:'u0',tableId:db.ACCOUNT,amountSats:1234});
   payments.creditDeposit(inv.paymentHash,1234); payments.creditDeposit(inv.paymentHash,1234);
   assert.equal(db.getAccountBalance('u0'),1234);
-  assert.equal(game.players[0].stack,10000); assert.equal(seated.length,0);
+  assert.equal(game.players[0].stack,10000); assert.equal(notified.length,1);
   assert.equal(db.getLedgerByHash(inv.paymentHash,'deposit').status,'credited');
 });
 test('legacy recoverable balances across tables migrate exactly once', () => {
@@ -415,4 +427,126 @@ test('reconciliation uses the reserved fee budget after operator policy changes'
   assert.deepEqual(sends.map(s=>s.feeLimitSats),[50,50]);
   assert.equal(db.getLedgerByHash('frozen-fee','withdrawal').amount_sats,10000);
   assert.equal(db.getLedgerByHash('frozen-fee','withdrawal').status,'succeeded');
+});
+
+// A settled deposit must stay in the account, even when the player disappears
+// while paying. The former 120-second profile-address auto-refund is forbidden.
+test('legacy 10k deposit with a profile address stays credited through notification failure, sweeps and restart', async () => {
+  const {lnd,config}=setup({stacks:[]});
+  const userId='deposit-no-autorefund';
+  db.upsertNostrPlayer(userId,'npub-regression','Deposit regression',null,'regression@primal.net');
+  const sends=[];
+  lnd.sendPayment=async args=>{sends.push(args);return {status:'SUCCEEDED'};};
+  const payments=createPayments({lnd,db,config,getGame:()=>null,
+    onDeposit:()=>{throw new Error('Player disconnected');},alert:()=>{}});
+  const invoice={paymentHash:'legacy-10k-no-autorefund'};
+  db.createDepositRow({userId,tableId:'station100',amountSats:10000,paymentHash:invoice.paymentHash,bolt11:'legacy-invoice'});
+  payments.creditDeposit(invoice.paymentHash,10000);
+  const row=db.getLedgerByHash(invoice.paymentHash,'deposit');
+  db.db.prepare('UPDATE ledger_entries SET settled_at=? WHERE id=?').run(Math.floor(Date.now()/1000)-3600,row.id);
+  payments.releaseUnseatedDeposits();
+  payments.releaseUnseatedDeposits();
+  const restarted=createPayments({lnd,db,config,getGame:()=>null,alert:()=>{}});
+  await restarted.reconcilePending();
+  restarted.releaseUnseatedDeposits();
+  restarted.creditDeposit(invoice.paymentHash,10000);
+  assert.equal(db.getAccountBalance(userId),10000);
+  assert.equal(db.getLedgerById(row.id).status,'credited');
+  assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM ledger_entries WHERE direction='withdrawal'").get().n,0);
+  assert.equal(sends.length,0,'No outgoing Lightning payment without a withdrawal');
+});
+
+test('outgoing dispatcher rejects deposit records even if mislabeled reserved',async()=>{
+  const {payments,lnd}=setup({stacks:[]});let sends=0;
+  lnd.sendPayment=async()=>{sends++;return {status:'SUCCEEDED'};};
+  const invoice=await payments.createDepositInvoice({userId:'not-a-withdrawal',tableId:db.ACCOUNT,amountSats:10000});
+  const row=db.getLedgerByHash(invoice.paymentHash,'deposit');
+  db.updateLedgerStatus(row.id,'reserved');
+  await assert.rejects(payments.dispatchPayment({...row,direction:'withdrawal',status:'reserved'}),/Only withdrawal records/);
+  assert.equal(sends,0);
+  assert.equal(db.getLedgerById(row.id).direction,'deposit');
+});
+
+test('outgoing dispatcher uses the committed withdrawal invoice instead of substituted caller data',async()=>{
+  const {payments,lnd}=setup({stacks:[]});const sends=[];
+  db.insertWithdrawalReserved({userId:'committed',tableId:db.ACCOUNT,amountSats:1000,paymentHash:'committed-hash',bolt11:'committed-invoice'});
+  const row=db.getLedgerByHash('committed-hash','withdrawal');
+  lnd.sendPayment=async args=>{sends.push(args);return {status:'SUCCEEDED'};};
+  await payments.dispatchPayment({...row,bolt11:'substituted-invoice',payment_hash:'substituted-hash',amount_sats:10000});
+  assert.equal(sends.length,1);
+  assert.equal(sends[0].bolt11,'committed-invoice');
+  assert.equal(sends[0].paymentHash,'committed-hash');
+  assert.equal(db.getLedgerById(row.id).status,'succeeded');
+});
+
+test('legacy ambiguous auto-refunds are neither paid again nor recredited by maintenance',async()=>{
+  const {payments,lnd}=setup({stacks:[]});let sends=0;
+  lnd.sendPayment=async()=>{sends++;return {status:'SUCCEEDED'};};
+  const invoice=await payments.createDepositInvoice({userId:'legacy-uncertain',tableId:db.ACCOUNT,amountSats:10000});
+  const row=db.getLedgerByHash(invoice.paymentHash,'deposit');
+  db.updateLedgerStatus(row.id,'refund_pending');
+  payments.releaseUnseatedDeposits();
+  await payments.reconcilePending();
+  assert.equal(db.getAccountBalance('legacy-uncertain'),0);
+  assert.equal(db.getLedgerById(row.id).status,'refund_pending');
+  assert.equal(sends,0);
+});
+
+test('new table deposits and withdrawals are rejected before any node call',async()=>{
+  const {payments,lnd,game}=setup();let calls=0;
+  lnd.createInvoice=lnd.decodeInvoice=lnd.sendPayment=async()=>{calls++;throw new Error('must not reach node');};
+  await assert.rejects(payments.createDepositInvoice({userId:'u0',tableId:'station100',amountSats:10000}),/must fund the account/);
+  await assert.rejects(payments.requestWithdrawal({userId:'u0',tableId:'station100',bolt11:'table-invoice'}),/only spend the account balance/);
+  assert.equal(calls,0);
+  assert.equal(db.getAccountBalance('u0'),0);
+  assert.equal(game.players[0].stack,10000);
+  assert.equal(db.getPendingLedger().length,0);
+});
+
+test('an account withdrawal cannot draw on a seated stack even between hands',async()=>{
+  const {payments,game}=setup();
+  await assert.rejects(payments.requestWithdrawal({userId:'u0',bolt11:wInvoice(10000,'seated-only')}),/available account balance/);
+  assert.equal(game.players[0].stack,10000);
+  assert.equal(db.getAccountBalance('u0'),0);
+  payments.returnStackToAccount({userId:'u0',tableId:'station100'});
+  assert.equal(db.getAccountBalance('u0'),10000);
+  assert.equal((await payments.requestWithdrawal({userId:'u0',bolt11:wInvoice(10000,'after-return')})).status,'succeeded');
+  assert.equal(db.getAccountBalance('u0'),0);
+});
+
+test('available account funds can be withdrawn during a hand without touching table funds',async()=>{
+  const {payments,game}=setup();
+  db.creditAccount('u0',db.ACCOUNT,'deposit',3000);
+  game.handInProgress=true;game.players[0].participatedThisHand=true;
+  assert.equal((await payments.requestWithdrawal({userId:'u0',bolt11:wInvoice(3000,'during-hand')})).status,'succeeded');
+  assert.equal(game.players[0].stack,10000);
+  assert.equal(game.players[0].participatedThisHand,true);
+  assert.equal(db.getAccountBalance('u0'),0);
+  assert.throws(()=>payments.returnStackToAccount({userId:'u0',tableId:'station100'}),/active hand/);
+});
+
+test('a buy-in racing withdrawal validation cannot spend the same account sats twice',async()=>{
+  const {payments,lnd,game}=setup({stacks:[]});
+  db.creditAccount('u0',db.ACCOUNT,'deposit',10000);
+  let finish, sends=0;
+  lnd.getSpendableSats=()=>new Promise(resolve=>{finish=resolve;});
+  lnd.sendPayment=async()=>{sends++;return {status:'SUCCEEDED'};};
+  const withdrawal=payments.requestWithdrawal({userId:'u0',bolt11:wInvoice(10000,'buyin-race')});
+  while(!finish) await new Promise(resolve=>setImmediate(resolve));
+  payments.buyInFromAccount({userId:'u0',tableId:'station100',amountSats:10000});
+  finish(1000000);
+  await assert.rejects(withdrawal,/balance changed/);
+  assert.equal(sends,0);
+  assert.equal(db.getLedgerByHash('buyin-race','withdrawal'),undefined);
+  assert.equal(db.getAccountBalance('u0'),0);
+  assert.equal(game.players[0].stack,10000);
+});
+
+test('previously committed legacy withdrawals still reconcile into account credit on failure',async()=>{
+  const {payments,lnd}=setup({stacks:[]});
+  db.insertWithdrawalReserved({userId:'legacy',tableId:'station100',amountSats:10000,paymentHash:'old-committed',bolt11:'old-invoice'});
+  lnd.sendResult={status:'FAILED'};
+  await payments.reconcilePending();await payments.reconcilePending();
+  assert.equal(db.getAccountBalance('legacy'),10000);
+  assert.equal(db.getLedgerByHash('old-committed','withdrawal').status,'refunded');
 });

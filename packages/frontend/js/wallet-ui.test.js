@@ -41,3 +41,24 @@ test('phone spectators can withdraw without being offered a table buy-in',()=>{
   assert.doesNotMatch(html,/account-buyin/);
   assert.match(html,/confirm-cashout/);
 });
+
+test('pre-node accounts show disabled payment controls without offering a funded table seat',()=>{
+  const html=cashoutHTML({lightningStatus:'disabled',availableSats:0,canBuyIn:false});
+  assert.match(html,/Lightning payments are not enabled yet/);
+  assert.match(html,/Demo chips are separate/);
+  assert.match(html,/data-action="account-deposit" disabled/);
+  assert.match(html,/disabled>Withdraw sats/);
+  assert.match(html,/No account activity yet/);
+  assert.doesNotMatch(html,/data-action="confirm-|data-action="account-buyin"/);
+  assert.doesNotMatch(html,/marked to sit out/);
+});
+test('authoritative pending total includes payments outside the displayed history',()=>{
+  const html=cashoutHTML({availableSats:0,pendingWithdrawalSats:700,payments:[]});
+  assert.match(html,/700 sats are reserved/);
+});
+test('pending invoices are discoverable from the account',()=>{
+  const html=cashoutHTML({availableSats:0,depositsEnabled:true,deposits:[{amount_sats:5000,status:'pending',bolt11:'test',expiresAt:Date.now()/1000+600}]});
+  assert.match(html,/View pending deposit/);
+  assert.match(html,/Awaiting payment/);
+  assert.match(html,/only after Lightning confirms/);
+});

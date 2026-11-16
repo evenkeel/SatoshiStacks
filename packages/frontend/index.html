@@ -12,7 +12,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/img/brand-icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css?v=26">
-<link rel="stylesheet" href="/interface.css?v=4">
+<link rel="stylesheet" href="/interface.css?v=5">
 <link rel="stylesheet" href="/club.css?v=4">
 <link rel="stylesheet" href="/motion.css?v=2">
 <link rel="stylesheet" href="/table-layout.css?v=9">
@@ -26,7 +26,7 @@
     <a class="brand-link" href="/" aria-label="Satoshi Stacks home"><img class="brand-wordmark" src="/img/table-wordmark.svg?v=7" alt="Satoshi Stacks" width="156" height="66"></a>
     <div class="table-meta"><div class="table-title"><strong>Station 100</strong><span class="seat-count" id="seatCount">0 / 6 seated</span></div><span id="tableModeLabel">₿ 50 / ₿ 100 · 6 seats</span></div>
   </div>
-<nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="editProfileBtn" data-action="edit-profile" hidden>Edit profile</button><button id="walletConnectBtn" data-action="connect-wallet">Connect Lightning wallet</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Account balance</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button></nav>
+<nav aria-label="Player actions"><button id="accountSignIn" data-action="observer-sign-in">Sign in with Nostr</button><button id="editProfileBtn" data-action="edit-profile" hidden>Edit profile</button><button id="recoverFundsBtn" data-action="recover-funds" hidden>Account balance</button><button id="accountSignOut" data-action="sign-out" hidden>Sign out</button></nav>
 </header>
 <div class="game-container">
 <div class="middle-row">
@@ -139,10 +139,6 @@
 <div class="setting-row">
 <span>Auto-Muck Losers</span>
 <button type="button" class="setting-toggle on" data-setting="autoMuck" role="switch" aria-label="Auto-muck losers" aria-checked="true"></button>
-</div>
-<div class="setting-row wallet-row" id="walletSettingRow" style="display:none">
-<span>⚡ Lightning Wallet</span>
-<button class="setting-btn wallet-connect-btn" id="walletSettingsBtn" data-action="connect-wallet">Connect</button>
 </div>
 </div>
 <div class="chat-input-area" id="chatInputArea">
@@ -271,13 +267,13 @@
 <script src="/js/providers.js?v=21"></script>
 <script src="/js/cards.js?v=22"></script>
 <script src="/js/amounts.js?v=2"></script>
-<script src="/js/wallet-ui.js?v=5"></script>
+<script src="/js/wallet-ui.js?v=6"></script>
 <script src="/js/local-account.js?v=3"></script>
 <script src="/js/profile.js?v=5"></script>
 <script src="/js/table-motion.js?v=3"></script>
 <script src="/js/pot-pile.js?v=3"></script>
 <script src="/js/responsive-table.js?v=1"></script>
-<script src="/js/app.js?v=45"></script>
+<script src="/js/app.js?v=46"></script>
 <script src="/js/desktop-table.js?v=5"></script>
 <script src="/js/table-themes.js?v=6"></script>
 </body>

@@ -1,12 +1,8 @@
 /**
- * Lightning accounting for the poker table. NIP-07 authenticates the player;
- * their browser wallet supplies a receiving invoice through WebLN. Only this
- * service reserves funds and dispatches server-side payments.
- *
- * Deposits remain liabilities until consumed by an atomic seat+snapshot commit.
- * Withdrawals atomically reserve credit and/or the between-hands stack with the
- * updated snapshot. Definitive failures restore a durable wallet credit;
- * ambiguous outcomes stay in-flight until reconciliation with LND.
+ * Custodial account payments. Lightning deposits credit the account; only an
+ * explicit account withdrawal sends Lightning. Table buy-ins and returns are
+ * internal transfers. Table stacks are never an external payment source.
+ * Unknown outgoing results stay reserved until the node resolves their fate.
  */
 const crypto = require('crypto');
 const {withdrawalFeeBudget} = require('./payment-policy');
@@ -14,7 +10,6 @@ function createPayments(deps) {
   const {
     lnd, db, config, getGame,
     liveStacksTotal = () => 0,
-    onSeatPlayer = () => {},
     onRefund = () => {},
     onDeposit = () => {},
     alert = (m) => console.error('[Payments][ALERT]', m),
@@ -53,46 +48,24 @@ function createPayments(deps) {
   function breakerState() { return { ...breaker }; }
   function depositsEnabled() { return config.DEPOSITS_ENABLED !== false && !breaker.tripped; }
 
-  function availableFunds(userId, tableId) {
-    const game = tableId === db.ACCOUNT ? null : getGame(tableId);
-    const seated = game && game.players.some(p => p && p.userId === userId);
-    const cc = seated ? game.canCashOut(userId) : { ok: true, stack: 0 };
-    if (!cc.ok) return cc;
-    const credit = tableId === db.ACCOUNT ? db.getAccountBalance(userId) : db.getWalletCredit(userId, tableId);
-    const deposits = db.getUnseatedDeposits(userId, tableId);
-    return { ok: true, stack: cc.stack + credit + deposits.reduce((s, r) => s + r.amount_sats, 0),
-      seated: !!seated, seatedStack: cc.stack, credit, deposits };
-  }
+  // ======================= ACCOUNT DEPOSITS ===============================
 
-  const seatIndexOf = (game, userId) => {
-    const i = game.players.findIndex(p => p && p.userId === userId);
-    return i === -1 ? null : i;
-  };
-
-  // ======================= DEPOSIT (buy-in) ===============================
-
-  async function createDepositInvoice({ userId, tableId, amountSats, seatIndex }) {
-    if (tableId !== db.ACCOUNT && !config.isRealMoney(tableId)) throw new Error('Not a real-money table');
+  async function createDepositInvoice({ userId, tableId = db.ACCOUNT, amountSats }) {
+    if (tableId !== db.ACCOUNT) throw new Error('Deposits must fund the account, not a table');
     if (!depositsEnabled()) throw new Error('New deposits are temporarily paused');
-    const game = tableId === db.ACCOUNT ? null : getGame(tableId);
-    if (game?.players.some(p => p && p.userId === userId)) throw new Error('You already have a seat');
-    if (game?.players.every(Boolean)) throw new Error('Table is full — wait for a seat before paying');
-    if (tableId !== db.ACCOUNT && (db.getWalletCredit(userId, tableId) > 0 || db.getUnseatedDeposits(userId, tableId).length)) throw new Error('You have funds to recover. Open Cash out before making another buy-in.');
     amountSats = Number(amountSats);
     if (!Number.isSafeInteger(amountSats) || amountSats <= 0) throw new Error('Invalid amount');
-    const table = config.TABLE_CONFIGS?.[tableId];
-    if (table && (amountSats < table.minBuyin || amountSats > table.maxBuyin)) throw new Error('Amount outside table buy-in limits');
     const key = `${userId}:${tableId}`;
     if (depositRequests.has(key)) return depositRequests.get(key);
     let pending = db.getPendingLedger().find(r => r.direction === 'deposit' && r.user_id === userId && r.table_id === tableId && (!r.bolt11 || invoiceExpiry(r) > nowSec()));
     if (pending?.bolt11) return { bolt11: pending.bolt11, paymentHash: pending.payment_hash, amountSats: pending.amount_sats, expiresAt: invoiceExpiry(pending) };
     if (!pending) {
       const outstanding = db.getPendingLedger().filter(r => r.direction === 'deposit').reduce((s, r) => s + r.amount_sats, 0);
-      if (L().hotWalletCapSats && totalOwed() + outstanding + amountSats > L().hotWalletCapSats) throw new Error('Table deposit exposure limit reached');
+      if (L().hotWalletCapSats && totalOwed() + outstanding + amountSats > L().hotWalletCapSats) throw new Error('Account deposit exposure limit reached');
       const secret = crypto.randomBytes(32).toString('hex');
       const paymentHash = crypto.createHash('sha256').update(Buffer.from(secret,'hex')).digest('hex');
       pending = db.db.transaction(()=>{
-        db.createDepositRow({userId,tableId,amountSats,paymentHash,bolt11:null,seatIndex:seatIndex ?? null});
+        db.createDepositRow({userId,tableId,amountSats,paymentHash,bolt11:null,seatIndex:null});
         const row = db.getLedgerByHash(paymentHash,'deposit');
         db.db.prepare('INSERT INTO deposit_invoice_intents VALUES(?,?,?)').run(row.id,secret,nowSec()+L().invoiceExpirySec);
         return row;
@@ -105,7 +78,7 @@ function createPayments(deps) {
     const request = (async () => {
       try {
         const {bolt11,paymentHash} = await lnd.createInvoice({amountSats:row.amount_sats,
-          memo:tableId === db.ACCOUNT ? 'SatoshiStacks account deposit' : `SatoshiStacks buy-in ${tableId}`,
+          memo:'SatoshiStacks account deposit',
           secret:intent.secret,expiresAt:intent.expires_at,expirySec:L().invoiceExpirySec});
         if (paymentHash !== row.payment_hash || !bolt11) throw new Error('Unexpected invoice returned for this deposit');
         db.db.transaction(()=>{
@@ -123,24 +96,21 @@ function createPayments(deps) {
     try { return await request; } finally { depositRequests.delete(key); }
   }
 
-  // Idempotent. Seats the player exactly once, on the pending->settled edge.
+  // Idempotent account credit, including late settlement of legacy table invoices.
   function creditDeposit(paymentHash, amtPaidSat) {
     const started = Date.now();
     const res = db.db.transaction(() => {
       const result = db.settleDeposit(paymentHash, amtPaidSat);
       if (result.row && ['settled','amount_mismatch'].includes(result.status)) db.db.prepare("UPDATE deposit_invoice_intents SET secret='' WHERE ledger_id=?").run(result.row.id);
-      if (result.row?.table_id === db.ACCOUNT && ['settled', 'amount_mismatch'].includes(result.status)) db.getAccountBalance(result.row.user_id);
+      if (result.row && ['settled', 'amount_mismatch'].includes(result.status)) db.getAccountBalance(result.row.user_id);
       return result;
     })();
     if (['settled','amount_mismatch'].includes(res.status)) {
-      observe(res.row,res.row.table_id === db.ACCOUNT ? 'deposit_credited' : 'deposit_settled',Date.now()-started);
+      observe(res.row,'deposit_credited',Date.now()-started);
       try { onDeposit(res.row); } catch (_) { alert('Deposit notification failed; credited funds remain recorded'); }
     }
-    if (res.status === 'settled' && res.row.table_id !== db.ACCOUNT) {
-      try { onSeatPlayer(res.row); }
-      catch (e) { alert(`Deposit ${paymentHash} settled but seating failed: ${e.message}`); }
-    } else if (res.status === 'amount_mismatch') {
-      alert(`Deposit ${paymentHash} amount mismatch (paid ${amtPaidSat} != invoice ${res.row && res.row.amount_sats}); NOT seating.`);
+    if (res.status === 'amount_mismatch') {
+      alert(`Deposit ${paymentHash} amount mismatch; actual received sats were credited to the account.`);
     }
     return res;
   }
@@ -190,13 +160,12 @@ function createPayments(deps) {
     } catch (error) { game.players = before; throw error; }
   }
 
-  // ======================= WITHDRAWAL (cash-out) ==========================
+  // ======================= ACCOUNT WITHDRAWALS ==========================
 
-  async function requestWithdrawal({ userId, tableId, bolt11, onReserved = () => {} }) {
-    if (tableId !== db.ACCOUNT && !config.isRealMoney(tableId)) throw new Error('Not a real-money table');
+  async function requestWithdrawal({ userId, tableId = db.ACCOUNT, bolt11, onReserved = () => {} }) {
+    if (tableId !== db.ACCOUNT) throw new Error('Withdrawals can only spend the account balance. Return table funds to the account first.');
     if (!withdrawalsEnabled()) throw new Error('Withdrawals are temporarily paused');
 
-    const game = tableId === db.ACCOUNT ? null : getGame(tableId);
     if (typeof bolt11 !== 'string' || !bolt11 || bolt11.length > 10000) throw new Error('Invalid receiving invoice');
     const dec = await lnd.decodeInvoice(bolt11);
     if (!dec || !dec.paymentHash) throw new Error('Invalid invoice');
@@ -209,19 +178,14 @@ function createPayments(deps) {
         paymentHash: existing.payment_hash, amountSats: existing.amount_sats };
     }
 
-    // 1. Read-only pre-checks against the authoritative stack.
-    const cc = availableFunds(userId, tableId);
-    if (!cc.ok) throw new Error(cc.error);
-    const amount = tableId === db.ACCOUNT ? dec.amountSats : cc.stack;
-    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > cc.stack) throw new Error('Invoice exceeds available account balance or has an invalid amount');
-    // A full-balance exit must also work for a stack below the normal minimum.
+    const accountSats = db.getAccountBalance(userId);
+    const amount = dec.amountSats;
+    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > accountSats) throw new Error('Invoice exceeds available account balance or has an invalid amount');
     if (L().maxWithdrawalSats && amount > L().maxWithdrawalSats) throw new Error(`Maximum withdrawal is ${L().maxWithdrawalSats} sats`);
     if (L().hotWalletCapSats && amount > L().hotWalletCapSats) throw new Error('Amount exceeds hot-wallet cap');
 
-    // 2. Decode + validate the player-supplied invoice.
-    if (!(dec.amountSats > 0)) throw new Error('Invoice must specify an amount');
-    if (dec.amountMsats !== undefined && (!/^\d+$/.test(dec.amountMsats) || BigInt(dec.amountMsats) !== BigInt(amount) * 1000n)) throw new Error(`Invoice amount must equal your stack (${amount} sats), with no fractional sats`);
-    if (dec.amountSats !== amount) throw new Error(`Invoice amount must equal your stack (${amount} sats)`);
+    // Validate exact whole-sat amount, destination and expiry.
+    if (dec.amountMsats !== undefined && (!/^\d+$/.test(dec.amountMsats) || BigInt(dec.amountMsats) !== BigInt(amount) * 1000n)) throw new Error(`Invoice amount must equal the withdrawal amount (${amount} sats), with no fractional sats`);
     if (L().ownPubkey && dec.destination === L().ownPubkey) throw new Error('Self-payment is not allowed');
     if (dec.expiresAt && (!Number.isFinite(Date.parse(dec.expiresAt)) || Date.parse(dec.expiresAt) <= Date.now())) throw new Error('Invoice has expired or has an invalid expiry');
 
@@ -230,32 +194,23 @@ function createPayments(deps) {
     const spendable = await lnd.getSpendableSats();
     if (!Number.isSafeInteger(spendable) || spendable < 0) throw new Error('Could not verify the wallet balance. Try again shortly.');
 
-    // Reserve the liability and commit the debited table snapshot in one DB
-    // transaction. No await can interleave; restore memory on an outer rollback.
+    // Reserve only account credit in one transaction. A concurrent buy-in or
+    // withdrawal must observe the reduced available account balance.
     let row;
-    const beforePlayers = game?.players.slice();
     try {
       row = db.db.transaction(() => {
         if (!withdrawalsEnabled()) throw new Error('Withdrawals are temporarily paused');
         if (spendable < totalOwed()+outstandingFeeBudgets()+feeReserve+feeBudget) throw new Error('The wallet routing-fee reserve is low. Your balance is unchanged; please try again later.');
-        const cc2 = availableFunds(userId, tableId);
-        if (!cc2.ok) throw new Error(cc2.error);
-        if (tableId === db.ACCOUNT ? cc2.stack < amount : cc2.stack !== amount) throw new Error('Your balance changed — please retry');
-        db.insertWithdrawalReserved({            // throws on UNIQUE -> replay guard
-          userId, tableId, amountSats: amount, paymentHash: dec.paymentHash, bolt11,
-          seatIndex: cc2.seated ? seatIndexOf(game, userId) : null,
-        });
+        if (db.getAccountBalance(userId) < amount) throw new Error('Your balance changed — please retry');
+        db.insertWithdrawalReserved({userId, tableId: db.ACCOUNT, amountSats: amount,
+          paymentHash: dec.paymentHash, bolt11, seatIndex: null});
         const r = db.getLedgerByHash(dec.paymentHash, 'withdrawal');
         db.db.prepare('INSERT INTO withdrawal_fee_budgets VALUES(?,?)').run(r.id,feeBudget);
         observe(r,'withdrawal_reserved');
-        db.takeWalletCredit(userId, tableId, tableId === db.ACCOUNT ? amount : cc2.credit);
-        if (tableId === db.ACCOUNT) db.recordAccountTransfer(userId, tableId, 'withdrawal_reserved', amount);
-        for (const deposit of cc2.deposits) db.updateLedgerStatus(deposit.id, 'withdrawn');
-        if (cc2.seated) game.removePlayer(userId, { payoutReserved: true });
+        db.debitAccount(userId, db.ACCOUNT, 'withdrawal_reserved', amount);
         return r;
       })();
     } catch (e) {
-      if (game && beforePlayers) game.players = beforePlayers;
       if (e && (e.code === 'SQLITE_CONSTRAINT_UNIQUE' || /UNIQUE/.test(String(e.message)))) {
         throw new Error('This invoice was already submitted');
       }
@@ -265,7 +220,7 @@ function createPayments(deps) {
     try { onReserved({ paymentHash: row.payment_hash, amountSats: row.amount_sats }); }
     catch (error) { alert(`Withdrawal reservation notification failed: ${error.message}`); }
 
-    // 4. OUTSIDE the transaction: dispatch the payment.
+    // Dispatch only after the account reservation commits.
     return { ...await dispatchPayment(row), paymentHash: row.payment_hash, amountSats: row.amount_sats };
   }
 
@@ -279,7 +234,12 @@ function createPayments(deps) {
   }
   async function runPayment(row) {
     const current = db.getLedgerById(row.id);
+    // Only a persisted withdrawal reservation may send money. A deposit can
+    // become account credit, never an automatic payment to a profile address.
+    if (current && current.direction !== 'withdrawal') throw new Error('Only withdrawal records can dispatch Lightning payments');
     if (!current || !['reserved', 'in_flight'].includes(current.status)) return { status: current?.status || 'unknown' };
+    // Use the committed invoice/hash/amount, never caller-supplied or stale data.
+    row = current;
     db.updateLedgerStatus(row.id, 'in_flight');
     let result;
     try {
@@ -315,8 +275,7 @@ function createPayments(deps) {
     const fresh = db.db.transaction(() => {
       const fresh = db.getLedgerById(row.id);
       if (!fresh || fresh.status !== 'failed') return null;
-      if (fresh.table_id === db.ACCOUNT) db.creditAccount(fresh.user_id, db.ACCOUNT, 'withdrawal_refunded', fresh.amount_sats);
-      else db.addWalletCredit(fresh.user_id, fresh.table_id, fresh.amount_sats);
+      db.creditAccount(fresh.user_id, fresh.table_id, 'withdrawal_refunded', fresh.amount_sats);
       db.updateLedgerStatus(row.id, 'refunded', { settledAt: nowSec() });
       return fresh;
     })();
@@ -397,8 +356,7 @@ function createPayments(deps) {
     for (const row of db.getRefundableDeposits(graceSec)) {
       db.db.transaction(() => {
         if (db.getLedgerById(row.id)?.status !== 'settled_unseated') return;
-        db.addWalletCredit(row.user_id, row.table_id, row.amount_sats);
-        db.updateLedgerStatus(row.id, 'credited');
+        db.getAccountBalance(row.user_id);
       })();
     }
   }
@@ -444,7 +402,6 @@ function createPayments(deps) {
     metrics: () => db.paymentMetrics(),
     withdrawalsEnabled,
     depositsEnabled,
-    availableFunds,
     tripBreaker,
     resetBreaker,
     breakerState,

@@ -876,44 +876,16 @@ let walletRequestPending = false;
 // Remove obsolete placeholder credentials; the application no longer stores NWC secrets.
 localStorage.removeItem('ss_nwcUri');
 
-async function connectWallet() {
-  if (walletBusy) return;
-  if (lightningWallet.isConnected()) {
-    lightningWallet.disconnect();
-    updateWalletButtons();
-    showToast('Wallet disconnected from this page. You can revoke site permissions in your extension.', 'info');
-    return;
-  }
-  walletBusy = true;
-  updateWalletButtons();
-  try {
-    const wallet = await lightningWallet.connect();
-    showToast(`${wallet.name} connected. Each payment starts when you choose Pay.`, 'info');
-  } catch (error) { showToast(error.message || 'Wallet connection declined'); }
-  finally { walletBusy = false; updateWalletButtons(); }
-}
-window.connectWallet = connectWallet;
-
 function updateWalletButtons() {
-  const connected = lightningWallet.isConnected();
-  for (const id of ['walletSettingsBtn', 'walletConnectBtn']) {
-    const button = $(id);
-    if (!button) continue;
-    button.textContent = walletBusy ? 'Connecting…' : connected ? `${lightningWallet.name()} connected · Disconnect` : 'Connect Lightning wallet';
-    button.disabled = walletBusy;
-    button.classList.toggle('connected', connected);
-  }
   const account = $('accountSignIn');
   if (account) { account.textContent = myUserId ? myUsername : 'Sign in with Nostr'; account.disabled = !!myUserId; }
   const cashout = $('recoverFundsBtn');
-  if (cashout) { cashout.hidden = !myUserId || !isRealMoneyTable(); cashout.textContent = `Account · ${fmt(availableCashoutSats || 0)} sats`; }
+  if (cashout) { cashout.hidden = !myUserId; cashout.textContent = `Account · ${fmt(availableCashoutSats || 0)} sats`; }
   const signOut = $('accountSignOut');
   if (signOut) signOut.hidden = !myUserId;
   if ($('editProfileBtn')) $('editProfileBtn').hidden = !myUserId;
 }
 function showWalletControls() {
-  const row = $('walletSettingRow');
-  if (row) row.style.display = myUserId ? '' : 'none';
   updateWalletButtons();
 }
 function requestWalletState() {
@@ -2663,7 +2635,16 @@ function requestRealMoneyBuyin() {
   if (slider && amt) slider.addEventListener('input', () => { amt.textContent = fmt(Number(slider.value)); });
 }
 
-function showAccountDeposit(defaultAmount = 10000) {
+async function showAccountDeposit(defaultAmount = 10000) {
+  try {
+    const state = await fetchWalletState();
+    if (!state.depositsEnabled) {
+      walletView = 'cashout'; lastCashoutView = ''; renderCashoutState(state); return;
+    }
+    const pending = state.deposits.find(row => row.status === 'pending' && row.bolt11 && row.expiresAt > Date.now()/1000);
+    if (pending) { showBuyinInvoice({bolt11:pending.bolt11, amountSats:pending.amount_sats,
+      paymentHash:pending.payment_hash, expiresAt:pending.expiresAt}); return; }
+  } catch (error) { showToast(error.message); return; }
   walletView = 'deposit-amount';
   showWalletModal('Deposit sats', `<p>Deposits stay in your SatoshiStacks account until you buy in or withdraw.</p>
     <label for="accountDepositAmount">Amount in sats</label>
@@ -2770,7 +2751,7 @@ async function fetchWalletState() {
 
 function renderCashoutState(state) {
   if (!['cashout','cashout-pending'].includes(walletView)) return;
-  const signature = JSON.stringify([state.availableSats,state.error,state.withdrawalsEnabled,state.depositsEnabled,state.payments,state.tableStackSats,state.seated,state.canReturnStack,state.transfers]);
+  const signature = JSON.stringify([state.availableSats,state.error,state.withdrawalsEnabled,state.depositsEnabled,state.payments,state.tableStackSats,state.seated,state.canReturnStack,state.transfers,state.lightningStatus,state.canBuyIn,state.pendingWithdrawalSats,state.deposits]);
   if (signature === lastCashoutView && walletView !== 'cashout-pending') return;
   lastCashoutView = signature;
   const invoice = $('cashoutInvoice')?.value;
@@ -3212,7 +3193,6 @@ document.addEventListener('click', (e) => {
     case 'sit-back-in': handleSitBackIn(); break;
     case 'sit-out': handleSitOut(); break;
     case 'stand-up': handleStandUp(); break;
-    case 'connect-wallet': window.connectWallet(); break;
     case 'sign-out': nostrLogout(); showToast('Signed out. Any funds remain recoverable with the same Nostr identity.', 'info'); break;
     case 'pay-buyin-wallet': payBuyinWithWallet(); break;
     case 'recover-funds': startCashout(); break;

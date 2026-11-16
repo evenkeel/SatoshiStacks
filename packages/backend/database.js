@@ -1012,10 +1012,8 @@ function cleanupExpiredSessions() {
 
 // ==================== LIGHTNING REAL-MONEY LEDGER ====================
 // Append-only accounting for sats crossing the Lightning boundary. The atomic
-// withdrawal critical section (check stack + reserve + debit game object) is
-// composed in services/payments.js using the exported `db.transaction`, since
-// the authoritative stack lives in the in-memory game object. These helpers
-// are the durable DB side.
+// Withdrawal reservation and account debit commit together in services/payments.js.
+// Table transfers are separate transactions paired with their game snapshots.
 
 // Record a new deposit invoice (pending). Throws on UNIQUE(payment_hash,'deposit').
 function createDepositRow({ userId, tableId, amountSats, paymentHash, bolt11, seatIndex }) {
@@ -1044,7 +1042,7 @@ const settleDepositTx = db.transaction((paymentHash, amtPaidSat) => {
 function settleDeposit(paymentHash, amtPaidSat) { return settleDepositTx(paymentHash, amtPaidSat); }
 
 // Insert a reserved withdrawal. Throws on UNIQUE(payment_hash,'withdrawal') — this
-// is the replay/double-withdraw guard. Caller composes this with the stack debit
+// is the replay/double-withdraw guard. Caller composes this with the account debit
 // inside a single synchronous db.transaction.
 function insertWithdrawalReserved({ userId, tableId, amountSats, paymentHash, bolt11, seatIndex }) {
   return db.prepare(`
@@ -1104,8 +1102,8 @@ function getRecentLedger(limit = 100) {
 function getUnseatedDeposits(userId, tableId) {
   return db.prepare(`SELECT * FROM ledger_entries WHERE user_id=? AND table_id=? AND direction='deposit' AND status='settled_unseated' ORDER BY created_at ASC`).all(userId, tableId);
 }
-// Settled-unseated deposits older than the grace window — the player didn't come
-// back to claim a seat, so they should be auto-refunded to their lud16.
+// Settled-unseated deposits older than the grace window become internal credit.
+// Never send them to a profile Lightning address; only a withdrawal sends funds.
 function getRefundableDeposits(graceSec) {
   const cutoff = Math.floor(Date.now() / 1000) - (graceSec || 120);
   return db.prepare(`SELECT * FROM ledger_entries WHERE direction='deposit' AND status='settled_unseated' AND settled_at IS NOT NULL AND settled_at < ? ORDER BY created_at ASC`).all(cutoff);

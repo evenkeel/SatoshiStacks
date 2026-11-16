@@ -195,3 +195,7 @@
 .poker-app .wallet-history { list-style: none; padding: 0; margin: 6px 0 12px; }
 .poker-app .wallet-history li { display: flex; gap: 12px; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #46606a; font-size: 11px; text-align: left; }
 .poker-app .wallet-history li span:last-child { color: #c5d8ce; text-align: right; }
+
+.poker-app .wallet-btn:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+
+.poker-app .wallet-modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
