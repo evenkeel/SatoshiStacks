@@ -50,7 +50,7 @@ test('a busted player cannot sit back in with no chips or cancel the rebuy clock
   g.startNewHand();
   let guard = 0;
   while (g.handInProgress && guard++ < 20) { const p = g.players[g.currentPlayerIndex]; if (!g.processAction(p.userId, 'raise', p.stack + p.currentBet).valid) g.processAction(p.userId, 'call'); }
-  const loser = g.players.find(p => p.stack === 0);
+  const loser = g.players.find(p => p && p.stack === 0);   // empty seats are null
   if (!loser) return;                    // split pot: nothing to show this run
   assert.equal(loser.busted, true); assert.ok(g.sitOutKickTimers.has(loser.userId), 'bust kick armed');
   const r = g.sitBackIn(loser.userId);
