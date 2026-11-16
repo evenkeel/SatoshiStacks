@@ -53,7 +53,7 @@
       case 'bowtie': return `<path d="M50 79L37 72V86ZM50 79L63 72V86Z" fill="#ef4e4e" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/><circle cx="50" cy="79" r="3.2" fill="#ffc72c" stroke="${INK}" stroke-width="1.6"/>`;
       case 'beanie': return `<path d="M26 39Q26 15 50 15Q74 15 74 39Z" fill="${color.dark}" stroke="${INK}" stroke-width="2.2"/><rect x="23" y="34" width="54" height="9" rx="4.5" fill="#fff8e7" stroke="${INK}" stroke-width="2.2"/><circle cx="50" cy="13" r="5" fill="#fff8e7" stroke="${INK}" stroke-width="2"/>`;
       case 'crown': return `<path d="M31 36L28 18 40 27 50 13 60 27 72 18 69 36Z" fill="#ffc72c" stroke="${INK}" stroke-width="2.2" stroke-linejoin="round"/><circle cx="50" cy="29" r="2.6" fill="#ef4e4e"/>`;
-      case 'antenna': return `<path d="M50 30V15" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/><circle cx="50" cy="12" r="5" fill="#5ae9ed" stroke="${INK}" stroke-width="2"/>`;
+      case 'antenna': return `<path d="M50 30V15" stroke="${INK}" stroke-width="2.6" stroke-linecap="round"/><circle cx="50" cy="12" r="5" fill="#2fd3a8" stroke="${INK}" stroke-width="2"/>`;
       default: return '';
     }
   }

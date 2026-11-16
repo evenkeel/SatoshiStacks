@@ -30,7 +30,6 @@
   background: var(--ui-raised);
   color: var(--ui-text);
 }
-.poker-app .account-bar #accountSignIn:not(:disabled) { background: var(--ui-gold); border-color: var(--ui-gold); color: #202c34; }
 .poker-app .account-bar button:hover:not(:disabled) { box-shadow: 0 0 0 2px #e5c17a26; border-color: var(--ui-gold); }
 .poker-app .poker-table {
   background: radial-gradient(ellipse at 50% 45%, #346d58, #24523f 75%, #204735);
@@ -124,11 +123,9 @@
 .poker-app .table-action-btn, .poker-app .pre-action-btn { min-height: 34px; opacity: 1; border: 1px solid #536970; border-radius: 7px; background: #233640; color: #d7e0dc; font-family: inherit; text-transform: none; letter-spacing: 0; padding: 7px 14px; }
 .poker-app .table-action-btn:hover, .poker-app .pre-action-btn:hover { border-color: #a6bbb6; background: #304a53; }
 .poker-app .pre-action-btn.active { color: #f5d28f; border-color: var(--ui-gold); background: #4a422f; }
-.poker-app .table-action-btn.stand-up { color: #efbaa9; border-color: #906f66; }
 .poker-app .table-action-btn.cancel-sit-out { color: #f5d28f; border-color: var(--ui-gold); }
 .poker-app .login-card, .poker-app .buyin-card, .poker-app .wallet-modal { border: 1px solid #586b6c; border-radius: 16px; background: linear-gradient(155deg, #293d44, #192932); box-shadow: 0 24px 80px #0007; }
 .poker-app .login-method-btn { min-height: 44px; border-width: 1px; border-radius: 8px; box-shadow: none; font-size: 14px; }
-.poker-app .login-method-btn.primary, .poker-app .wallet-btn, .poker-app .buyin-btn-sit { background: var(--ui-gold); color: #202c34; border-color: var(--ui-gold); border-radius: 8px; }
 .poker-app .buyin-title, .poker-app .buyin-amount { color: var(--ui-text); }
 .poker-app .buyin-subtitle, .poker-app .buyin-unit { color: var(--ui-muted); }
 .poker-app .buyin-btn-cancel { background: #2c424c; color: var(--ui-text); border: 1px solid #60767c; border-radius: 8px; }
@@ -184,7 +181,6 @@
   .poker-app .action-buttons:only-child { grid-row: 1; }
 }
 .poker-app .wallet-balance { display: block; margin: 10px 0; font-size: 28px; font-variant-numeric: tabular-nums; }
-.poker-app .wallet-btn.secondary { color: var(--ui-text); border: 1px solid #60767c; background: #30464e; }
 .poker-app .wallet-qr { width: fit-content; margin: 16px auto; padding: 12px; background: white; border-radius: 10px; color: #20313b; }
 .poker-app .wallet-qr img, .poker-app .wallet-qr canvas { display: block; max-width: 100%; }
 .poker-app .wallet-alternative { margin: 12px 0; text-align: left; font-size: 12px; line-height: 1.6; }

@@ -7,9 +7,11 @@ transparent surroundings. No frame, chips, or Bitcoin symbol.
 The header and login popup show the original colors. Felt CSS reduces the logo to 48% of table
 width, applies 80% grayscale and soft-light blending, and fades it from 42%
 opacity while waiting to 12% during hands. Mobile uses a smaller bounded layer.
-Compact icons retain their separate existing assets.
+The compact icon (`img/brand-icon.svg`, used for the browser tab and home
+screen) is the wordmark's first letter in orange with a yellow offset shadow on
+an ink tile, built by the same script. No other logo artwork exists.
 
-Run `node scripts/build-table-brand.cjs` to rebuild the SVG. Its editable path
+Run `node scripts/build-table-brand.cjs` to rebuild both SVGs. Its editable path
 contours live in `scripts/table-lettering.json`; no font installation or network
 request is required at runtime or rebuild time. These Lilita One outlines match
 the landing page at 104px, 2px / 6px letter spacing and .92 line height, with

@@ -24,7 +24,6 @@ body.poker-app {
   --sun-deep: #c68f00;
   --mint: #2fd3a8;
   --mint-deep: #14805b;
-  --cyan: #5ae9ed;
   --pink: #ff5c8a;
   --paper: #fff8e7;
   --soft: #b9c1ea;
@@ -71,7 +70,7 @@ body.poker-app :is(.action-btn, .login-method-btn, .wallet-btn, .buyin-btn-sit, 
   .bet-preset, .pre-action-btn, .table-action-btn, .account-bar button):disabled {
   opacity: 1; filter: saturate(.35) brightness(.8); cursor: not-allowed; transform: none;
 }
-body.poker-app :is(button, input, select, textarea, summary, a):focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+body.poker-app :is(button, input, select, textarea, summary, a):focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
 
 /* Primary (sun) and go (mint) caps. */
 body.poker-app :is(.login-method-btn.primary, .wallet-btn:not(.secondary), .buyin-btn-sit, .chat-send-btn, .table-options-history,
@@ -115,14 +114,17 @@ body.poker-app .account-bar {
 }
 body.poker-app .account-bar strong { font: 400 18px/1.1 var(--display-font); letter-spacing: .4px; color: var(--paper); }
 body.poker-app .account-bar .seat-count {
-  font-size: 11px; font-weight: 800; color: var(--ink); background: var(--cyan);
+  font-size: 11px; font-weight: 800; color: var(--ink); background: var(--soft);
   padding: 2px 8px; border-radius: 999px; border: 2px solid var(--night);
 }
 body.poker-app #tableModeLabel { color: var(--soft); font-size: 12px; font-weight: 700; margin-top: 5px; }
+/* Game type and stakes are separate parts: one line on phones, stacked on desktop. */
+body.poker-app #tableModeLabel span { display: inline; margin: 0; color: inherit; }
+body.poker-app #tableModeLabel span + span::before { content: ' · '; }
 body.poker-app .table-meta { border-left: 2px solid #ffffff1f; }
 body.poker-app .account-bar button { font-size: 13px; min-height: 42px; padding: 8px 14px; }
 body.poker-app .account-bar button:disabled { filter: none; color: var(--soft); box-shadow: none; background: #ffffff0d; border-color: #ffffff1a; }
-body.poker-app .account-bar #recoverFundsBtn { --cap: #1f6f69; --cap-edge: #0f3f3d; font-variant-numeric: tabular-nums; }
+body.poker-app .account-bar #recoverFundsBtn { --cap: var(--mint-deep); --cap-edge: #0b4f38; font-variant-numeric: tabular-nums; }
 body.poker-app .account-bar #accountSignOut { --cap: #3a2a4a; --cap-edge: #1f1530; --cap-text: #ffc9d6; }
 
 /* ---------- Room and table ---------- */
@@ -171,7 +173,7 @@ body.poker-app .seat.hero-seat .player-avatar { filter: drop-shadow(0 5px 0 #0b0
   100% { stroke-dashoffset: 100; stroke: #ff3b4e; }
 }
 @keyframes turn-drain-bank {
-  0% { stroke-dashoffset: 0; stroke: #5ae9ed; }
+  0% { stroke-dashoffset: 0; stroke: #b9c1ea; }
   80% { stroke: #9b6bff; }
   100% { stroke-dashoffset: 100; stroke: #ff3b4e; }
 }
@@ -220,12 +222,8 @@ body.poker-app .np-action.allin { background: var(--pink); color: var(--ink); }
 body.poker-app .np-action:is(.win, .stacking) { background: var(--sun); color: var(--ink); }
 
 /* Cards: brighter suits, chunky indices, a firm drop edge. */
-body.poker-app .card { background: #fffdf6; border: 1px solid #1a1a2e40; box-shadow: 0 3px 0 #0b0e2073, 0 8px 12px #0005; }
-body.poker-app .card.red { color: #e0364a; }
-body.poker-app .card.black { color: var(--ink); }
-body.poker-app .card .deck-rank { font-family: var(--display-font); font-weight: 400; letter-spacing: -.5px; }
+body.poker-app .card { box-shadow: 0 3px 0 #0b0e2073, 0 8px 12px #0005; }
 body.poker-app .card.small { box-shadow: 0 2px 0 #0b0e2073; }
-body.poker-app .card.face-down { background: #fffdf6; }
 body.poker-app .card.dimmed, body.poker-app .community-card.dimmed .card { filter: brightness(.5) saturate(.4); opacity: .75; }
 
 /* Pot, wagers, dealer, result. */
@@ -268,7 +266,7 @@ body.poker-app:not(.is-mobile) .is-waiting .table-result { top: 60%; }
 }
 .motion-spark { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #0b0e20; background: #ffc72c; will-change: transform, opacity; }
 .motion-spark.spark-1 { background: #f26522; border-radius: 2px; }
-.motion-spark.spark-2 { background: #5ae9ed; }
+.motion-spark.spark-2 { background: #2fd3a8; }
 .motion-spark.spark-3 { background: #ff5c8a; border-radius: 2px; }
 body.poker-app .table-motion-packet { filter: drop-shadow(0 4px 0 #0b0e2059); }
 
@@ -276,6 +274,14 @@ body.poker-app .table-motion-packet { filter: drop-shadow(0 4px 0 #0b0e2059); }
 body.poker-app .dealer-station { border: 2px solid var(--night); border-radius: 14px; background: linear-gradient(#2a3368, #171d42); box-shadow: 0 4px 0 var(--night), 0 10px 16px #0006; }
 body.poker-app .dealer-tray-caption { font: 800 12px/1.2 var(--club-font); color: var(--paper); letter-spacing: .2px; }
 body.poker-app .dealer-tray-rack { background: var(--night); border-radius: 6px; }
+/* Rack chips in the table's own colours: mint, sun, paper, pink, orange. */
+body.poker-app .dealer-tray-rack i { background: repeating-linear-gradient(0deg, var(--mint) 0 3px, var(--mint-deep) 3px 5px); border-color: var(--mint); }
+body.poker-app .dealer-tray-rack i:nth-child(2) { background: repeating-linear-gradient(0deg, var(--sun) 0 3px, var(--sun-deep) 3px 5px); border-color: var(--sun); }
+body.poker-app .dealer-tray-rack i:nth-child(3) { background: repeating-linear-gradient(0deg, var(--paper) 0 3px, var(--soft) 3px 5px); border-color: var(--paper); }
+body.poker-app .dealer-tray-rack i:nth-child(4) { background: repeating-linear-gradient(0deg, var(--pink) 0 3px, #a8325a 3px 5px); border-color: var(--pink); }
+body.poker-app .dealer-tray-rack i:nth-child(5) { background: repeating-linear-gradient(0deg, var(--orange) 0 3px, var(--orange-deep) 3px 5px); border-color: var(--orange); }
+body.poker-app .login-qr-or { color: var(--soft); opacity: .7; }
+body.poker-app #profileStatus { color: var(--soft); }
 body.poker-app .dealer-station .waitlist-btn { font: 800 13px/1.3 var(--club-font); min-height: 40px; }
 
 /* ---------- Betting controls ---------- */
@@ -306,7 +312,7 @@ body.poker-app .chat-tab:hover { background: #ffffff12; color: var(--paper); }
 body.poker-app .chat-tab.active { background: var(--panel-hi); color: var(--paper); box-shadow: inset 0 -3px var(--sun); }
 body.poker-app .chat-collapse-btn { border: 2px solid var(--night); border-radius: 9px; background: var(--panel-hi); color: var(--paper); }
 body.poker-app .chat-msg { color: var(--paper); font-weight: 600; font-size: 13px; }
-body.poker-app .chat-msg .chat-author { color: var(--cyan); font-weight: 800; }
+body.poker-app .chat-msg .chat-author { color: var(--sun); font-weight: 800; }
 body.poker-app .chat-msg.system-msg, body.poker-app .chat-msg.play-by-play { color: var(--soft); font-style: normal; }
 body.poker-app .chat-body:empty::before { color: var(--soft); font-weight: 700; }
 body.poker-app .chat-input-area { border-top: 2px solid var(--night); }
@@ -369,7 +375,7 @@ body.poker-app .wallet-connection { display: flex; gap: 10px; align-items: flex-
 body.poker-app .wallet-connection::before { content: ''; flex: none; width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--soft); box-shadow: 0 0 0 2px var(--night); }
 body.poker-app .wallet-connection.is-ready::before { background: var(--mint); }
 body.poker-app .wallet-connection.is-paused::before, body.poker-app .wallet-connection.is-offline::before { background: var(--sun); }
-body.poker-app .wallet-custody { padding: 10px 12px; border-left: 4px solid var(--cyan); background: #5ae9ed12; border-radius: 0 10px 10px 0; color: #d6f7f8; }
+body.poker-app .wallet-custody { padding: 10px 12px; border-left: 4px solid var(--soft); background: #b9c1ea14; border-radius: 0 10px 10px 0; color: #d6f7f8; }
 body.poker-app .wallet-history { margin: 6px 0 12px; }
 body.poker-app .wallet-history li { border-bottom: 1px solid #ffffff1f; font-size: 13.5px; font-weight: 700; padding: 9px 0; color: var(--paper); }
 body.poker-app .wallet-history li span:last-child { color: var(--paper); font-variant-numeric: tabular-nums; font-weight: 800; }
@@ -397,11 +403,20 @@ body.poker-app:not(.is-mobile) .player-cards.hero { left: 64%; top: calc(93% - 9
 body.poker-app:not(.is-mobile) .player-cards.hero .np-cards .card + .card { margin-left: -14px; }
 body.poker-app:not(.is-mobile) .player-cards.hero .np-cards .card { border-radius: 7px; }
 body.poker-app:not(.is-mobile) .player-cards .np-cards .card { border-radius: 5px; }
+/* The side seats sit on the rail's centreline like the other four, so the table's
+   footprint is little wider than its rail and it can fill a narrow window.
+   desktop-table.js fits the window around these positions. */
+body.poker-app:not(.is-mobile) .seat-2 { left: 100%; }
+body.poker-app:not(.is-mobile) .seat-5 { left: 0; }
+body.poker-app:not(.is-mobile) .np-pos-2 { left: 99%; }
+body.poker-app:not(.is-mobile) .np-pos-5 { left: 1%; }
+body.poker-app:not(.is-mobile) .cards-pos-2 { left: 87%; }
+body.poker-app:not(.is-mobile) .cards-pos-5 { left: 13%; }
 /* Side-seat wagers sit clear of the plate beneath the avatar. */
-body.poker-app:not(.is-mobile) .bet-pos-2 { left: 87.5%; top: 61%; }
-body.poker-app:not(.is-mobile) .bet-pos-5 { left: 12.5%; top: 61%; }
-body.poker-app:not(.is-mobile) .marker-pos-2 { left: calc(87.5% - 46px); top: 61%; }
-body.poker-app:not(.is-mobile) .marker-pos-5 { left: calc(12.5% + 46px); top: 61%; }
+body.poker-app:not(.is-mobile) .bet-pos-2 { left: 84.5%; top: 61%; }
+body.poker-app:not(.is-mobile) .bet-pos-5 { left: 15.5%; top: 61%; }
+body.poker-app:not(.is-mobile) .marker-pos-2 { left: calc(84.5% - 46px); top: 61%; }
+body.poker-app:not(.is-mobile) .marker-pos-5 { left: calc(15.5% + 46px); top: 61%; }
 body.poker-app:not(.is-mobile) .table-pot-label { top: calc(50% + var(--board-width) * .725 + 34px); left: 50%; }
 body.poker-app:not(.is-mobile) .table-pot-chips { width: 336px; height: 128px; }
 body.poker-app:not(.is-mobile) .bet-controls { position: relative; }
@@ -412,8 +427,70 @@ body.poker-app.hero-turn:not(.is-mobile) .bet-controls::before {
   animation: your-move 1.6s ease-in-out 3;
 }
 @keyframes your-move { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-body.poker-app:not(.is-mobile) .chat-box { height: 180px; }
-body.poker-app:not(.is-mobile) .chat-box:has(.chat-history.visible):not(.collapsed) { height: min(460px, 65vh); }
+/* ---------- Desktop chat: a feed, not a box ----------
+   Lines rise up the left edge and fade out before they reach the table. The feed
+   has no background and takes no clicks, and the table is never sized around it:
+   desktop-table.js fits the table first, then sets --chat-width, --feed-height
+   and --feed-clear to the corner the table has left. Resting the pointer on the
+   feed, or typing, opens it into a scrollable log (.reading). */
+.chat-hands-btn { display: none; }
+body.poker-app:not(.is-mobile) .chat-box {
+  --chat-max-width: 340px; --chat-min-width: 160px; --composer-height: 48px;
+  --feed-min-height: 66px; --feed-max-height: 520px;
+  width: var(--chat-width, var(--chat-max-width)); height: auto;
+  background: none; border: 0; border-radius: 0; box-shadow: none; overflow: visible; pointer-events: none;
+}
+body.poker-app:not(.is-mobile) .chat-box :is(.chat-tabs, .chat-collapse-btn) { display: none; }
+body.poker-app:not(.is-mobile) .chat-body {
+  flex: none; height: var(--feed-height, 200px); padding: 8px 10px; gap: 5px; overflow: hidden; pointer-events: none;
+  border: 2px solid transparent; border-radius: 16px; transition: background-color 160ms ease, border-color 160ms ease;
+  -webkit-mask-image: linear-gradient(to top, #000 clamp(0px, calc(var(--feed-clear, 120px) - 16px), 62%), transparent);
+  mask-image: linear-gradient(to top, #000 clamp(0px, calc(var(--feed-clear, 120px) - 16px), 62%), transparent);
+}
+body.poker-app:not(.is-mobile) .chat-body:empty::before { content: none; }
+body.poker-app:not(.is-mobile) .chat-msg:first-child { margin-top: auto; }
+body.poker-app:not(.is-mobile) .chat-msg {
+  font-size: 15px; line-height: 1.35; font-weight: 700; overflow-wrap: anywhere;
+  text-shadow: 0 1px 0 var(--night), 0 0 3px var(--night), 0 0 10px var(--night);
+  animation: chat-line-in 240ms cubic-bezier(.2, .9, .3, 1);
+}
+body.poker-app:not(.is-mobile) .chat-msg.system-msg,
+body.poker-app:not(.is-mobile) .chat-msg.play-by-play { font-size: 14px; }
+@keyframes chat-line-in { from { opacity: 0; transform: translateY(10px); } }
+body.poker-app:not(.is-mobile) .chat-input-area {
+  height: var(--composer-height); padding: 8px 0 0; gap: 6px; border: 0; pointer-events: auto; align-items: stretch;
+}
+body.poker-app:not(.is-mobile) .chat-input {
+  min-height: 0; padding: 0 16px; border-radius: 999px; border: 2px solid #ffffff2b; background: #0b0e20a6;
+  font-size: 14px; transition: border-color 140ms ease, background-color 140ms ease;
+}
+body.poker-app:not(.is-mobile) .chat-input:is(:hover, :focus) { border-color: var(--sun); background: var(--night); }
+body.poker-app:not(.is-mobile) .chat-send-btn { display: none; min-height: 0; padding: 0 14px; border-radius: 999px; }
+body.poker-app:not(.is-mobile) .chat-input:not(:placeholder-shown) ~ .chat-send-btn { display: block; }
+body.poker-app:not(.is-mobile) .chat-input:not(:placeholder-shown) ~ .chat-hands-btn { display: none; }
+body.poker-app:not(.is-mobile) .chat-hands-btn {
+  display: block; padding: 0 13px; border-radius: 999px; border: 2px solid #ffffff2b; background: #0b0e20a6;
+  color: var(--soft); font: 800 12px var(--club-font); cursor: pointer;
+}
+body.poker-app:not(.is-mobile) .chat-hands-btn:hover { border-color: var(--sun); color: var(--paper); }
+/* Reading: the whole log, scrollable, on a backdrop that may cover the table. */
+body.poker-app:not(.is-mobile) .chat-box.reading { z-index: 60; }
+body.poker-app:not(.is-mobile) .chat-box.reading .chat-body {
+  height: max(var(--feed-height, 200px), min(52vh, 420px)); overflow-y: auto; pointer-events: auto;
+  background: #0b0e20eb; border-color: var(--panel-line);
+  -webkit-mask-image: none; mask-image: none;
+}
+/* Hand history and settings open in place as a panel, closed with its × button. */
+body.poker-app:not(.is-mobile) .chat-box:has(:is(.chat-history, .chat-settings).visible) {
+  width: var(--chat-max-width); height: 220px; pointer-events: auto; overflow: hidden; z-index: 60;
+  background: linear-gradient(180deg, #232b5a, #151a3c); border: 2px solid var(--panel-line); border-radius: 16px;
+  box-shadow: 0 5px 0 var(--night), 0 14px 26px #0007;
+}
+body.poker-app:not(.is-mobile) .chat-box:has(.chat-history.visible) { width: min(520px, calc(100vw - 24px)); height: min(460px, 65vh); background: #161c40; }
+body.poker-app:not(.is-mobile) .chat-box:has(:is(.chat-history, .chat-settings).visible) .chat-tabs { display: flex; }
+body.poker-app:not(.is-mobile) .chat-box:has(:is(.chat-history, .chat-settings).visible) .chat-collapse-btn { display: flex; font-size: 18px; line-height: 1; }
+/* Who is watching sits with the seat count, under the table's name. */
+body.poker-app:not(.is-mobile) .spectator-badge { bottom: auto; margin: 0; transform-origin: top left; }
 
 /* ============================================================
    Phone portrait and landscape
@@ -522,7 +599,7 @@ body.poker-app.is-mobile :is(.mobile-chat-toggle, .mobile-options-toggle) {
 }
 body.poker-app.is-mobile .mobile-chat-toggle.has-unread { color: var(--ink); background: var(--sun); box-shadow: 0 3px 0 var(--night); }
 body.poker-app.is-mobile .mobile-account-actions button { font-size: 13px; font-weight: 800; min-height: 46px; background: var(--cap, var(--panel-hi)); color: var(--cap-text, var(--paper)); border: 2px solid var(--night); border-radius: 12px; }
-body.poker-app.is-mobile .mobile-account-actions #recoverFundsBtn { --cap: #1f6f69; --cap-edge: #0f3f3d; }
+body.poker-app.is-mobile .mobile-account-actions #recoverFundsBtn { --cap: var(--mint-deep); --cap-edge: #0b4f38; }
 body.poker-app.is-mobile .mobile-account-actions #accountSignOut { --cap: #3a2a4a; --cap-edge: #1f1530; --cap-text: #ffc9d6; }
 body.poker-app.is-mobile .mobile-account-actions #accountSignIn:not(:disabled) { --cap: var(--sun); --cap-edge: var(--sun-deep); --cap-text: var(--ink); }
 body.poker-app.is-mobile .mobile-account-actions button:disabled { filter: none; color: var(--soft); box-shadow: none; background: #ffffff0d; border-color: #ffffff1a; }
@@ -593,7 +670,8 @@ body.poker-app:not(.is-mobile) :is(.table-identity, .account-bar nav) {
   transform: scale(var(--desktop-ui-scale, 1));
 }
 body.poker-app:not(.is-mobile) .table-identity {
-  /* Stacked, so the cluster stays narrow and the table can grow beside it. */
+  /* One short item per line: a narrow cluster tucks into the corner beside the
+     top-left seat, where a wide one would push the whole table down or shrink it. */
   left: 12px; flex-direction: column; align-items: flex-start; gap: 5px; padding: 8px 12px; transform-origin: top left;
   background: linear-gradient(180deg, #232b5aee, #171d42ee); border: 2px solid var(--panel-line);
   border-radius: 16px; box-shadow: 0 4px 0 var(--night), 0 10px 20px #0006;
@@ -601,8 +679,12 @@ body.poker-app:not(.is-mobile) .table-identity {
 body.poker-app:not(.is-mobile) .brand-wordmark { width: 78px; height: auto; }
 body.poker-app:not(.is-mobile) .table-meta { padding-left: 0; border-left: 0; }
 body.poker-app:not(.is-mobile) .account-bar strong { font-size: 15px; }
-body.poker-app:not(.is-mobile) .table-title { gap: 8px; }
-body.poker-app:not(.is-mobile) #tableModeLabel { font-size: 11px; margin-top: 2px; white-space: nowrap; }
+body.poker-app:not(.is-mobile) .table-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+body.poker-app:not(.is-mobile) .table-title { display: contents; }
+body.poker-app:not(.is-mobile) .seat-count { order: 1; }
+body.poker-app:not(.is-mobile) #tableModeLabel { font-size: 11px; line-height: 1.35; margin-top: 0; white-space: nowrap; }
+body.poker-app:not(.is-mobile) #tableModeLabel span { display: block; }
+body.poker-app:not(.is-mobile) #tableModeLabel span + span::before { content: none; }
 body.poker-app:not(.is-mobile) .account-bar nav { right: 12px; gap: 8px; flex-wrap: nowrap; transform-origin: top right; }
 /* Name, profile and sign-out move into the menu; the corner keeps balance and menu. */
 body.poker-app:not(.is-mobile) .account-bar nav :is(#editProfileBtn, #accountSignOut, #accountSignIn:disabled) { display: none; }
@@ -622,12 +704,61 @@ body.poker-app.signed-in:not(.is-mobile) .desktop-account-actions { display: blo
 .signed-in-as { color: var(--soft); font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.poker-app.is-mobile .account-bar { display: none; }
 
+/* ============================================================
+   Phones: chat and the menu are two small buttons in the top corners, beside
+   the top seat, instead of a full-width strip under the betting controls.
+   The play dock sits on the bottom edge and the table takes the room.
+   ============================================================ */
+body.poker-app.is-mobile :is(.mobile-chat-toggle, .mobile-options-toggle) {
+  top: calc(6px + var(--phone-top)); bottom: auto; width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  background: #0b0e2099; border: 2px solid #ffffff2b; box-shadow: none; color: var(--paper); font-size: 0;
+}
+body.poker-app.is-mobile :is(.mobile-chat-toggle, .mobile-options-toggle)::before {
+  content: ''; width: 22px; height: 22px; background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat;
+}
+body.poker-app.is-mobile .mobile-chat-toggle {
+  left: max(8px, env(safe-area-inset-left)); right: auto;
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 4h14a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-7l-5 4v-4H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z'/%3E%3C/svg%3E");
+}
+body.poker-app.is-mobile .mobile-options-toggle {
+  right: max(8px, env(safe-area-inset-right)); left: auto;
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 6h16M4 12h16M4 18h16' fill='none' stroke='%23000' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+body.poker-app.is-mobile .mobile-chat-toggle.has-unread { background: var(--sun); color: var(--ink); border-color: var(--night); box-shadow: 0 3px 0 var(--night); }
+body.poker-app.is-mobile .mobile-chat-toggle.has-unread::after {
+  content: ''; position: absolute; top: -3px; right: -3px; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--pink); border: 2px solid var(--night);
+}
+body.poker-app.is-mobile .controls-area { bottom: calc(6px + var(--phone-bottom)); }
+body.poker-app.is-mobile .pre-action-bar { bottom: calc(62px + var(--phone-bottom)); }
+body.poker-app.is-mobile .dealer-station { bottom: calc(76px + var(--phone-bottom)); }
+body.poker-app.is-mobile .mobile-play-status { bottom: calc(186px + var(--phone-bottom)); }
+body.poker-app.is-mobile .table-area { bottom: calc(240px + var(--phone-bottom)); }
+body.poker-app.is-mobile #connectionStatus { top: calc(2px + var(--phone-top)) !important; bottom: auto !important; }
+@media (max-height: 700px) {
+  body.poker-app.is-mobile .mobile-play-status { bottom: calc(174px + var(--phone-bottom)); }
+  body.poker-app.is-mobile .table-area { bottom: calc(224px + var(--phone-bottom)); }
+}
+@media (max-height: 500px) and (min-width: 550px) {
+  body.poker-app.is-mobile :is(.mobile-chat-toggle, .mobile-options-toggle) { top: calc(8px + var(--phone-top)); width: 40px; height: 40px; }
+  body.poker-app.is-mobile .mobile-options-toggle { right: max(12px, env(safe-area-inset-right)); }
+  body.poker-app.is-mobile .mobile-chat-toggle { left: auto; right: calc(max(12px, env(safe-area-inset-right)) + 48px); }
+  body.poker-app.is-mobile .mobile-play-status,
+  body.poker-app.is-mobile .mobile-play-status.your-turn { top: calc(10px + var(--phone-top)); bottom: auto; right: 112px; width: 152px; min-width: 0; }
+  body.poker-app.is-mobile .table-area { bottom: calc(34px + var(--phone-bottom)); }
+  body.poker-app.is-mobile :is(.controls-area, .pre-action-bar, .dealer-station) { bottom: calc(10px + var(--phone-bottom)); }
+  body.poker-app.is-mobile #connectionStatus { top: 56px !important; }
+  body.poker-app.is-mobile #toastContainer { top: 56px !important; }
+}
+
 /* ---------- Reduced motion: state stays visible, nothing travels or loops ---------- */
 @media (prefers-reduced-motion: reduce) {
   .turn-ring-fill { animation: none !important; stroke-dashoffset: 0; }
   body.poker-app .seat.winner-seat .player-avatar-wrap { animation: none; }
   .table-result { animation: none; }
   body.poker-app.hero-turn:not(.is-mobile) .bet-controls::before { animation: none; }
+  body.poker-app:not(.is-mobile) .chat-msg { animation: none; }
   .motion-win-amount, .motion-spark { display: none; }
   body.poker-app :is(.action-btn, .login-method-btn, .wallet-btn, .bet-preset, .empty-avatar):is(:hover, :active) { transform: none; }
 }

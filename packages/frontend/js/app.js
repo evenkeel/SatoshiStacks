@@ -1171,7 +1171,12 @@ function setupCommonSocketHandlers() {
     tableMotion.play(prevGameState, gameState, motionBefore);
     updateWalletButtons();
     const mode = $('tableModeLabel');
-    if (mode) mode.textContent = `${state.realMoney ? 'Real bitcoin' : 'Demo chips'} · ${fmt(state.smallBlind)} / ${fmt(state.bigBlind)}`;
+    // Two parts, so the desktop corner can stack them and stay narrow.
+    const modeParts = [state.realMoney ? 'Real bitcoin' : 'Demo chips', `${fmt(state.smallBlind)} / ${fmt(state.bigBlind)}`];
+    if (mode && mode.dataset.label !== modeParts.join('|')) {
+      mode.dataset.label = modeParts.join('|');
+      mode.replaceChildren(...modeParts.map(text => Object.assign(document.createElement('span'), { textContent: text })));
+    }
     requestWalletState();
   });
 
@@ -1965,7 +1970,7 @@ function renderControls() {
     const active = gameState.players[gameState.currentPlayerIndex];
     status.textContent = !myPlayer ? 'Choose an open seat to play' :
       myPlayer.busted ? 'Stack empty · add chips from your seat' :
-      myPlayer.sittingOut ? 'Sitting out · return from Table options' :
+      myPlayer.sittingOut ? 'Sitting out · return from the menu' :
       !gameState.handInProgress ? 'Waiting for the next hand' :
       myPlayer.folded ? 'You folded · next hand coming up' :
       myPlayer.allIn ? 'You’re all in' : gameState.yourTurn ? 'Your turn' :
@@ -2333,10 +2338,16 @@ function addChatMessage(author, text, isSystem) {
   } else {
     div.innerHTML = `<span class="chat-author">${esc(author)}:</span> ${esc(text)}`;
   }
-  el.appendChild(div);
-  el.scrollTop = el.scrollHeight;
-  while (el.children.length > 80) el.removeChild(el.firstChild);
+  appendChatLine(el, div);
   if (!isSystem) signalMobileUnread();
+}
+
+// New lines keep the log at its newest end, unless the reader has scrolled back.
+function appendChatLine(el, line) {
+  const reading = $('chatBox')?.classList.contains('reading') && el.scrollHeight - el.scrollTop - el.clientHeight > 40;
+  el.appendChild(line);
+  while (el.children.length > 80) el.removeChild(el.firstChild);
+  if (!reading) el.scrollTop = el.scrollHeight;
 }
 
 function addPlayByPlay(text) {
@@ -2346,9 +2357,7 @@ function addPlayByPlay(text) {
   const div = document.createElement('div');
   div.className = 'chat-msg play-by-play';
   div.textContent = text;
-  el.appendChild(div);
-  el.scrollTop = el.scrollHeight;
-  while (el.children.length > 80) el.removeChild(el.firstChild);
+  appendChatLine(el, div);
 }
 
 // ============================================================
@@ -2482,13 +2491,27 @@ function initChat() {
   $('chatSendBtn')?.addEventListener('click', sendMsg);
   input?.addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
 
-  // Collapse toggle
-  $('chatCollapseBtn')?.addEventListener('click', () => {
-    const collapsed = $('chatBox')?.classList.toggle('collapsed');
-    const button = $('chatCollapseBtn');
-    button?.setAttribute('aria-expanded', String(!collapsed));
-    button?.setAttribute('aria-label', collapsed ? 'Expand chat panel' : 'Collapse chat panel');
-  });
+  // Hand history and settings open as a panel; closing it returns to the chat feed.
+  $('chatCollapseBtn')?.addEventListener('click', () => document.querySelector('.chat-tab[data-tab="chat"]')?.click());
+
+  // The desktop feed is ambient: lines fade as they rise and clicks pass through.
+  // Resting the pointer on it, or typing, opens it into a scrollable log.
+  const box = $('chatBox'), log = $('chatMessages');
+  let intent;
+  const setReading = on => {
+    clearTimeout(intent);
+    intent = setTimeout(() => {
+      if (!on && box.contains(document.activeElement)) return;
+      box.classList.toggle('reading', on);
+      if (!on) log.scrollTop = log.scrollHeight;
+    }, on ? 160 : 260);
+  };
+  box?.addEventListener('pointerenter', () => setReading(true));
+  box?.addEventListener('pointerleave', () => setReading(false));
+  box?.addEventListener('focusin', () => setReading(true));
+  box?.addEventListener('focusout', () => setReading(box.matches(':hover')));
+  // The feed grows and shrinks with the room the table leaves; keep its newest line in view.
+  if (log && window.ResizeObserver) new ResizeObserver(() => { if (!box.classList.contains('reading')) log.scrollTop = log.scrollHeight; }).observe(log);
 
   // Settings toggles
   document.querySelectorAll('.setting-toggle').forEach(tog => {
@@ -2535,9 +2558,6 @@ function openTableOptions() {
 function openTableHistory() {
   $('tableOptions').close();
   const panel = $('chatBox');
-  panel.classList.remove('collapsed');
-  $('chatCollapseBtn').setAttribute('aria-expanded', 'true');
-  $('chatCollapseBtn').setAttribute('aria-label', 'Collapse chat panel');
   if (document.body.classList.contains('is-mobile')) {
     panel.classList.add('mobile-open');
     $('mobileChatBackdrop')?.classList.add('visible');
@@ -2574,7 +2594,6 @@ function initMobileChat() {
   const chatBox = document.getElementById('chatBox');
 
   function openChat() {
-    chatBox.classList.remove('collapsed');
     chatBox.classList.add('mobile-open');
     chatToggle.setAttribute('aria-expanded', 'true');
     chatToggle.setAttribute('aria-label', 'Close table chat');

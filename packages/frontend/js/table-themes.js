@@ -4,7 +4,7 @@
   const assets = { felt: '/img/table-felt.svg?v=2', rail: '/img/table-rail.svg?v=2', logo: '/img/table-wordmark.svg?v=7' };
   // Register approved local assets here. Every theme uses the same table bounds.
   const themes = {
-    bunker: { ...assets, name: 'Neon clubhouse', room: 'radial-gradient(ellipse 62% 54% at 50% 44%, #2f3f8a99, transparent 72%), radial-gradient(ellipse at 6% 8%, #f2652233, transparent 42%), radial-gradient(ellipse at 94% 10%, #5ae9ed24, transparent 44%), repeating-linear-gradient(45deg, #ffffff06 0 2px, transparent 2px 28px), repeating-linear-gradient(-45deg, #ffffff06 0 2px, transparent 2px 28px), linear-gradient(165deg, #1b2150, #111535 58%, #0b0e24)', accent: '#ffc72c', feltFilter: 'none', railFilter: 'none' },
+    bunker: { ...assets, name: 'Neon clubhouse', room: 'radial-gradient(ellipse 62% 54% at 50% 44%, #2f3f8a99, transparent 72%), radial-gradient(ellipse at 6% 8%, #f2652233, transparent 42%), radial-gradient(ellipse at 94% 10%, #ffc72c1f, transparent 44%), repeating-linear-gradient(45deg, #ffffff06 0 2px, transparent 2px 28px), repeating-linear-gradient(-45deg, #ffffff06 0 2px, transparent 2px 28px), linear-gradient(165deg, #1b2150, #111535 58%, #0b0e24)', accent: '#ffc72c', feltFilter: 'none', railFilter: 'none' },
     midnight: { ...assets, name: 'Midnight station', room: 'radial-gradient(ellipse at 50% 40%, #26395d, #101529 60%, #080b16)', accent: '#a8c8ff', feltFilter: 'hue-rotate(40deg) saturate(.8)', railFilter: 'hue-rotate(165deg) saturate(.5)' },
     classic: { ...assets, name: 'Classic club', room: 'radial-gradient(ellipse at 50% 40%, #493b2b, #211e1a 65%, #141310)', accent: '#e5c17a', feltFilter: 'hue-rotate(-40deg) saturate(.85)', railFilter: 'sepia(.65) saturate(.8)' },
   };

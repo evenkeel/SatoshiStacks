@@ -6,11 +6,11 @@
   "scope": "/",
   "display": "fullscreen",
   "orientation": "any",
-  "background_color": "#111e28",
-  "theme_color": "#111e28",
+  "background_color": "#141a33",
+  "theme_color": "#141a33",
   "icons": [
     {
-      "src": "/img/brand-icon.svg",
+      "src": "/img/brand-icon.svg?v=2",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

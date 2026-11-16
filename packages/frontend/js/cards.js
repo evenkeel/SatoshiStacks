@@ -1,32 +1,46 @@
 /* Resolution-independent artwork for the Satoshi Stacks house deck. */
 (function (root) {
 'use strict';
+// Each suit is drawn around (0,0) in a roughly 26 × 28 box and is built to keep
+// its own silhouette when it is only a few pixels tall:
+//   spade   – one sharp point on top, smooth shoulders, flared foot
+//   club    – three separate round lobes with open notches between them
+//   heart   – two round lobes with a deep cleft, pointed bottom
+//   diamond – four sharp points joined by inward-curving sides
 const SUITS = {
-  s: { name: 'spades', path: 'M0-12C-4-7-11-3-11 3A6 6 0 0 0-2 8L-4 13H4L2 8A6 6 0 0 0 11 3C11-3 4-7 0-12Z' },
-  h: { name: 'hearts', path: 'M0 12C-3 8-12 2-12-5C-12-13-3-15 0-8C3-15 12-13 12-5C12 2 3 8 0 12Z' },
-  d: { name: 'diamonds', path: 'M0-14 10 0 0 14-10 0Z' },
-  c: { name: 'clubs', path: 'M-3 7C-13 13-17-3-7-4C-12-17 12-17 7-4C17-3 13 13 3 7L5 13H-5Z' }
+  s: { name: 'spades', path: 'M0-14C-2-8.5-12.5-3.5-12.5 3.5C-12.5 7.6-9.6 10.2-6.2 10.2C-3.9 10.2-2 9-.9 7.1C-1.2 9.8-2.6 11.8-5.2 13.5H5.2C2.6 11.8 1.2 9.8.9 7.1C2 9 3.9 10.2 6.2 10.2C9.6 10.2 12.5 7.6 12.5 3.5C12.5-3.5 2-8.5 0-14Z' },
+  h: { name: 'hearts', path: 'M0 13.5C-2.5 9-13 3.5-13-4.5C-13-9-9.9-12.5-6.5-12.5C-3.4-12.5-1-10.3 0-6.6C1-10.3 3.4-12.5 6.5-12.5C9.9-12.5 13-9 13-4.5C13 3.5 2.5 9 0 13.5Z' },
+  d: { name: 'diamonds', path: 'M0-14C2.4-8.6 6-4.2 11.5 0C6 4.2 2.4 8.6 0 14C-2.4 8.6-6 4.2-11.5 0C-6-4.2-2.4-8.6 0-14Z' },
+  c: { name: 'clubs', path: 'M-5.4-7a5.4 5.4 0 1 0 10.8 0a5.4 5.4 0 1 0-10.8 0ZM-12 1.8a5.4 5.4 0 1 0 10.8 0a5.4 5.4 0 1 0-10.8 0ZM1.2 1.8a5.4 5.4 0 1 0 10.8 0a5.4 5.4 0 1 0-10.8 0ZM0-7-6.6 1.8H6.6ZM0 0C-.5 6-2.4 10.8-5.6 13.5H5.6C2.4 10.8.5 6 0 0Z' }
 };
 // Positions are in a fixed 100 × 145 drawing space, independent of viewport size.
 const PIPS = {
   2: [[50,37],[50,108]],
   3: [[50,37],[50,72.5],[50,108]],
-  4: [[32,37],[68,37],[32,108],[68,108]],
-  5: [[32,37],[68,37],[50,72.5],[32,108],[68,108]],
-  6: [[32,37],[68,37],[32,72.5],[68,72.5],[32,108],[68,108]],
-  7: [[32,37],[68,37],[50,54.75],[32,72.5],[68,72.5],[32,108],[68,108]],
-  8: [[32,37],[68,37],[50,54.75],[32,72.5],[68,72.5],[50,90.25],[32,108],[68,108]],
-  9: [[32,37],[68,37],[32,60.5],[68,60.5],[50,72.5],[32,84.5],[68,84.5],[32,108],[68,108]],
-  T: [[32,37],[68,37],[50,48.75],[32,60.5],[68,60.5],[32,84.5],[68,84.5],[50,96.25],[32,108],[68,108]]
+  4: [[33,37],[67,37],[33,108],[67,108]],
+  5: [[33,37],[67,37],[50,72.5],[33,108],[67,108]],
+  6: [[33,37],[67,37],[33,72.5],[67,72.5],[33,108],[67,108]],
+  7: [[33,37],[67,37],[50,54.75],[33,72.5],[67,72.5],[33,108],[67,108]],
+  8: [[33,37],[67,37],[50,54.75],[33,72.5],[67,72.5],[50,90.25],[33,108],[67,108]],
+  9: [[33,37],[67,37],[33,60.5],[67,60.5],[50,72.5],[33,84.5],[67,84.5],[33,108],[67,108]],
+  T: [[33,37],[67,37],[50,48.75],[33,60.5],[67,60.5],[33,84.5],[67,84.5],[50,96.25],[33,108],[67,108]]
 };
 function suit(s, x, y, scale = 1, flip = false) {
   return `<path d="${SUITS[s].path}" transform="translate(${x} ${y}) scale(${scale})${flip ? ' rotate(180)' : ''}" fill="currentColor"/>`;
 }
 function index(rank, s) {
-  return `<text x="12" y="22" text-anchor="middle" class="deck-rank" font-size="22">${rank}</text>${suit(s,12,34,0.57)}`;
+  return `<text x="12" y="22" text-anchor="middle" class="deck-rank" font-size="22">${rank}</text>${suit(s,12,36,0.68)}`;
+}
+// Small cards drop the pips and court figures for one rank and one large suit.
+// "stack" keeps both in the left half, which stays visible when cards overlap.
+function glance(rank, s, stack) {
+  const size = rank === '10' ? 44 : 54;
+  return `<text x="30" y="50" text-anchor="middle" class="deck-rank" font-size="${size}">${rank}</text>`
+    + (stack ? suit(s,30,95,1.85) : suit(s,59,96,2.3));
 }
 function court(rank, s) {
-  const gold = '#b58b46', navy = '#20364d', paper = '#fffaf0';
+  // Wordmark palette: sun yellow and ink on the card's own paper.
+  const gold = '#ffc72c', navy = '#1a1a2e', paper = '#fffdf6';
   const headwear = rank === 'J'
     ? `<path d="M34 36Q37 24 59 29L65 36Z" fill="${navy}"/><path d="M39 29Q38 20 47 21L52 28" fill="${gold}"/><path d="M33 36H66" stroke="${gold}" stroke-width="3"/>`
     : `<path d="M35 34 32 23 42 28 49 18 56 28 66 23 62 34Z" fill="${gold}"/><path d="M36 30H61" stroke="${paper}"/><path d="M37 36H61" stroke="${navy}" stroke-width="2"/>`;
@@ -37,7 +51,7 @@ function court(rank, s) {
   const accessory = rank === 'K'
     ? `<path d="M70 68V26L74 20 78 26V68" fill="${paper}" stroke="${gold}" stroke-width="1.3"/><path d="M66 57H81M74 25V58" stroke="${navy}" stroke-width="1.5"/>`
     : rank === 'Q'
-    ? `<path d="M72 71V49M72 59 66 54M72 64 78 57" fill="none" stroke="${gold}" stroke-width="2"/><path d="M72 39C62 29 60 45 68 47C60 53 71 57 72 49C78 57 84 46 77 46C86 38 74 32 72 39Z" fill="currentColor"/><circle cx="72" cy="45" r="2" fill="${gold}"/>`
+    ? `<path d="M72 71V49M72 59 66 54M72 64 78 57" fill="none" stroke="${gold}" stroke-width="2"/>${suit(s,72,42,0.6)}`
     : `<path d="M72 72V29L76 23 80 29 72 41" fill="${gold}" stroke="${navy}" stroke-width="1.2"/><path d="M68 54H79" stroke="${navy}" stroke-width="2"/>`;
   const half = `<path d="M24 73 29 61 43 55H56L69 62 76 73Z" fill="${navy}"/>
     <path d="M30 62 43 56 60 73H44Z" fill="currentColor"/>
@@ -61,7 +75,7 @@ function back() {
     <svg x="9" y="9" width="82" height="127" viewBox="9 9 82 127"><g stroke="#f26522" stroke-width="0.9" opacity="0.5">${lattice}</g></svg>
     <rect x="10" y="10" width="80" height="125" rx="3" fill="none" stroke="#ffc72c" stroke-width="1.6"/>
     <path d="M50 34 77 72.5 50 111 23 72.5Z" fill="#1a1a2e" stroke="#ffc72c" stroke-width="2"/>
-    <text x="50" y="84" fill="#ffc72c" font-family="Georgia,serif" font-weight="700" font-size="34" text-anchor="middle">₿</text>
+    <text x="50" y="84" fill="#ffc72c" font-family="ui-rounded,'SF Pro Rounded',-apple-system,'Segoe UI',Arial,sans-serif" font-weight="800" font-size="34" text-anchor="middle">₿</text>
     <g fill="#ffc72c"><path d="m50 17 3.5 5.5-3.5 5.5-3.5-5.5Zm0 100 3.5 5.5-3.5 5.5-3.5-5.5Z"/></g>`;
 }
 function renderCardHTML(card, sizeClass = '') {
@@ -74,14 +88,18 @@ function renderCardHTML(card, sizeClass = '') {
   const label = hidden ? 'Face-down card' : `${names[r] || r} of ${SUITS[s].name}`;
   let art;
   if (hidden) art = back();
-  else if (compact) art = `<text x="27" y="48" text-anchor="middle" class="deck-rank" font-size="43">${rank}</text>${suit(s,73,35,1.3)}`;
+  else if (compact) art = glance(rank,s,true);
   else {
     art = index(rank,s) + `<g transform="rotate(180 50 72.5)">${index(rank,s)}</g>`;
-    if (PIPS[r]) art += PIPS[r].map(([x,y]) => suit(s,x,y,0.72,y>72.5)).join('');
-    else if (r === 'A') {
-      art += suit(s,50,71,1.95);
-      if (s === 's') art += `<path d="m50 63 4 8-4 8-4-8Z" fill="#fffdf8"/><text x="50" y="105" text-anchor="middle" font-family="Georgia,serif" font-size="4.6" letter-spacing="1.2" fill="#9a7945">SATOSHI STACKS</text>`;
-    } else art += court(r,s);
+    if (PIPS[r]) {
+      // Crowded faces use smaller pips so neighbouring suits never touch.
+      const pip = PIPS[r].length >= 7 ? 0.6 : 0.72;
+      art += PIPS[r].map(([x,y]) => suit(s,x,y,pip,y>72.5)).join('');
+    }
+    else if (r === 'A') art += suit(s,50,71,1.95);
+    else art += court(r,s);
+    // styles.css swaps to the glance face when the card itself is narrow.
+    art = `<g class="deck-full">${art}</g><g class="deck-glance">${glance(rank,s,false)}</g>`;
   }
   return `<div class="card ${hidden ? 'face-down' : ('hd'.includes(s) ? 'red' : 'black')} ${sizeClass}" role="img" aria-label="${label}"><svg class="deck-art" viewBox="0 0 100 145" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">${art}</svg></div>`;
 }

@@ -34,7 +34,6 @@
 .poker-app #tableModeLabel { margin-top: 6px; font-size: 10px; font-weight: 400; letter-spacing: .15px; color: #aabbb9; }
 .poker-app .account-bar nav { gap: 8px; justify-content: flex-end; }
 .poker-app .account-bar button { font-size: 11px; font-weight: 600; min-height: 38px; padding: 8px 13px; box-shadow: none; }
-.poker-app .account-bar #accountSignIn:not(:disabled) { border-color: #ead09b; }
 .poker-app #connectionStatus { border-color: #7f9e8738; background: #213a33b3 !important; font-weight: 500 !important; }
 /* A padded dark rail and fine stitching replace the brown wood bevel. */
 body.poker-app .poker-table {
@@ -48,13 +47,7 @@ body.poker-app .poker-table::before {
   background: none;
   box-shadow: inset 0 0 0 1px #0d332519;
 }
-body.poker-app .poker-table::after {
-  width: 68px;
-  height: 72px;
-  background-image: url('/img/brand-mark.svg');
-  opacity: .07;
-}
-body.poker-app .poker-table.is-waiting::after { opacity: 0; }
+body.poker-app .poker-table::after { content: none; }
 .poker-app .table-waiting {
   position: absolute;
   z-index: 1;
@@ -70,7 +63,6 @@ body.poker-app .poker-table.is-waiting::after { opacity: 0; }
   color: #f4eddb;
 }
 .poker-app .table-waiting[hidden] { display: none; }
-.poker-app .table-waiting img { opacity: .8; margin-bottom: 10px; }
 .poker-app .waiting-eyebrow { font-size: 9px; letter-spacing: 2.7px; color: #c1c5aa; font-weight: 500; }
 .poker-app .table-waiting h1 { font: 400 clamp(20px, 2.6vw, 32px)/1.2 Georgia, 'Times New Roman', serif; letter-spacing: -.4px; margin: 10px 0 9px; text-wrap: balance; }
 .poker-app .table-waiting p { max-width: 340px; font-size: 11px; line-height: 1.7; color: #c1d1c4; font-weight: 400; text-wrap: balance; }
@@ -113,7 +105,6 @@ body.poker-app .poker-table.is-waiting::after { opacity: 0; }
   .poker-app .account-bar nav { justify-content: flex-start; }
   .poker-app .account-bar button { min-height: 38px; }
   .poker-app .table-waiting { width: 65%; }
-  .poker-app .table-waiting img { width: 30px; height: 32px; margin-bottom: 6px; }
   .poker-app .table-waiting h1 { font-size: 22px; }
   .poker-app .table-waiting p { font-size: 10px; }
 }
@@ -123,7 +114,6 @@ body.poker-app .poker-table.is-waiting::after { opacity: 0; }
   .poker-app .brand-symbol { width: 27px; height: 29px; }
   .poker-app .table-title { gap: 8px; }
   .poker-app #tableModeLabel { margin-top: 3px; font-size: 9px; }
-  .poker-app .table-waiting img { display: none; }
   .poker-app .table-waiting h1 { font-size: 23px; margin: 6px 0; }
   .poker-app .table-waiting p { max-width: 290px; font-size: 10px; line-height: 1.5; }
   .poker-app .empty-avatar { gap: 3px; }
