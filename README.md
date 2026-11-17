@@ -74,7 +74,7 @@ grouped bets and pot collection, and payouts to every winner. Repeated updates
 and reconnects do not replay animations. Motion never delays actions; reduced-motion
 preferences, tab visibility, resizing, and a new hand cancel transient overlays.
 There is no top bar: on desktop the table identity and the account button sit
-in the top corners, and profile and sign-out are in the Table options menu.
+in the top corners, and profile and sign-out are in the menu.
 At showdown, hands are tabled in order and a beaten hand is mucked unseen
 unless a player is all-in; mucked cards never reach other players or any
 shared history. Player labels and avatars sit around the rail, separate from
@@ -101,7 +101,7 @@ License: UNLICENSED.
 
 ### Responsive phone play
 
-The table switches automatically at 900px wide or 500px tall, including when resizing a desktop window. Portrait uses a vertical six-seat table with your cards at the bottom and a fixed betting dock. Landscape uses a separate betting column. Chat, history, account controls, and seat actions are available through the bottom Chat and Table options buttons. Rotation preserves the current session and the entered bet.
+The table switches automatically at 900px wide or 500px tall, including when resizing a desktop window. Portrait uses a vertical six-seat table with your cards at the bottom and a fixed betting dock. Landscape uses a separate betting column. Chat, history, account controls, and seat actions are available through the Chat and Menu buttons. Rotation preserves the current session and the entered bet.
 
 Phone user agents may sign in, buy in, play, and restore a seat under the same authentication rules as desktop. Explicit `auth.watchOnly` socket connections remain read-only. To exercise a complete demo hand with phone headers against an isolated local server:
 

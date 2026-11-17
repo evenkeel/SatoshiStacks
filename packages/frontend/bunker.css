@@ -59,7 +59,6 @@ body.poker-app .dealer-station .dealer-tray {
   position: relative; inset: auto; transform: none; width: 100%;
   border: 0; background: transparent; box-shadow: none;
 }
-body.poker-app .dealer-station .dealer-tray:hover { background: #ffffff09; }
 body.poker-app .dealer-station .waitlist-ui {
   position: static; transform: none; padding: 8px 10px 10px;
   border-bottom: 1px solid #6d89834d;

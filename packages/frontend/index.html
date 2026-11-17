@@ -11,14 +11,14 @@
 <title>Satoshi Stacks</title>
 <link rel="manifest" href="/manifest.json?v=2">
 <link rel="icon" href="/img/brand-icon.svg?v=2" type="image/svg+xml">
-<link rel="stylesheet" href="/styles.css?v=30">
+<link rel="stylesheet" href="/styles.css?v=31">
 <link rel="stylesheet" href="/interface.css?v=6">
 <link rel="stylesheet" href="/club.css?v=6">
 <link rel="stylesheet" href="/motion.css?v=2">
-<link rel="stylesheet" href="/table-layout.css?v=9">
-<link rel="stylesheet" href="/bunker.css?v=21">
+<link rel="stylesheet" href="/table-layout.css?v=10">
+<link rel="stylesheet" href="/bunker.css?v=22">
 <link rel="stylesheet" href="/phone.css?v=1">
-<link rel="stylesheet" href="/arcade.css?v=10">
+<link rel="stylesheet" href="/arcade.css?v=11">
 <!-- CSS extracted to styles.css -->
 </head>
 <body class="poker-app">
@@ -36,10 +36,9 @@
 <div class="table-art" aria-hidden="true"><img class="table-felt" src="/img/table-felt.svg?v=2" alt=""><img class="table-rail" src="/img/table-rail.svg?v=2" alt=""></div>
 <div class="table-neon-sign" role="img" aria-label="Satoshi Stacks table artwork"></div>
 <div class="dealer-station" id="dealerStation">
-<button type="button" class="dealer-tray" id="dealerTray" data-action="table-options" aria-label="Open table options" aria-haspopup="dialog" aria-controls="tableOptions">
-  <span class="dealer-tray-rack" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-  <span class="dealer-tray-caption">Table options <span aria-hidden="true">⚙</span></span>
-</button>
+<div class="dealer-tray" id="dealerTray" aria-hidden="true">
+  <span class="dealer-tray-rack"><i></i><i></i><i></i><i></i><i></i></span>
+</div>
 </div>
 <div id="tableMarkers" aria-label="Dealer position"></div>
 <!-- Hole cards have their own space on the felt, independent of player labels. -->
@@ -86,7 +85,7 @@
 </div>
 </div>
 <div class="mobile-play-status" id="mobileTurnStatus" role="status" aria-live="polite">Connecting to the table…</div>
-<button type="button" class="mobile-options-toggle" data-action="table-options" aria-haspopup="dialog" aria-controls="tableOptions">Table options</button>
+<button type="button" class="mobile-options-toggle" data-action="table-options" aria-haspopup="dialog" aria-controls="tableOptions">Menu</button>
 <div class="pre-action-bar" id="preActionBar"></div>
 <div class="controls-area">
 <div class="bet-controls" id="betControls"></div>
@@ -149,7 +148,7 @@
 </div>
 </div>
 <dialog class="table-options" id="tableOptions" aria-labelledby="tableOptionsTitle">
-  <div class="table-options-heading"><div><span class="options-eyebrow">STATION 100</span><h2 id="tableOptionsTitle">Table options</h2></div><button type="button" data-action="close-table-options" aria-label="Close table options">×</button></div>
+  <div class="table-options-heading"><div><span class="options-eyebrow">STATION 100</span><h2 id="tableOptionsTitle">Menu</h2></div><button type="button" data-action="close-table-options" aria-label="Close menu">×</button></div>
   <p class="table-options-summary" id="tableOptionsSummary"></p>
   <div class="setting-row"><label for="tableTheme">Room theme</label><select class="theme-select" id="tableTheme"><option value="bunker">Neon clubhouse</option><option value="midnight">Midnight station</option><option value="classic">Classic club</option></select></div>
   <p class="theme-status" id="themeStatus" role="status" aria-live="polite"></p>

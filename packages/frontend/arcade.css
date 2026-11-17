@@ -272,7 +272,6 @@ body.poker-app .table-motion-packet { filter: drop-shadow(0 4px 0 #0b0e2059); }
 
 /* Dealer station. */
 body.poker-app .dealer-station { border: 2px solid var(--night); border-radius: 14px; background: linear-gradient(#2a3368, #171d42); box-shadow: 0 4px 0 var(--night), 0 10px 16px #0006; }
-body.poker-app .dealer-tray-caption { font: 800 12px/1.2 var(--club-font); color: var(--paper); letter-spacing: .2px; }
 body.poker-app .dealer-tray-rack { background: var(--night); border-radius: 6px; }
 /* Rack chips in the table's own colours: mint, sun, paper, pink, orange. */
 body.poker-app .dealer-tray-rack i { background: repeating-linear-gradient(0deg, var(--mint) 0 3px, var(--mint-deep) 3px 5px); border-color: var(--mint); }
@@ -711,7 +710,7 @@ body.poker-app.is-mobile #toastContainer { top: calc(6px + var(--phone-top)) !im
 
 /* ============================================================
    No top bar. Its contents live in two small corner clusters on desktop
-   and in the Table options sheet on phones, so the table reaches the top.
+   and in the menu sheet on phones, so the table reaches the top.
    ============================================================ */
 body.poker-app:not(.is-mobile) .account-bar { display: contents; }
 body.poker-app:not(.is-mobile) :is(.table-identity, .account-bar nav) {
