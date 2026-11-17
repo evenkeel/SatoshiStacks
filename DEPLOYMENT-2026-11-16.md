@@ -2,9 +2,64 @@
 
 Public table: https://satoshistacks.com/station100
 
-Three releases went out on this day. The third is the one now running.
+Four releases went out on this day. The fourth is the one now running.
 
-## Third release (current): card secrecy, one seat per network, admin cards withheld
+## Fourth release (current): one way into the menu
+
+- Deployed at 7:29 p.m. Eastern on November 16 (00:29 UTC on November 17).
+- Application commit: `69ccb986c1da77b801e5da82f6f9415f58d5a5cf`, pushed
+  directly to `main`.
+- Release: `/opt/satoshistacks-releases/69ccb98`.
+- Previous release: `/opt/satoshistacks-releases/9a92d2a`.
+- Node runtime: `/opt/satoshistacks-runtimes/node-v24.22.2-linux-x64/bin/node`.
+- PM2 process: `satoshistacks`; script, working directory, and interpreter point to the new release.
+- Active demo database: `/var/lib/satoshistacks/demo/satoshistacks.db` (unchanged path).
+- Backup: `/var/backups/satoshistacks/release-20261117T002959Z`.
+- Current manifest: `/opt/satoshistacks-releases/current-release.json`.
+- Real money, deposits, and withdrawals remain disabled.
+
+What changed. On desktop the corner Menu button and the "Table options" chip
+tray on the felt both opened the same dialog. The chip tray is now decoration
+only: it is not a button, has no caption, and still marks the point cards are
+dealt from. The dialog and the phone button are both named Menu. Only frontend
+files changed (the table page, four stylesheets and the README); the backend is
+the same code as the previous release. The four changed stylesheets carry new
+version numbers because Nginx serves them as immutable for seven days.
+
+GitHub CI passed on `69ccb98`. The release was unpacked from that exact commit,
+its locked dependencies were installed with the Node 24 runtime, and all 349
+tests passed on the server in an isolated environment before the live `.env`
+was copied in. The running release stayed online during preparation.
+
+Before the switch the live table had no seated players and no hand in progress.
+Two spectators were connected and were disconnected by the restart. The demo
+database was backed up with SQLite's backup API at the moment of the switch and
+passed its integrity check. The backup directory also holds the prior manifest,
+the PM2 dump and process list, the new and rollback process configurations, and
+the public table HTML fetched after the switch.
+
+After the switch: local and public HTTPS health returned ok; `/api/tables`
+reported demo mode with deposits disabled; the public table HTML and the 27
+local stylesheets, scripts, icons, images and manifest it references matched
+the commit byte-for-byte. The built-in browser loaded the public table at
+desktop width and at 375 × 812, connected as a spectator and reported no
+console errors. On desktop a click on the chip tray opened nothing and the
+corner Menu button opened the dialog titled Menu; at phone width the single
+Menu button opened the same dialog and the chip tray was hidden as before. The
+new process has not restarted and has written nothing to its error log. The
+landing page still answers.
+
+Not exercised on the live site: signing in, sitting down or playing a hand, so
+cards being dealt from the chip tray were not seen on production or locally
+(the tray kept the element id the deal animation looks for). A physical phone
+was not used.
+
+Rollback: `pm2 delete satoshistacks && pm2 start rollback.config.json && pm2 save`
+using the protected file in the backup directory, then restore the backed-up
+`current-release.json`. Preserve the active demo database when rolling back
+application code.
+
+## Third release: card secrecy, one seat per network, admin cards withheld
 
 - Deployed at 7:14 p.m. Eastern on November 16 (00:14 UTC on November 17).
 - Application commit: `9a92d2a7e07e352105d5a538c282246aa09d70c6`, pushed
