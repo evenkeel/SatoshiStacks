@@ -114,6 +114,9 @@ module.exports = {
   AUTH_RATE_LIMIT: { maxRequests: 10, windowSec: 60 },
   ACTION_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
   JOIN_RATE_LIMIT: { maxActions: 10, windowSec: 10 },
+  // Two players on one network may not sit at the same table. Set
+  // ONE_SEAT_PER_NETWORK=false to allow it (a meetup playing from one venue).
+  ONE_SEAT_PER_NETWORK: process.env.ONE_SEAT_PER_NETWORK !== 'false',
   WITHDRAWAL_RATE_LIMIT: { maxActions: 5, windowSec: 60 },
   ADMIN_RATE_LIMIT: { maxRequests: 30, windowSec: 60 },
 

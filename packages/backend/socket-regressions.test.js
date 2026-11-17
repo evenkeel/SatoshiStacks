@@ -13,7 +13,7 @@ const { io: connect } = require('socket.io-client');
 const db = require('./database');
 const config = require('./config');
 const { setup } = require('./socket-handlers');
-const { authenticatedSocketId, clientAddress } = require('./socket-session');
+const { authenticatedSocketId, clientAddress, networkKey } = require('./socket-session');
 const nostr = require('./services/nostr');
 nostr.scheduleLiveActivityUpdate = () => {}; nostr.checkAndAwardBadges = () => {}; nostr.publishHandHistory = async () => {};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -143,6 +143,55 @@ test('the client address comes from the proxy only when the peer is the local pr
   assert.equal(clientAddress(socket('127.0.0.1')), '127.0.0.1');
   assert.equal(clientAddress(socket('127.0.0.1', 'not-an-address')), '127.0.0.1');
   assert.equal(clientAddress(socket('127.0.0.1', '')), '127.0.0.1');
+});
+
+test('a network is an IPv4 address or an IPv6 /64, and a local connection has none', () => {
+  assert.equal(networkKey('203.0.113.7'), '203.0.113.7');
+  assert.equal(networkKey('::ffff:203.0.113.7'), '203.0.113.7');
+  // Devices in one home share the first 64 bits, however the address is written.
+  assert.equal(networkKey('2001:db8:1:2::10'), networkKey('2001:0db8:0001:0002:aaaa:bbbb:cccc:dddd'));
+  assert.notEqual(networkKey('2001:db8:1:2::10'), networkKey('2001:db8:1:3::10'));
+  assert.equal(networkKey('2001:db8::1'), '2001:db8:0:0::/64');
+  for (const local of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '', undefined, 'not-an-address']) assert.equal(networkKey(local), null);
+});
+
+test('two players on one network cannot sit at the same table', async () => {
+  const r = await rig();
+  const logged = type => db.db.prepare('SELECT COUNT(*) AS n FROM abuse_log WHERE action_type = ?').get(type).n;
+  try {
+    const origin = `http://127.0.0.1:${r.port}`, from = ip => ({ extraHeaders: { 'x-forwarded-for': ip } });
+    const [ann, bob, cy, dee, eve] = ['Ann', 'Bob', 'Cy', 'Dee', 'Eve'].map(r.user);
+    const refused = async (socket, user) => { const error = r.once(socket, 'error'); socket.emit('join-table', { tableId: T, sessionToken: user.token, buyIn: 10000 }); return (await error).message; };
+    const seated = user => r.games.get(T).players.some(p => p?.userId === user.id);
+
+    await seat(r, await r.client(origin, from('203.0.113.7')), ann);
+    const bobSocket = await r.client(origin, from('203.0.113.7'));
+    assert.match(await refused(bobSocket, bob), /Only one seat per network/);
+    assert.equal(seated(bob), false);
+    assert.equal(logged('same-network-seat-refused'), 1);
+    await seat(r, await r.client(origin, from('203.0.113.8')), cy);            // a different network is welcome
+
+    // IPv6: another device in the same home is the same network; the house next door is not.
+    await seat(r, await r.client(origin, from('2001:db8:1:2::10')), dee);
+    assert.match(await refused(await r.client(origin, from('2001:db8:1:2:aaaa:bbbb:cccc:dddd')), eve), /Only one seat per network/);
+    await seat(r, await r.client(origin, from('2001:db8:1:3::10')), eve);
+
+    // The rule holds while the seated player is disconnected but still holds the seat.
+    r.userSockets.get(ann.id) && r.io.sockets.sockets.get(r.userSockets.get(ann.id)).disconnect(true);
+    await sleep(60);
+    assert.equal(seated(ann), true);
+    assert.match(await refused(bobSocket, bob), /Only one seat per network/);
+
+    // A seated player whose connection moves onto another player's network keeps the seat; it is recorded.
+    await seat(r, await r.client(origin, from('203.0.113.8')), ann);
+    assert.equal(logged('same-network-seat-resumed'), 1);
+    assert.equal(seated(ann), true);
+
+    // The operator can switch the rule off for a venue.
+    config.ONE_SEAT_PER_NETWORK = false;
+    await seat(r, await r.client(origin, from('203.0.113.8')), bob);
+    assert.equal(seated(bob), true);
+  } finally { config.ONE_SEAT_PER_NETWORK = true; await r.close(); }
 });
 
 test('a player still has their own action limit, and it does not spill onto others', async () => {

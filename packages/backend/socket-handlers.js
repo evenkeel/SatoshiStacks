@@ -7,7 +7,8 @@ const config = require('./config');
 const db = require('./database');
 const PokerGame = require('./poker-game');
 const nostr = require('./services/nostr');
-const { authenticatedSocketId, clientAddress } = require('./socket-session');
+const { authenticatedSocketId, clientAddress, networkKey } = require('./socket-session');
+const SAME_NETWORK_MESSAGE = 'Someone on your network is already seated at this table. Only one seat per network is allowed.';
 const { accountState } = require('./services/account-state');
 
 function generateObserverName() {
@@ -199,11 +200,31 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
     disconnectGraceTimers.delete(userId);
   }
 
+  // One seat per network at a table: two players behind the same connection
+  // can show each other their cards. Each seat remembers the network it was
+  // last connected from, so the rule also holds while that player is away.
+  const seatNetworks = new Map(); // `${tableId}:${userId}` -> network key
+  function seatedOnSameNetwork(tableId, userId, address) {
+    const network = config.ONE_SEAT_PER_NETWORK ? networkKey(address) : null;
+    if (!network) return null;
+    return games.get(tableId)?.players.find(p => p && p.userId !== userId
+      && seatNetworks.get(`${tableId}:${p.userId}`) === network) || null;
+  }
+  function recordSeatNetwork(tableId, userId, address) {
+    seatNetworks.set(`${tableId}:${userId}`, networkKey(address));
+  }
+
   function resumeExistingSeat(socket, userId, tableId, displayName) {
     if (socket.data?.watchOnly) return false;
     const game = games.get(tableId);
     const seatIndex = game?.players.findIndex(player => player && player.userId === userId) ?? -1;
     if (seatIndex === -1 || db.isBanned(userId) || db.isIpBanned(clientAddress(socket))) return false;
+    // A seated player whose connection moves onto another player's network is
+    // not thrown out mid-session (their chips are in play and mobile carriers
+    // share addresses), but it is recorded for review.
+    const address = clientAddress(socket);
+    if (seatedOnSameNetwork(tableId, userId, address)) db.logAction(userId, address, 'same-network-seat-resumed');
+    recordSeatNetwork(tableId, userId, address);
     const previousSocket = userSockets.get(userId);
     if (previousSocket && previousSocket !== socket.id) socketUsers.delete(previousSocket);
     observerSockets.delete(socket.id);
@@ -540,6 +561,12 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
           return;
         }
 
+        if (seatedOnSameNetwork(tableId, userId, clientIp)) {
+          db.logAction(userId, clientIp, 'same-network-seat-refused');
+          socket.emit('error', { message: SAME_NETWORK_MESSAGE });
+          return;
+        }
+
         // Create game & add player — persist buy-in to DB only now, since the
         // reconnect branch above doesn't spend chips and mustn't clobber the
         // live in-memory stack between hands.
@@ -569,6 +596,7 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         socket.join(`table-${tableId}`);
         userSockets.set(userId, socket.id);
         socketUsers.set(socket.id, { userId, tableId, seatIndex: assignedSeat });
+        recordSeatNetwork(tableId, userId, clientIp);
 
         console.log(`${displayName} (${userId.slice(0, 8)}...) joined table ${tableId} at seat ${assignedSeat + 1}`);
         socket.emit('seat-assigned', { seatIndex: assignedSeat, displayName });
@@ -750,6 +778,13 @@ function setup(io, games, userSockets, socketUsers, observerSockets, broadcastGa
         db.logAction(userId, clientIp, 'buyin-request');
         if (obs) obs.userId = userId;
         ensureGameExists(tableId);
+        // Refused before any money moves. A player who already holds a seat is
+        // resuming it, which buyInFromAccount never charges for.
+        if (!games.get(tableId).players.some(p => p?.userId === userId) && seatedOnSameNetwork(tableId, userId, clientIp)) {
+          db.logAction(userId, clientIp, 'same-network-seat-refused');
+          socket.emit('error', { message: SAME_NETWORK_MESSAGE });
+          return;
+        }
         const seatIndex = payments.buyInFromAccount({ userId, tableId, amountSats, player: playerData });
         resumeExistingSeat(socket, userId, tableId, playerData.nostr_name || playerData.username);
         socket.emit('account-buyin-confirmed', { tableId, seatIndex, amountSats });

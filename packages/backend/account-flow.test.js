@@ -157,3 +157,53 @@ test('authenticated account flow separates deposits, table stacks and withdrawal
     config.isRealMoney=original;
   }
 });
+
+test('a real-money buy-in from a network that already holds a seat is refused before any sats move', async () => {
+  const original=config.isRealMoney; config.isRealMoney=()=>true;
+  nostr.scheduleLiveActivityUpdate=()=>{};
+  const server=http.createServer(); const io=new Server(server);
+  const games=new Map(), clients=[]; let payments;
+  const handlers=setup(io,games,new Map(),new Map(),new Map(),()=>{},new Map(),()=>payments,()=>payments);
+  const lnd={
+    async createInvoice({amountSats,secret}) {const paymentHash=require('node:crypto').createHash('sha256').update(Buffer.from(secret,'hex')).digest('hex');return {bolt11:`mock:${amountSats}:${paymentHash}`,paymentHash};},
+    async getSpendableSats(){return 1000000;},
+    async decodeInvoice(invoice) {const [,amount,paymentHash]=invoice.split(':');return {amountSats:Number(amount),paymentHash,destination:'peer'};},
+    async sendPayment() {return {status:'SUCCEEDED'};},
+  };
+  payments=createPayments({db,lnd,config,getGame:id=>games.get(id),onDeposit:handlers.accountDepositConfirmed});
+  const cara={id:'c'.repeat(64),sessionToken:'cara-session'}, dan={id:'d'.repeat(64),sessionToken:'dan-session'};
+  for (const {id,sessionToken} of [cara,dan]) {
+    db.upsertNostrPlayer(id,'npub-test','Player',null);
+    db.setSessionToken(id,sessionToken,Math.floor(Date.now()/1000)+3600);
+  }
+  try {
+    await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+    const origin=`http://127.0.0.1:${server.address().port}`;
+    // The proxy reports the player's address; a funded account connects from it.
+    async function funded(player,address) {
+      const s=connect(origin,{transports:['websocket'],forceNew:true,extraHeaders:{'x-forwarded-for':address}});clients.push(s);await next(s,'connect');
+      const args={tableId:'station100',sessionToken:player.sessionToken};
+      await request(s,'observe-table',args,'observer-joined');
+      if (!db.getAccountBalance(player.id)) {
+        const invoice=await request(s,'account-deposit-request',{...args,amountSats:20000},'buyin-invoice');
+        payments.creditDeposit(invoice.paymentHash,20000);
+      }
+      return {socket:s,buyIn:response=>request(s,'buyin-request',{...args,amountSats:10000},response)};
+    }
+    const seated=player=>games.get('station100').players.some(p=>p?.userId===player.id);
+    await (await funded(cara,'198.51.100.20')).buyIn('account-buyin-confirmed');
+    const refusal=await (await funded(dan,'198.51.100.20')).buyIn('error');
+    assert.match(refusal.message,/Only one seat per network/);
+    assert.equal(seated(dan),false);
+    assert.equal(db.getAccountBalance(dan.id),20000,'nothing was debited');
+    // The same account from its own network is seated and charged once.
+    await (await funded(dan,'198.51.100.21')).buyIn('account-buyin-confirmed');
+    assert.equal(seated(dan),true);
+    assert.equal(db.getAccountBalance(dan.id),10000);
+  } finally {
+    for (const client of clients) client.disconnect();
+    for (const game of games.values()) {clearTimeout(game.handStartTimeout);game.clearActionTimer();for (const timer of game.sitOutKickTimers.values()) clearTimeout(timer);}
+    await new Promise(resolve=>io.close(resolve));
+    config.isRealMoney=original;
+  }
+});

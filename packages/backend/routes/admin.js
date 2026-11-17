@@ -58,14 +58,22 @@ router.use((req, res, next) => {
 });
 
 // Complete audit record; private cards and structured events stay admin-only.
+// While a hand is still being played its hole cards and deal record are
+// withheld from everyone, the admin token included: nobody can watch live
+// cards through this API. The full record is available once the hand is over.
+// The deck is never part of any response.
 router.get('/hand/:handId', (req, res) => {
   const hand = db.getHand(req.params.handId);
   if (!hand) {
     const pending = db.getAllHandSnapshots().find(row => row.hand_id === req.params.handId);
     if (!pending) return res.status(404).json({success:false,error:'Hand not found'});
     const state = pending.snapshot;
-    return res.set('Cache-Control','no-store').json({success:true,hand:{hand_id:pending.hand_id, status:state.handInProgress ? 'in_progress' : 'snapshot',
-      hand_history:state.currentHandLog.join('\n'), events:state.currentHandEvents || [], players:state.players.filter(Boolean)}});
+    const live = !!state.handInProgress;
+    const players = state.players.filter(Boolean).map(({ holeCards, ...player }) => live ? player : { ...player, holeCards });
+    const events = (state.currentHandEvents || []).map(event => live && event.type === 'deal'
+      ? { ...event, players: (event.players || []).map(({ cards, ...seat }) => seat) } : event);
+    return res.set('Cache-Control','no-store').json({success:true,hand:{hand_id:pending.hand_id, status:live ? 'in_progress' : 'snapshot',
+      cardsWithheld:live, hand_history:state.currentHandLog.join('\n'), events, players}});
   }
   res.set('Cache-Control','no-store').json({success:true,hand:{...hand,
     events:JSON.parse(hand.events || '[]'), players:db.getHandPlayers(hand.hand_id)}});

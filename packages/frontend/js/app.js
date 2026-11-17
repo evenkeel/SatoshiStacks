@@ -125,7 +125,6 @@ let preAction = null;        // Pre-action selection
 let preActionToCall = null;  // Exact wager accepted when selecting Call
 let currentHandLog = [];     // Accumulates hand-log lines for current hand
 const potPile = window.StacksPotPile.create(); // Settled chips persist for the hand.
-let cachedHoleCards = null;    // Cache our hole cards so they survive state glitches
 let isObserver = false;       // True when watching without a seat
 let observerName = null;      // Random name assigned by server for observers
 let pendingSeat = null;       // Seat index clicked (0-5) while waiting for auth/buy-in
@@ -857,7 +856,6 @@ function nostrLogout() {
   myUsername = 'Anon';
   mySeat = null;
   gameState = null;
-  cachedHoleCards = null;
   // Clear NIP-51 follow/mute state
   myFollowSet = new Set();
   myMuteSet = new Set();
@@ -1151,22 +1149,8 @@ function setupCommonSocketHandlers() {
     // Extract waitlist position for this client
     waitlistPosition = state.waitlistPosition || null;
 
-    // Cache our hole cards so they survive transient state glitches
-    if (myUserId) {
-      const me = (state.players || []).find(p => p && p.userId === myUserId);
-      if (me) {
-        const cards = me.holeCards;
-        if (cards && cards.length === 2 && cards[0] !== '??' && cards[0]) {
-          cachedHoleCards = [...cards];
-        } else if (!cards || cards.length === 0) {
-          cachedHoleCards = null;
-        }
-        if (cachedHoleCards && (!cards || cards.length === 0 || (cards.length === 2 && !cards[0]))) {
-          me.holeCards = [...cachedHoleCards];
-        }
-      }
-    }
-
+    // Hole cards are drawn only from this state, exactly as the server sent
+    // them. Nothing is remembered from an earlier state or an earlier hand.
     render();
     tableMotion.play(prevGameState, gameState, motionBefore);
     updateWalletButtons();

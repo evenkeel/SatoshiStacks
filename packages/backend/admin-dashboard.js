@@ -349,7 +349,8 @@
           <div class="card">
             <h3>Hand #${esc(hand.hand_id)}</h3>
             <div class="hand-history">${esc(hand.hand_history)}</div>
-            ${hand.players ? `<details><summary>Private cards and player records</summary><pre>${esc(JSON.stringify(hand.players,null,2))}</pre></details>` : ''}
+            ${hand.cardsWithheld ? '<p><strong>This hand is still being played.</strong> Private cards are withheld until it is over.</p>' : ''}
+            ${hand.players ? `<details><summary>${hand.cardsWithheld ? 'Player records' : 'Private cards and player records'}</summary><pre>${esc(JSON.stringify(hand.players,null,2))}</pre></details>` : ''}
             ${hand.events ? `<details><summary>Timestamped audit events</summary><pre>${esc(JSON.stringify(hand.events,null,2))}</pre></details>` : ''}
           </div>
         `).join('');

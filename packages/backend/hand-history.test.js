@@ -83,6 +83,36 @@ test('support lookup requires admin authorization and includes private records',
   assert.equal(result.body.hand.players.length,2);
   assert.ok(result.body.hand.events.some(e=>e.type==='deal'));
 });
+test('support lookup withholds every private card while the hand is still being played',async()=>{
+  const g=new PokerGame('admin-live');g.startActionTimer=()=>{};
+  g.addPlayer(alice,'Alice',{initialStack:1000});g.addPlayer(bob,'Bob',{initialStack:1000});
+  clearTimeout(g.handStartTimeout);g.handStartTimeout=null;g.startNewHand();
+  try {
+    const dealt=g.players.filter(Boolean).flatMap(p=>p.holeCards);
+    assert.equal(dealt.length,4);
+    const caller=g.players[g.currentPlayerIndex].userId;
+    assert.equal(g.processAction(caller,'call').valid,true);   // also writes the crash-recovery snapshot
+    const liveId=g.getHandId(),admin={'x-admin-token':'history-test-admin'};
+    const during=await get('/api/admin/hand/'+liveId,admin);
+    assert.equal(during.status,200);assert.equal(during.cache,'no-store');
+    assert.equal(during.body.hand.status,'in_progress');assert.equal(during.body.hand.cardsWithheld,true);
+    assert.equal(during.body.hand.players.length,2);
+    assert.ok(during.body.hand.events.some(e=>e.type==='deal'&&e.players.length===2),'the deal is still recorded, without cards');
+    const sent=JSON.stringify(during.body);
+    for(const card of [...dealt,...g.deck])assert.ok(!new RegExp(`"${card}"|[\\[ ]${card}[\\] ]`).test(sent),`${card} must not be readable during the hand`);
+    assert.ok(!sent.includes('"deck"'));
+    // Once the hand is over the complete record, private cards included, is available.
+    const folder=g.players[g.currentPlayerIndex].userId;
+    assert.equal(g.processAction(folder,'fold').valid,true);
+    const done=await get('/api/admin/hand/'+liveId,admin);
+    assert.equal(done.body.hand.cardsWithheld,undefined);
+    assert.deepEqual(done.body.hand.players.flatMap(p=>JSON.parse(p.hole_cards)).sort(),[...dealt].sort());
+    assert.ok(done.body.hand.events.some(e=>e.type==='deal'&&e.players.every(p=>p.cards.length===2)));
+  } finally {
+    clearTimeout(g.handStartTimeout);g.clearActionTimer();g.clearRunoutTimeouts();
+    for(const timer of g.sitOutKickTimers.values())clearTimeout(timer);
+  }
+});
 test('legacy histories receive their database ID without exposing an opponent private cards',()=>{
   const text=playerHistory('Hand #1\n*** HOLE CARDS ***\nBob: folds',{username:'Alice',hole_cards:'["Ah","Ad"]'},'old-table-123-1');
   assert.match(text,/Hand ID: old-table-123-1/);

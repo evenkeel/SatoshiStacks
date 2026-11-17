@@ -29,4 +29,19 @@ function clientAddress(socket) {
   return forwarded && net.isIP(forwarded) ? forwarded : peer;
 }
 
-module.exports = { authenticatedSocketId, clientAddress };
+// The network a seat is taken from, for the one-seat-per-network rule. An IPv4
+// address is one home, office or mobile connection. Devices in one home each
+// get their own IPv6 address inside a shared /64, so IPv6 is compared by that
+// prefix. A local connection with no proxy in front of it (development, tests,
+// demo bots) has no network and is never matched.
+function networkKey(address) {
+  const ip = String(address || '').replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '');
+  if (!net.isIP(ip) || LOOPBACK.has(ip)) return null;
+  if (net.isIPv4(ip)) return ip;
+  const [head, tail] = ip.split('::');
+  const left = head ? head.split(':') : [], right = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  return groups.slice(0, 4).map(group => parseInt(group, 16).toString(16)).join(':') + '::/64';
+}
+
+module.exports = { authenticatedSocketId, clientAddress, networkKey };
