@@ -2,9 +2,79 @@
 
 Public table: https://satoshistacks.com/station100
 
-Two releases went out on this day. The second is the one now running.
+Three releases went out on this day. The third is the one now running.
 
-## Second release (current): one table size, equal action buttons, four-color deck
+## Third release (current): card secrecy, one seat per network, admin cards withheld
+
+- Deployed at 7:14 p.m. Eastern on November 16 (00:14 UTC on November 17).
+- Application commit: `9a92d2a7e07e352105d5a538c282246aa09d70c6`, pushed
+  directly to `main` (two commits: `e056cb3` and `9a92d2a`).
+- Release: `/opt/satoshistacks-releases/9a92d2a`.
+- Previous release: `/opt/satoshistacks-releases/1be918a`.
+- Node runtime: `/opt/satoshistacks-runtimes/node-v24.22.2-linux-x64/bin/node`.
+- PM2 process: `satoshistacks`; script, working directory, and interpreter point to the new release.
+- Active demo database: `/var/lib/satoshistacks/demo/satoshistacks.db` (unchanged path).
+- Backup: `/var/backups/satoshistacks/release-20261117T001457Z`.
+- Current manifest: `/opt/satoshistacks-releases/current-release.json`.
+- Real money, deposits, and withdrawals remain disabled.
+
+What changed. This is the first release in several that changes the backend.
+
+- The admin hand lookup no longer returns hole cards or the cards in the deal
+  record while a hand is still being played. The full record is available once
+  the hand is over. The admin page says so, and its script tag now carries a
+  version because Nginx serves scripts as immutable for seven days.
+- A second player on the same network is refused a seat at the table, on the
+  demo path and on the real-money buy-in (before any sats are debited). A
+  network is an IPv4 address or an IPv6 /64. A seated player whose connection
+  moves onto another player's network keeps the seat and the event is written to
+  the abuse log, as are refusals. `ONE_SEAT_PER_NETWORK=false` in `.env`
+  switches the rule off; it is not set on the server, so the rule is on.
+- The client no longer keeps a copy of the player's hole cards between states;
+  it draws only what the server just sent.
+- A new engine test plays 400 random hands and checks every payload sent to
+  each seat, a spectator and a stranger for cards they may not see.
+
+GitHub CI passed on `9a92d2a`. The release was unpacked from that exact commit,
+its locked dependencies were installed with the Node 24 runtime, and all 349
+tests passed on the server in an isolated environment before the live `.env`
+was copied in. The running release stayed online during preparation.
+
+Before the switch the live table had no seated players, no spectators and no
+hand in progress. The demo database was backed up with SQLite's backup API at
+the moment of the switch and passed its integrity check. The backup directory
+also holds the prior manifest, the PM2 dump and process list, the new and
+rollback process configurations, and the public HTML, `app.js` and `admin.js`
+fetched after the switch.
+
+After the switch: local and public HTTPS health returned ok; `/api/tables`
+reported demo mode with deposits disabled; the public table HTML and 32 assets
+(every stylesheet, script, icon and manifest the page references, both fonts and
+the table art) matched the commit byte-for-byte, as did the admin page and its
+script. The public `app.js` contains no hole-card cache. Requests without
+credentials to the admin hand lookup and to personal hand histories returned
+401. The built-in browser loaded the public table, connected as a spectator,
+showed six open seats and reported no console messages. The new process has
+written nothing to its error log. The landing page still answers.
+
+The seating rule depends on the server seeing each player's real address. That
+was checked: DNS points straight at the server (no proxy service in front), and
+the live Nginx `/socket.io/` location passes `X-Forwarded-For`.
+
+Not exercised on the live site: signing in, sitting down or playing a hand, so
+neither the same-network refusal nor dealt cards were seen on production. They
+were tested locally: the refusal through the socket tests with proxied
+addresses, and dealt cards by a headless browser playing against bots with
+every drawn card compared against the server's record. The admin dashboard
+behind its token was not opened, so the withheld-cards notice was not seen live;
+the endpoint behaviour is covered by a test. A physical phone was not used.
+
+Rollback: `pm2 delete satoshistacks && pm2 start rollback.config.json && pm2 save`
+using the protected file in the backup directory, then restore the backed-up
+`current-release.json`. Preserve the active demo database when rolling back
+application code.
+
+## Second release: one table size, equal action buttons, four-color deck
 
 - Deployed at 6:18 p.m. Eastern on November 16 (23:18 UTC).
 - Application commit: `1be918ae6cebefea339d87bebee1fb1c4a201151`
