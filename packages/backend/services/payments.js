@@ -433,6 +433,59 @@ function createPayments(deps) {
     return { ok: true, spendable, owed, feeReserveSats, committedFeeSats };
   }
 
+  // ======================= BOOKS CHECK ====================================
+  // The solvency check compares what players are owed with what the node holds.
+  // A node holding far more than that would hide a bug or attack that credits
+  // sats nobody deposited. This check needs no node: what players are owed must
+  // equal what came in, minus what was paid out, minus what they spent here.
+  //
+  //   owed  ==  deposits received − withdrawals paid − identifier purchases
+  //
+  // It also compares each account balance with its own transfer history.
+  // Sats that nothing explains ("unbacked") pause payments. The opposite
+  // direction — the site holding more than it owes — cannot be drained by a
+  // player, so it only alerts. A finding must repeat on consecutive checks
+  // before it acts, so one odd reading cannot pause the site.
+  const BOOKS_CONFIRMATIONS = 2;
+  let unbackedStreak = 0;
+  function booksReport() {
+    const received = db.sumDepositsReceived();
+    const paidOut = db.sumSucceededWithdrawals();
+    const revenue = db.sumIdentifierRevenue();
+    const expectedOwed = received - paidOut - revenue;
+    const owed = totalOwed();
+    const accounts = db.accountHistoryMismatches();
+    const unbackedAccountSats = accounts.reduce((sum, a) => sum + Math.max(0, a.diffSats), 0);
+    return {
+      received, paidOut, revenue, expectedOwed, owed,
+      differenceSats: owed - expectedOwed, // > 0: owed more than ever came in
+      unbackedAccountSats,
+      accounts: accounts.map(a => ({ ...a, userId: String(a.userId).slice(0, 12) })),
+    };
+  }
+  function booksCheck() {
+    let report;
+    try { report = booksReport(); }
+    catch (e) { alert(`Books check could not run: ${e.message}`); return { ok: true, skipped: true }; }
+    const unbacked = Math.max(report.differenceSats, report.unbackedAccountSats, 0);
+    if (unbacked > 0) {
+      unbackedStreak++;
+      if (unbackedStreak >= BOOKS_CONFIRMATIONS) {
+        const who = report.accounts.filter(a => a.diffSats > 0).slice(0, 3).map(a => `${a.userId} +${a.diffSats}`).join(', ');
+        tripBreaker(`Books do not balance: ${unbacked} sats are owed to players that no deposit explains `
+          + `(owed ${report.owed}, expected ${report.expectedOwed}${who ? `; accounts: ${who}` : ''})`);
+        return { ok: false, reason: 'unbacked_sats', ...report };
+      }
+      return { ok: true, unconfirmed: true, ...report };
+    }
+    unbackedStreak = 0;
+    if (report.differenceSats < 0 || report.accounts.length) {
+      alert(`Books check: ${-report.differenceSats} sats received are not credited to any player `
+        + `(owed ${report.owed}, expected ${report.expectedOwed}; ${report.accounts.length} account(s) differ from their history). Payments continue; investigate.`);
+    }
+    return { ok: true, ...report };
+  }
+
   return {
     buyInFromAccount, returnStackToAccount,
     createDepositInvoice,
@@ -442,6 +495,8 @@ function createPayments(deps) {
     dispatchPayment,
     reconcilePending,
     solvencyCheck,
+    booksCheck,
+    booksReport,
     outstandingWithdrawals,
     outstandingFeeBudgets,
     metrics: () => db.paymentMetrics(),

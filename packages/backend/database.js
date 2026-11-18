@@ -1105,6 +1105,34 @@ function sumSettledDeposits() {
 function sumSucceededWithdrawals() {
   return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='withdrawal' AND status='succeeded'`).get().t;
 }
+// ---- Books check inputs (services/payments.js booksCheck) -------------------
+// Every sat that arrived and is still the site's responsibility. A legacy
+// deposit with status 'refunded' was paid back out again, so it nets to zero
+// and is left out.
+function sumDepositsReceived() {
+  return db.prepare(`SELECT COALESCE(SUM(amount_sats),0) AS t FROM ledger_entries WHERE direction='deposit'
+    AND status IN ('settled','settled_unseated','credited','withdrawn','refund_pending','amount_mismatch')`).get().t;
+}
+// Sats players spent on the site itself: no longer owed to anyone.
+function sumIdentifierRevenue() {
+  return db.prepare('SELECT COALESCE(SUM(amount_sats),0) AS t FROM identifier_purchases').get().t;
+}
+// Accounts whose balance differs from the sum of their recorded transfers.
+// Positive diffSats = the balance holds sats its history cannot explain.
+const ACCOUNT_CREDIT_KINDS = ['deposit', 'recovered_credit', 'table_cashout', 'withdrawal_refunded'];
+function accountHistoryMismatches(limit = 20) {
+  const marks = ACCOUNT_CREDIT_KINDS.map(() => '?').join(',');
+  return db.prepare(`
+    SELECT u.user_id AS userId, COALESCE(c.amount_sats,0) AS balanceSats, COALESCE(h.net,0) AS historySats,
+           COALESCE(c.amount_sats,0) - COALESCE(h.net,0) AS diffSats
+    FROM (SELECT user_id FROM wallet_credits WHERE table_id=? UNION SELECT user_id FROM account_transfers) u
+    LEFT JOIN wallet_credits c ON c.user_id=u.user_id AND c.table_id=?
+    LEFT JOIN (SELECT user_id, SUM(CASE WHEN kind IN (${marks}) THEN amount_sats ELSE -amount_sats END) AS net
+               FROM account_transfers GROUP BY user_id) h ON h.user_id=u.user_id
+    WHERE COALESCE(c.amount_sats,0) <> COALESCE(h.net,0)
+    ORDER BY ABS(COALESCE(c.amount_sats,0) - COALESCE(h.net,0)) DESC LIMIT ?
+  `).all(ACCOUNT, ACCOUNT, ...ACCOUNT_CREDIT_KINDS, limit);
+}
 // Deposits we still hold for a player who isn't seated (owed back to them): not
 // yet seated/claimed, or a refund in progress. Part of the solvency "owed" total.
 function sumHeldDeposits() {
@@ -1264,6 +1292,9 @@ module.exports = {
   getExpiredDeposits,
   sumSettledDeposits,
   sumSucceededWithdrawals,
+  sumDepositsReceived,
+  sumIdentifierRevenue,
+  accountHistoryMismatches,
   sumHeldDeposits,
   getRecentLedger,
   getUnseatedDeposits,

@@ -351,11 +351,12 @@ if (config.REALMONEY_ENABLED) {
       }
       await connectedPayments.reconcilePending();
       const solvency = await connectedPayments.solvencyCheck();
-      walletReady = solvency.ok;
+      const books = connectedPayments.booksCheck();
+      walletReady = solvency.ok && books.ok;
       payments = walletReady ? connectedPayments : null;
       adminRoutes.setPayments(connectedPayments);
       if (walletReady) connectedPayments.releaseUnseatedDeposits();
-      reportWalletReady(walletReady, solvency.reason || connectedPayments.breakerState().reason);
+      reportWalletReady(walletReady, solvency.reason || (books.ok ? null : books.reason) || connectedPayments.breakerState().reason);
     } catch (error) {
       walletReady = false;
       payments = null;

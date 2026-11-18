@@ -230,6 +230,8 @@ router.get('/wallet', (req, res) => {
       realMoneyEnabled: config.REALMONEY_ENABLED,
       withdrawalsEnabled: paymentsRef ? paymentsRef.withdrawalsEnabled() : false,
       breaker: paymentsRef ? paymentsRef.breakerState() : { tripped: false, reason: null },
+      // Read-only: owed vs. deposits − withdrawals − purchases. differenceSats must be 0.
+      books: paymentsRef ? paymentsRef.booksReport() : null,
       totals,
       recent,
     };
