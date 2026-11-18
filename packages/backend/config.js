@@ -89,6 +89,9 @@ module.exports = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
   ADMIN_TOKEN: process.env.ADMIN_TOKEN,
   NOSTR_SERVER_NSEC: process.env.NOSTR_SERVER_NSEC || null,
+  // Operator alerts (services/alerts.js). Both optional; set at least one for real money.
+  ALERT_NTFY_URL: process.env.ALERT_NTFY_URL || null,
+  ALERT_NOSTR_NPUB: process.env.ALERT_NOSTR_NPUB || null,
 
   // Game rules
   NUM_SEATS: 6,

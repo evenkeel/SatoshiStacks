@@ -21,6 +21,7 @@ const {createLightningAddressHandler} = require('./services/lightning-address');
 const socketHandlers = require('./socket-handlers');
 const { createLightning } = require('./services/lightning');
 const { createPayments } = require('./services/payments');
+const { createAlerts, createReadinessWatch, channelsFromConfig } = require('./services/alerts');
 const { authenticatedSocketId } = require('./socket-session');
 
 // ==================== EXPRESS & SOCKET.IO SETUP ====================
@@ -309,6 +310,13 @@ function liveStacksTotal() {
 }
 
 if (config.REALMONEY_ENABLED) {
+  const alerts = createAlerts({ channels: channelsFromConfig(config) });
+  if (alerts.channelNames().length === 0) {
+    console.error('[Alerts] WARNING: real-money mode is on but no alert channel is configured. Set ALERT_NTFY_URL or ALERT_NOSTR_NPUB so wallet problems reach the operator.');
+  } else {
+    console.log(`[Alerts] Wallet alerts go to: ${alerts.channelNames().join(', ')}`);
+  }
+  const reportWalletReady = createReadinessWatch({ send: alerts.send });
   lightning = createLightning(config.LIGHTNING);
   const connectedPayments = createPayments({
     lnd: lightning,
@@ -318,7 +326,7 @@ if (config.REALMONEY_ENABLED) {
     liveStacksTotal,
     onDeposit: (row) => walletHandlers.accountDepositConfirmed(row),
     onRefund: (row) => walletHandlers.refundToPlayer(row),
-    alert: (m) => console.error('[Wallet][ALERT]', m),
+    alert: (m) => { alerts.send(m); },
   });
   accountPayments = connectedPayments;
   let subscription = null;
@@ -347,10 +355,12 @@ if (config.REALMONEY_ENABLED) {
       payments = walletReady ? connectedPayments : null;
       adminRoutes.setPayments(connectedPayments);
       if (walletReady) connectedPayments.releaseUnseatedDeposits();
+      reportWalletReady(walletReady, solvency.reason || connectedPayments.breakerState().reason);
     } catch (error) {
       walletReady = false;
       payments = null;
       console.error('[Wallet] Not ready:', error.message);
+      reportWalletReady(false, error.message);
     } finally { maintenanceRunning = false; }
   }
   maintainWallet();

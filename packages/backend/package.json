@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "lnd:check": "node check-lnd.js",
+    "alert:test": "node check-alerts.js",
     "test": "SATOSHISTACKS_DB_PATH=:memory: node --test --test-concurrency=1 *.test.js services/*.test.js"
   },
   "keywords": [
