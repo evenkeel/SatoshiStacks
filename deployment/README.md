@@ -208,34 +208,64 @@ certbot --nginx -d satoshistacks.com -d www.satoshistacks.com  # Re-issue
 ### Database
 
 ```bash
-# Location
-ls -lh /opt/SatoshiStacks/packages/backend/db/
+# Live database (path comes from SATOSHISTACKS_DB_PATH in the PM2 config)
+ls -lh /var/lib/satoshistacks/demo/
 
-# Query
-sqlite3 /opt/SatoshiStacks/packages/backend/db/satoshistacks.db
+# Query (read-only)
+sqlite3 "file:/var/lib/satoshistacks/demo/satoshistacks.db?mode=ro"
 
-# Backups (automated daily at 3 AM)
-ls -lh /opt/SatoshiStacks/packages/backend/backups/
+# Nightly backups (03:00 UTC, /etc/cron.d/satoshistacks-backup) and their log
+ls -lh /var/backups/satoshistacks/nightly/
+tail /var/log/satoshistacks-backup.log
 
 # Manual backup
 /usr/local/bin/backup-satoshistacks.sh
 ```
 
+The job backs up every database under `/var/lib/satoshistacks/<name>/` and logs
+`FAILED` (exit 1) if the database the running app uses is not one of them. A
+database kept elsewhere must be listed in `EXTRA_DB_PATHS` in the cron file.
+Backups stay on this server; copy them off the box before holding player funds.
+The original May 2026 mainnet-test database is preserved byte-for-byte in
+`/var/backups/satoshistacks/legacy-funded-db-raw-20261118T231100Z/`.
+
 ---
 
 ## Security
 
-**Active (Phase 5.7 hardening applied):**
-- SSH key-only auth (password login disabled, strong ciphers, ed25519/curve25519)
-- UFW firewall (port 22 rate-limited, 80 and 443 open, all else denied)
-- fail2ban with incremental banning (1d → 2d → 4d → 1wk max)
-- Kernel network hardening (IP spoofing, SYN flood, ICMP redirect protection)
-- Nginx security headers (CSP, X-Frame-Options, X-Content-Type-Options, Permissions-Policy)
-- Nginx rate limiting (API: 10r/s, auth: 5r/m, general: 30r/s)
-- Let's Encrypt SSL with HSTS and auto-renewal
-- Automated SQLite backups (daily at 3 AM, integrity-checked, 30-day retention)
-- Automatic security updates with auto-reboot at 4 AM if needed
-- Core dumps disabled, filesystem permissions hardened
-- HTTP automatically redirects to HTTPS
-- Common exploit paths blocked (.git, .env, wp-admin, phpmyadmin, etc.)
+Checked on the live server and from the public internet on 2026-11-18, after the
+fixes made that day. Earlier versions of this list described what the setup
+scripts intend, not what was running, and several items were wrong. Re-check
+before relying on any line.
+
+**Verified working:**
+- SSH: key-only (password and keyboard-interactive login off), root login by key, one authorized key
+- UFW firewall: default deny; 22 rate-limited, 80 and 443 open. The app port (3001) is not reachable from the internet
+- fail2ban: active with four jails (sshd and three nginx jails); sshd bans are happening
+- Automatic security updates: enabled and running daily, with auto-reboot at 04:00 when an update needs it
+- TLS: Let's Encrypt certificate with the renewal timer active; TLS 1.0/1.1 refused; HTTP redirects to HTTPS
+- The app runs as the unprivileged `satoshistacks` user (PM2 itself still runs as root and starts it with `uid`/`gid`). That user cannot read the old checkout, its secrets, the backups, or root's SSH keys, and cannot modify its own code
+- Nginx rate limits are applied: API 10 requests/second (burst 20), pages and assets 30/second (burst 50; 200 for static assets). Excess requests get 429. Socket.IO and `/health` are not limited. Sign-in has its own limit in the app
+- `/.env`, `/.git/...` and common exploit-probe paths return 404
+- The landing page is served with HSTS, X-Frame-Options, nosniff, Referrer-Policy and Permissions-Policy. App pages carry HSTS and a Content-Security-Policy set by the app
+- The old checkout (`/opt/SatoshiStacks`) and `/var/backups/satoshistacks` are root-only
+- No spend-capable LND macaroon is on the server (deleted 2026-11-18). A read-only one remains in `/opt/SatoshiStacks/secrets/`
+- Admin API returns 401 without the token; the token is 64 characters
+- Nightly SQLite backups at 03:00 UTC, integrity-checked, 30-day retention, same server only
+
+**Deliberately not done:**
+- The landing page has no Content-Security-Policy. It uses an inline script, Google Fonts and a form service, so a policy would have to allow all three and would break silently when the page changes
+- Nginx's web root is still `/opt`, because the landing page is deployed by moving files there. Nothing secret under `/opt` is readable by Nginx's worker user any more
+
+**Still open:**
+- Backups are not copied off the server
+- The deleted macaroon file is gone from this server, but LND would still honor a copy if one exists elsewhere. Bake a fresh one for launch, and revoke the old one on the node if it may have been copied
+- Restart after a server reboot has not been tested since the app moved to its own user (the PM2 process list is saved with the new user)
+- `nginx-config.template` does not match production; `nginx-live.conf` is a copy of what runs
+
+**When deploying a release:** the PM2 config must keep `"uid": "satoshistacks"` and
+`"gid": "satoshistacks"` (start from the newest `new.config.json` under
+`/var/backups/satoshistacks/`). Copy the previous release's `.env` with `cp -p` so
+it stays `root:satoshistacks` mode 640; a root-only `.env` stops the app from
+starting. The database directory must stay owned by `satoshistacks`.
 

@@ -210,71 +210,25 @@ fi
 # ─── 8. SQLite Backup ───────────────────────────────────────────────────────
 echo "[8/10] Setting up automated SQLite backups..."
 
-# Find the database
-DB_PATH=""
-for possible in \
-    "/opt/SatoshiStacks/packages/backend/db/satoshistacks.db" \
-    "/home/poker/satoshistacks/packages/backend/db/satoshistacks.db" \
-    "/root/satoshistacks/packages/backend/db/satoshistacks.db" \
-    "/var/www/satoshistacks/packages/backend/db/satoshistacks.db"; do
-    if [ -f "$possible" ]; then
-        DB_PATH="$possible"
-        break
-    fi
-done
+# The script lives next to this one in the repo. It backs up every database
+# under /var/lib/satoshistacks/<name>/ and fails loudly if the database the
+# running app uses is not among them (the app's database has moved before
+# without the backup job following it).
+BACKUP_SCRIPT_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-satoshistacks.sh"
+if [ -f "$BACKUP_SCRIPT_SRC" ]; then
+    install -m 700 "$BACKUP_SCRIPT_SRC" /usr/local/bin/backup-satoshistacks.sh
 
-if [ -n "$DB_PATH" ]; then
-    BACKUP_DIR="$(dirname $DB_PATH)/../backups"
-    BACKUP_DIR="$(realpath -m $BACKUP_DIR)"
-    mkdir -p "$BACKUP_DIR"
-    chmod 700 "$BACKUP_DIR"
-
-    tee /usr/local/bin/backup-satoshistacks.sh << BACKUP
-#!/bin/bash
-set -euo pipefail
-DB_PATH="$DB_PATH"
-BACKUP_DIR="$BACKUP_DIR"
-DATE=\$(date +"%Y-%m-%d_%H-%M")
-LOGFILE="/var/log/satoshistacks-backup.log"
-mkdir -p \$BACKUP_DIR
-
-# Pre-check: verify database exists and is readable
-if [ ! -r "\$DB_PATH" ]; then
-    echo "\$(date): FAILED — database not found or unreadable: \$DB_PATH" >> \$LOGFILE
-    exit 1
-fi
-
-# Integrity check before backup
-INTEGRITY=\$(sqlite3 "\$DB_PATH" "PRAGMA integrity_check;" 2>&1)
-if [ "\$INTEGRITY" != "ok" ]; then
-    echo "\$(date): WARNING — integrity check failed: \$INTEGRITY" >> \$LOGFILE
-fi
-
-# VACUUM INTO is safer than file copy — transactionally consistent
-sqlite3 "\$DB_PATH" "VACUUM INTO '\$BACKUP_DIR/satoshistacks-\$DATE.db'"
-gzip "\$BACKUP_DIR/satoshistacks-\$DATE.db"
-chmod 600 "\$BACKUP_DIR/satoshistacks-\$DATE.db.gz"
-
-# Verify backup is not empty
-BACKUP_SIZE=\$(stat -c%s "\$BACKUP_DIR/satoshistacks-\$DATE.db.gz" 2>/dev/null || echo "0")
-if [ "\$BACKUP_SIZE" -lt 1024 ]; then
-    echo "\$(date): WARNING — backup suspiciously small (\${BACKUP_SIZE} bytes)" >> \$LOGFILE
-fi
-
-# Keep only last 30 days of backups
-find \$BACKUP_DIR -name "*.db.gz" -mtime +30 -delete
-
-echo "\$(date): Backup completed: satoshistacks-\$DATE.db.gz (\${BACKUP_SIZE} bytes)" >> \$LOGFILE
-BACKUP
-
-    chmod 700 /usr/local/bin/backup-satoshistacks.sh
-
-    # Idempotent cron — avoid duplicate entries
-    CRON_JOB="0 3 * * * /usr/local/bin/backup-satoshistacks.sh"
-    (crontab -l 2>/dev/null | grep -v 'backup-satoshistacks' ; echo "$CRON_JOB") | crontab -
-    echo "  ✓ SQLite backup configured (daily at 3 AM)"
-    echo "  ✓ DB path: $DB_PATH"
-    echo "  ✓ Backups: $BACKUP_DIR"
+    # /etc/cron.d rather than root's crontab: visible as a file, and replacing
+    # root's crontab cannot silently drop it.
+    crontab -l 2>/dev/null | grep -v 'backup-satoshistacks' | crontab - 2>/dev/null || true
+    cat > /etc/cron.d/satoshistacks-backup << 'CRON'
+# Nightly SatoshiStacks database backup (03:00 UTC). Installed by deployment/harden.sh.
+SHELL=/bin/bash
+0 3 * * * root /usr/local/bin/backup-satoshistacks.sh
+CRON
+    chmod 644 /etc/cron.d/satoshistacks-backup
+    echo "  ✓ SQLite backup configured (daily at 03:00 UTC)"
+    echo "  ✓ Backups: /var/backups/satoshistacks/nightly/ (log: /var/log/satoshistacks-backup.log)"
 
     # Configure log rotation for backup log
     tee /etc/logrotate.d/satoshistacks-backup << 'LOGROTATE'
@@ -287,9 +241,14 @@ BACKUP
 }
 LOGROTATE
 
+    # Prove it works now instead of finding out at restore time.
+    if /usr/local/bin/backup-satoshistacks.sh; then
+        echo "  ✓ First backup succeeded"
+    else
+        echo "  ⚠ First backup FAILED — see /var/log/satoshistacks-backup.log"
+    fi
 else
-    echo "  ⚠ Database not found at expected paths — configure backup manually"
-    echo "  ⚠ Expected: /opt/SatoshiStacks/packages/backend/db/satoshistacks.db"
+    echo "  ⚠ backup-satoshistacks.sh not found next to harden.sh — backups NOT configured"
 fi
 
 # ─── 9. Filesystem Hardening ─────────────────────────────────────────────────
@@ -358,7 +317,7 @@ echo "✅ UFW: Firewall active (22 rate-limited, 80, 443)"
 echo "✅ fail2ban: Active (incremental banning, bot detection)"
 echo "✅ Auto-updates: Enabled (auto-reboot at 4 AM if needed)"
 echo "✅ Nginx: Security headers + CSP + rate limit zones"
-echo "✅ SQLite: Daily backups at 3 AM (integrity-checked)"
+echo "✅ SQLite: Daily backups at 03:00 UTC to /var/backups/satoshistacks/nightly (integrity-checked)"
 echo "✅ Filesystem: Permissions hardened, core dumps disabled"
 echo "⚠️  SSH: Complete manually (step 10 above)"
 echo ""
